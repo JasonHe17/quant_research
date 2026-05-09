@@ -227,7 +227,30 @@ result = constructor.build(
 )
 ```
 
+## Signal Generation
+
+Signal generation converts factor value tables into the standard
+`timestamp, instrument_id, signal` shape consumed by portfolio construction.
+The v0 generator supports `identity`, `rank`, and `threshold` methods.
+
+```python
+from quant_research.signals import SignalGenerator, SignalSpec
+
+signal_result = SignalGenerator(
+    artifact_store=ArtifactStore.from_path("research_store")
+).generate(
+    result.frame,
+    SignalSpec(
+        name="ranked-close-return",
+        factor_name="close_return",
+        method="rank",
+        parameters={"ascending": False},
+    ),
+    persist=True,
+)
+```
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-target is signal model scaffolding.
+target is universe scaffolding.

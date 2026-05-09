@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from quant_research.backtest import BacktestResult
     from quant_research.factors import FactorResult
     from quant_research.portfolio import PortfolioConstructionResult
+    from quant_research.signals import SignalResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +36,28 @@ class ArtifactStore:
 
     def read_factor(self, factor_name: str) -> pd.DataFrame:
         return pd.read_pickle(self.factor_path(factor_name))
+
+    def signal_root(self, signal_name: str) -> Path:
+        return self.root / "signals" / _safe_path_component(signal_name)
+
+    def signal_path(self, signal_name: str, artifact_name: str) -> Path:
+        return self.signal_root(signal_name) / f"{artifact_name}.pkl"
+
+    def write_signal(self, result: "SignalResult") -> dict[str, str]:
+        paths = {
+            "signals": self.signal_path(result.spec.name, "signals"),
+            "diagnostics": self.signal_path(result.spec.name, "diagnostics"),
+        }
+        for path in paths.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
+        result.frame.to_pickle(paths["signals"])
+        result.diagnostics.to_pickle(paths["diagnostics"])
+        return {name: str(path) for name, path in paths.items()}
+
+    def read_signal_artifact(
+        self, signal_name: str, artifact_name: str
+    ) -> pd.DataFrame:
+        return pd.read_pickle(self.signal_path(signal_name, artifact_name))
 
     def backtest_root(self, backtest_name: str) -> Path:
         return self.root / "backtests" / _safe_path_component(backtest_name)
