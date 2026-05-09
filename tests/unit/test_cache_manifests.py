@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from quant_research.data import CacheManifest, CacheManifestStore, CachePolicy
+import pandas as pd
+
+from quant_research.data import (
+    CacheManifest,
+    CacheManifestStore,
+    CachePolicy,
+    DataFrameCache,
+)
 
 
 def test_cache_manifest_id_is_stable_for_rebuild_inputs() -> None:
@@ -105,3 +112,34 @@ def test_cache_policy_declares_manifest_root() -> None:
     assert policy.manifest_root("2026-05-09") == Path(
         "/ssd/quant_cache/snapshots/2026-05-09/manifests"
     )
+
+
+def test_dataframe_cache_reuses_cached_artifact(tmp_path: Path) -> None:
+    cache = DataFrameCache(policy=CachePolicy(root=tmp_path))
+    calls = 0
+
+    def compute() -> pd.DataFrame:
+        nonlocal calls
+        calls += 1
+        return pd.DataFrame([{"instrument_id": "inst-1", "close_price": 10.0}])
+
+    first = cache.get_or_compute(
+        dataset="bars",
+        parameters={"symbols": ["600000.SH"]},
+        snapshot="2026-05-09",
+        catalog_reference="catalog-stat-sha256:abc",
+        compute=compute,
+    )
+    second = cache.get_or_compute(
+        dataset="bars",
+        parameters={"symbols": ["600000.SH"]},
+        snapshot="2026-05-09",
+        catalog_reference="catalog-stat-sha256:abc",
+        compute=compute,
+    )
+
+    assert calls == 1
+    assert first.equals(second)
+    manifests = cache.manifests.list(snapshot="2026-05-09", dataset="bars")
+    assert len(manifests) == 1
+    assert manifests[0].artifact_path.exists()

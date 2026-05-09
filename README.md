@@ -60,6 +60,9 @@ bars = data.get_bars(
 `DataPortal` returns Pandas DataFrames and delegates data reads to the sibling
 `quant_dataset` repository through stable `quantdb.sdk` interfaces.
 
+When both `cache_root` and `snapshot` are set, data reads use the local
+DataFrame cache by default. Pass `cache=False` to bypass cache for one call.
+
 ## Cache Manifests
 
 Local cache files are rebuildable acceleration artifacts. Cache manifests record
@@ -85,5 +88,4 @@ path = store.write(manifest)
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-targets are cache-backed `DataPortal` reads, minimal factor interfaces, and
-experiment run metadata.
+targets are minimal factor interfaces and experiment run metadata.

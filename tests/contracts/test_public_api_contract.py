@@ -34,10 +34,12 @@ def test_data_portal_exposes_v0_methods() -> None:
 
 
 def test_data_portal_returns_dataframes_through_quantdb_adapter(tmp_path: Path) -> None:
-    adapter = QuantDbAdapter(quant_dataset_root=tmp_path, sdk_module=_FakeQuantDbSdk())
+    sdk = _FakeQuantDbSdk()
+    adapter = QuantDbAdapter(quant_dataset_root=tmp_path, sdk_module=sdk)
     portal = DataPortal(
         canonical_root=tmp_path / "canonical_store",
         catalog_path=tmp_path / "canonical_store/catalog/quant_research.duckdb",
+        cache_root=tmp_path / "cache",
         snapshot="2026-05-09",
         adapter=adapter,
     )
@@ -60,6 +62,18 @@ def test_data_portal_returns_dataframes_through_quantdb_adapter(tmp_path: Path) 
 
     datasets = portal.list_available_datasets()
     assert datasets.loc[0, "dataset_name"] == "minute_bars"
+
+    cached_bars = portal.get_bars(
+        ["600000.SH"],
+        start="2024-01-01T09:31:00+08:00",
+        end="2024-01-01T09:31:00+08:00",
+        frequency="1m",
+        adjustment="raw",
+        market="CN",
+        fields=["instrument_id", "close_price"],
+    )
+    assert sdk.minute_bar_calls == 1
+    assert cached_bars.equals(bars)
 
 
 def test_data_portal_requires_market_for_symbol_resolution(tmp_path: Path) -> None:
@@ -119,6 +133,9 @@ class _FakeInstrument:
 
 
 class _FakeQuantDbSdk:
+    def __init__(self) -> None:
+        self.minute_bar_calls = 0
+
     def resolve_instrument(
         self,
         alias_code: str,
@@ -135,6 +152,7 @@ class _FakeQuantDbSdk:
         )
 
     def get_minute_bars(self, instrument_id: str, **_: object) -> tuple[object, ...]:
+        self.minute_bar_calls += 1
         return (
             SimpleNamespace(
                 instrument_id=instrument_id,
