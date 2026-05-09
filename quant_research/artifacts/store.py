@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from quant_research.factors import FactorResult
     from quant_research.portfolio import PortfolioConstructionResult
     from quant_research.signals import SignalResult
+    from quant_research.universe import Universe
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +115,28 @@ class ArtifactStore:
         self, portfolio_name: str, artifact_name: str
     ) -> pd.DataFrame:
         return pd.read_pickle(self.portfolio_path(portfolio_name, artifact_name))
+
+    def universe_root(self, universe_name: str) -> Path:
+        return self.root / "universes" / _safe_path_component(universe_name)
+
+    def universe_path(self, universe_name: str, artifact_name: str) -> Path:
+        return self.universe_root(universe_name) / f"{artifact_name}.pkl"
+
+    def write_universe(self, universe: "Universe") -> dict[str, str]:
+        paths = {
+            "members": self.universe_path(universe.spec.name, "members"),
+            "diagnostics": self.universe_path(universe.spec.name, "diagnostics"),
+        }
+        for path in paths.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
+        universe.members.to_pickle(paths["members"])
+        universe.diagnostics.to_pickle(paths["diagnostics"])
+        return {name: str(path) for name, path in paths.items()}
+
+    def read_universe_artifact(
+        self, universe_name: str, artifact_name: str
+    ) -> pd.DataFrame:
+        return pd.read_pickle(self.universe_path(universe_name, artifact_name))
 
 
 def _safe_path_component(value: str) -> str:

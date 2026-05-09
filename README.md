@@ -250,7 +250,34 @@ signal_result = SignalGenerator(
 )
 ```
 
+## Universes
+
+Universes define the security membership that downstream factors, signals,
+portfolios, and backtests consume. The v0 builder supports static symbol lists
+and optional resolution through `DataPortal`.
+
+```python
+from quant_research.universe import UniverseBuilder, UniverseSpec, active_on
+
+universe = UniverseBuilder(
+    artifact_store=ArtifactStore.from_path("research_store")
+).build(
+    UniverseSpec(
+        name="cn-core",
+        symbols=("600000.SH", "000001.SZ"),
+        market="CN",
+        asset_type="equity",
+        start="2024-01-01",
+        end="2024-12-31",
+    ),
+    data=data,
+    persist=True,
+)
+
+active_members = active_on(universe, "2024-06-30")
+```
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-target is universe scaffolding.
+target is metrics/reporting scaffolding.
