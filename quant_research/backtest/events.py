@@ -10,3 +10,4 @@ class RebalanceEvent:
     """A scheduled rebalance marker."""
 
     timestamp: str
+    reason: str = "scheduled"

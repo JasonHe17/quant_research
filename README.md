@@ -152,7 +152,55 @@ completed = runner.complete_run(
 )
 ```
 
+## Minimal Backtests
+
+Backtests are organized as an orchestration boundary. The framework validates
+standard output tables, computes basic metrics, and can persist artifacts. The
+actual simulator is injected by the caller.
+
+```python
+import pandas as pd
+
+from quant_research.artifacts import ArtifactStore
+from quant_research.backtest import BacktestConfig, BacktestEngine, BacktestFrames
+
+
+def simulator(config: BacktestConfig) -> BacktestFrames:
+    return BacktestFrames(
+        trades=pd.DataFrame([
+            {
+                "timestamp": config.start,
+                "instrument_id": "inst-600000",
+                "quantity": 10,
+                "price": 10.0,
+            }
+        ]),
+        positions=pd.DataFrame([
+            {
+                "timestamp": config.start,
+                "instrument_id": "inst-600000",
+                "quantity": 10,
+                "market_value": 100.0,
+            }
+        ]),
+        equity_curve=pd.DataFrame([
+            {"timestamp": config.start, "equity": 100.0},
+            {"timestamp": config.end, "equity": 112.0},
+        ]),
+    )
+
+
+config = BacktestConfig(
+    name="close-return-backtest",
+    start="2024-01-02",
+    end="2024-01-31",
+    data_snapshot="2026-05-09",
+)
+engine = BacktestEngine(artifact_store=ArtifactStore.from_path("research_store"))
+result = engine.run(config, simulator, persist=True)
+```
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-target is minimal backtest orchestration.
+target is portfolio construction scaffolding.

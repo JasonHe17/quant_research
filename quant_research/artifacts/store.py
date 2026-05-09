@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 if TYPE_CHECKING:
+    from quant_research.backtest import BacktestResult
     from quant_research.factors import FactorResult
 
 
@@ -33,6 +34,32 @@ class ArtifactStore:
 
     def read_factor(self, factor_name: str) -> pd.DataFrame:
         return pd.read_pickle(self.factor_path(factor_name))
+
+    def backtest_root(self, backtest_name: str) -> Path:
+        return self.root / "backtests" / _safe_path_component(backtest_name)
+
+    def backtest_path(self, backtest_name: str, artifact_name: str) -> Path:
+        return self.backtest_root(backtest_name) / f"{artifact_name}.pkl"
+
+    def write_backtest(self, result: "BacktestResult") -> dict[str, str]:
+        paths = {
+            "trades": self.backtest_path(result.config.name, "trades"),
+            "positions": self.backtest_path(result.config.name, "positions"),
+            "equity_curve": self.backtest_path(result.config.name, "equity_curve"),
+            "diagnostics": self.backtest_path(result.config.name, "diagnostics"),
+        }
+        for path in paths.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
+        result.trades.to_pickle(paths["trades"])
+        result.positions.to_pickle(paths["positions"])
+        result.equity_curve.to_pickle(paths["equity_curve"])
+        result.diagnostics.to_pickle(paths["diagnostics"])
+        return {name: str(path) for name, path in paths.items()}
+
+    def read_backtest_artifact(
+        self, backtest_name: str, artifact_name: str
+    ) -> pd.DataFrame:
+        return pd.read_pickle(self.backtest_path(backtest_name, artifact_name))
 
 
 def _safe_path_component(value: str) -> str:
