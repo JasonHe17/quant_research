@@ -36,6 +36,18 @@ python -m pip install -e ".[dev]"
 python -m pytest -q
 ```
 
+## Local Data Smoke Check
+
+When the sibling `quant_dataset` repository is available in the same
+`quant_trade` workspace, run a lightweight real-data boundary check:
+
+```bash
+python examples/real_data_smoke.py
+```
+
+The script only reads the public dataset inventory exposed through `quantdb.sdk`;
+it does not load large market data or write cache artifacts.
+
 ## Architecture
 
 - [Framework Pipeline v0](docs/architecture/framework_pipeline.md)
