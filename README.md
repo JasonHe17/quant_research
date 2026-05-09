@@ -85,7 +85,45 @@ manifest = CacheManifest.create(
 path = store.write(manifest)
 ```
 
+## Minimal Factors
+
+Factors receive a `FactorContext` and return a Pandas DataFrame. The
+`FactorEngine` normalizes the result with a `factor_name` column and can persist
+factor outputs through `ArtifactStore`.
+
+```python
+from quant_research.artifacts import ArtifactStore
+from quant_research.factors import Factor, FactorContext, FactorEngine
+
+
+class CloseReturn(Factor):
+    def compute(self, context: FactorContext):
+        bars = context.data.get_bars(
+            list(context.symbols),
+            start=context.start,
+            end=context.end,
+            frequency=context.frequency,
+            adjustment="raw",
+            market=context.market,
+        )
+        frame = bars[["instrument_id", "bar_end_time", "close_price"]].copy()
+        frame["factor_value"] = frame["close_price"].pct_change().fillna(0.0)
+        return frame[["instrument_id", "bar_end_time", "factor_value"]]
+
+
+context = FactorContext(
+    data=data,
+    start="2024-01-02T09:31:00+08:00",
+    end="2024-01-02T15:00:00+08:00",
+    symbols=("600000.SH",),
+    market="CN",
+    snapshot="2026-05-09",
+)
+engine = FactorEngine(artifact_store=ArtifactStore.from_path("research_store"))
+result = engine.compute(CloseReturn("close_return", ("close_price",)), context)
+```
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-targets are minimal factor interfaces and experiment run metadata.
+target is experiment run metadata.
