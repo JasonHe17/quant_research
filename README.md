@@ -33,6 +33,10 @@ quant_trade/
 python -m pytest
 ```
 
+## Architecture
+
+- [Framework Pipeline v0](docs/architecture/framework_pipeline.md)
+
 ## DataPortal v0
 
 ```python
@@ -298,4 +302,4 @@ report = MetricsEngine(
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-target is framework-level documentation and integration contracts.
+target is developer ergonomics and CI configuration.
