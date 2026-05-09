@@ -11,3 +11,9 @@ class RiskConstraint:
 
     name: str
     limit: float
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("constraint name is required")
+        if self.limit < 0:
+            raise ValueError("constraint limit must be non-negative")

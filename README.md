@@ -200,7 +200,34 @@ engine = BacktestEngine(artifact_store=ArtifactStore.from_path("research_store")
 result = engine.run(config, simulator, persist=True)
 ```
 
+## Portfolio Construction
+
+Portfolio construction turns signal tables into target weights and rebalance
+orders. The v0 constructor provides contract-level equal and signal weighting;
+full optimization models should be added later behind this boundary.
+
+```python
+import pandas as pd
+
+from quant_research.artifacts import ArtifactStore
+from quant_research.portfolio import PortfolioConfig, PortfolioConstructor
+
+signals = pd.DataFrame([
+    {"timestamp": "2024-01-31", "instrument_id": "inst-600000", "signal": 1.0},
+    {"timestamp": "2024-01-31", "instrument_id": "inst-000001", "signal": 2.0},
+])
+
+constructor = PortfolioConstructor(
+    artifact_store=ArtifactStore.from_path("research_store")
+)
+result = constructor.build(
+    signals,
+    PortfolioConfig(name="monthly-signal", weighting="signal", max_weight=0.6),
+    persist=True,
+)
+```
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-target is portfolio construction scaffolding.
+target is signal model scaffolding.

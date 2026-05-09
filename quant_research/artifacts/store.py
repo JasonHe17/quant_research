@@ -11,6 +11,7 @@ import pandas as pd
 if TYPE_CHECKING:
     from quant_research.backtest import BacktestResult
     from quant_research.factors import FactorResult
+    from quant_research.portfolio import PortfolioConstructionResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,36 @@ class ArtifactStore:
         self, backtest_name: str, artifact_name: str
     ) -> pd.DataFrame:
         return pd.read_pickle(self.backtest_path(backtest_name, artifact_name))
+
+    def portfolio_root(self, portfolio_name: str) -> Path:
+        return self.root / "portfolios" / _safe_path_component(portfolio_name)
+
+    def portfolio_path(self, portfolio_name: str, artifact_name: str) -> Path:
+        return self.portfolio_root(portfolio_name) / f"{artifact_name}.pkl"
+
+    def write_portfolio(
+        self, result: "PortfolioConstructionResult"
+    ) -> dict[str, str]:
+        paths = {
+            "target_weights": self.portfolio_path(
+                result.config.name, "target_weights"
+            ),
+            "rebalance_orders": self.portfolio_path(
+                result.config.name, "rebalance_orders"
+            ),
+            "diagnostics": self.portfolio_path(result.config.name, "diagnostics"),
+        }
+        for path in paths.values():
+            path.parent.mkdir(parents=True, exist_ok=True)
+        result.target_weights.to_pickle(paths["target_weights"])
+        result.rebalance_orders.to_pickle(paths["rebalance_orders"])
+        result.diagnostics.to_pickle(paths["diagnostics"])
+        return {name: str(path) for name, path in paths.items()}
+
+    def read_portfolio_artifact(
+        self, portfolio_name: str, artifact_name: str
+    ) -> pd.DataFrame:
+        return pd.read_pickle(self.portfolio_path(portfolio_name, artifact_name))
 
 
 def _safe_path_component(value: str) -> str:
