@@ -16,3 +16,6 @@ class ExperimentRegistry:
 
     def get(self, name: str) -> ExperimentConfig:
         return self._items[name]
+
+    def list(self) -> tuple[ExperimentConfig, ...]:
+        return tuple(self._items[name] for name in sorted(self._items))

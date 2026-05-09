@@ -123,7 +123,36 @@ engine = FactorEngine(artifact_store=ArtifactStore.from_path("research_store"))
 result = engine.compute(CloseReturn("close_return", ("close_price",)), context)
 ```
 
+## Experiment Runs
+
+Experiment runs capture the data snapshot, parameters, artifacts, cache
+manifests, and metrics needed to reproduce a research result.
+
+```python
+from quant_research.experiments import (
+    ExperimentConfig,
+    ExperimentRunner,
+    ExperimentRunStore,
+)
+
+run_store = ExperimentRunStore(root="research_store")
+runner = ExperimentRunner(run_store=run_store)
+config = ExperimentConfig(
+    name="close-return-smoke",
+    data_snapshot="2026-05-09",
+    parameters={"symbols": ["600000.SH"]},
+)
+
+run = runner.create_run(config)
+completed = runner.complete_run(
+    run,
+    artifacts={"factor": "research_store/factors/close_return.pkl"},
+    metrics={"total_return": 0.12},
+    cache_manifest_ids=("manifest-id",),
+)
+```
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-target is experiment run metadata.
+target is minimal backtest orchestration.
