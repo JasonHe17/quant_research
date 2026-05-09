@@ -19,3 +19,6 @@ class CachePolicy:
 
     def snapshot_root(self, snapshot: str) -> Path:
         return self.root / "snapshots" / snapshot
+
+    def manifest_root(self, snapshot: str) -> Path:
+        return self.snapshot_root(snapshot) / "manifests"

@@ -60,8 +60,30 @@ bars = data.get_bars(
 `DataPortal` returns Pandas DataFrames and delegates data reads to the sibling
 `quant_dataset` repository through stable `quantdb.sdk` interfaces.
 
+## Cache Manifests
+
+Local cache files are rebuildable acceleration artifacts. Cache manifests record
+the request parameters and data snapshot needed to decide whether an artifact can
+be reused.
+
+```python
+from quant_research.data import CacheManifest, CacheManifestStore
+
+store = CacheManifestStore(root="/ssd/quant_cache")
+manifest = CacheManifest.create(
+    dataset="minute_bars",
+    parameters={"symbols": ["600000.SH"], "frequency": "1m"},
+    snapshot="2026-05-09",
+    catalog_reference="catalog-sha256:...",
+    artifact_path="/ssd/quant_cache/snapshots/2026-05-09/market/sample.parquet",
+    row_count=1000,
+)
+
+path = store.write(manifest)
+```
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-targets are cache manifest persistence, minimal factor interfaces, and
+targets are cache-backed `DataPortal` reads, minimal factor interfaces, and
 experiment run metadata.
