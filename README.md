@@ -277,7 +277,25 @@ universe = UniverseBuilder(
 active_members = active_on(universe, "2024-06-30")
 ```
 
+## Metrics And Reports
+
+Metrics reports collect named values and persist them under the research artifact
+store. The v0 engine computes basic equity-curve metrics.
+
+```python
+from quant_research.metrics import MetricsEngine
+
+report = MetricsEngine(
+    artifact_store=ArtifactStore.from_path("research_store")
+).from_equity_curve(
+    result.equity_curve,
+    name="close-return-backtest-report",
+    metadata={"data_snapshot": "2026-05-09"},
+    persist=True,
+)
+```
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation
-target is metrics/reporting scaffolding.
+target is framework-level documentation and integration contracts.

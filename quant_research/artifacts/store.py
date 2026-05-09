@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,7 @@ import pandas as pd
 if TYPE_CHECKING:
     from quant_research.backtest import BacktestResult
     from quant_research.factors import FactorResult
+    from quant_research.metrics import MetricsReport
     from quant_research.portfolio import PortfolioConstructionResult
     from quant_research.signals import SignalResult
     from quant_research.universe import Universe
@@ -137,6 +139,25 @@ class ArtifactStore:
         self, universe_name: str, artifact_name: str
     ) -> pd.DataFrame:
         return pd.read_pickle(self.universe_path(universe_name, artifact_name))
+
+    def report_root(self, report_name: str) -> Path:
+        return self.root / "reports" / _safe_path_component(report_name)
+
+    def report_path(self, report_name: str) -> Path:
+        return self.report_root(report_name) / "metrics.json"
+
+    def write_metrics_report(self, report: "MetricsReport") -> dict[str, str]:
+        path = self.report_path(report.name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(report.to_dict(), ensure_ascii=True, indent=2, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
+        )
+        return {"metrics_report": str(path)}
+
+    def read_metrics_report(self, report_name: str) -> dict[str, object]:
+        return json.loads(self.report_path(report_name).read_text(encoding="utf-8"))
 
 
 def _safe_path_component(value: str) -> str:
