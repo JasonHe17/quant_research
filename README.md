@@ -1,5 +1,7 @@
 # Quant Research
 
+[![CI](https://github.com/JasonHe17/quant_research/actions/workflows/ci.yml/badge.svg)](https://github.com/JasonHe17/quant_research/actions/workflows/ci.yml)
+
 Research framework for the `quant_trade` workspace.
 
 This package owns research-facing workflows:
@@ -30,7 +32,8 @@ quant_trade/
 ## Development
 
 ```bash
-python -m pytest
+python -m pip install -e ".[dev]"
+python -m pytest -q
 ```
 
 ## Architecture
