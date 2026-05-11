@@ -10,6 +10,7 @@ from quant_research.portfolio import (
     PortfolioConfig,
     PortfolioConstructor,
     RiskConstraint,
+    apply_cn_t1_constraints,
 )
 
 
@@ -57,6 +58,72 @@ def test_portfolio_constructor_respects_max_weight_clip() -> None:
         pytest.approx(1 / 3),
         0.4,
     ]
+
+
+def test_portfolio_constructor_liquidates_positions_missing_from_targets() -> None:
+    current = pd.DataFrame(
+        [
+            {"instrument_id": "inst-1", "current_weight": 0.4},
+            {"instrument_id": "inst-old", "current_weight": 0.3},
+        ]
+    )
+
+    result = PortfolioConstructor().build(
+        pd.DataFrame(
+            [
+                {
+                    "timestamp": "2024-01-01T09:35:00+08:00",
+                    "instrument_id": "inst-1",
+                    "signal": 1.0,
+                }
+            ]
+        ),
+        PortfolioConfig(name="switch", weighting="equal"),
+        current_positions=current,
+    )
+
+    old_order = result.rebalance_orders.loc[
+        result.rebalance_orders["instrument_id"] == "inst-old"
+    ].iloc[0]
+    assert old_order["target_weight"] == 0.0
+    assert old_order["delta_weight"] == pytest.approx(-0.3)
+
+
+def test_cn_t1_constraints_cap_sells_to_sellable_weight() -> None:
+    orders = pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "inst-1",
+                "current_weight": 0.5,
+                "target_weight": 0.0,
+                "delta_weight": -0.5,
+            },
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "inst-2",
+                "current_weight": 0.0,
+                "target_weight": 0.2,
+                "delta_weight": 0.2,
+            },
+        ]
+    )
+    current = pd.DataFrame(
+        [
+            {"instrument_id": "inst-1", "sellable_weight": 0.2},
+            {"instrument_id": "inst-2", "sellable_weight": 0.0},
+        ]
+    )
+
+    constrained = apply_cn_t1_constraints(orders, current_positions=current)
+
+    sell = constrained.loc[constrained["instrument_id"] == "inst-1"].iloc[0]
+    buy = constrained.loc[constrained["instrument_id"] == "inst-2"].iloc[0]
+    assert sell["executable_delta_weight"] == pytest.approx(-0.2)
+    assert sell["blocked_sell_weight"] == pytest.approx(0.3)
+    assert sell["t1_blocked"]
+    assert buy["executable_delta_weight"] == pytest.approx(0.2)
+    assert buy["blocked_sell_weight"] == 0.0
 
 
 def test_portfolio_constructor_persists_artifacts(tmp_path: Path) -> None:

@@ -24,6 +24,7 @@ def test_data_portal_exposes_v0_methods() -> None:
     assert isinstance(portal.config, DataPortalConfig)
     for method_name in (
         "resolve_instruments",
+        "list_instruments",
         "get_trading_calendar",
         "get_bars",
         "get_fundamentals_asof",
@@ -45,6 +46,7 @@ def test_data_portal_returns_dataframes_through_quantdb_adapter(tmp_path: Path) 
     )
 
     instruments = portal.resolve_instruments(["600000.SH"], market="CN")
+    listed = portal.list_instruments(market="CN", asset_type="equity")
     bars = portal.get_bars(
         ["600000.SH"],
         start="2024-01-01T09:31:00+08:00",
@@ -57,6 +59,7 @@ def test_data_portal_returns_dataframes_through_quantdb_adapter(tmp_path: Path) 
 
     assert isinstance(instruments, pd.DataFrame)
     assert instruments.loc[0, "instrument_id"] == "inst-600000"
+    assert listed.loc[0, "canonical_code"] == "600000.SH"
     assert list(bars.columns) == ["instrument_id", "close_price"]
     assert bars.loc[0, "close_price"] == 10.5
 
@@ -149,6 +152,24 @@ class _FakeQuantDbSdk:
             market=market,
             asset_type=asset_type or "equity",
             display_name="浦发银行",
+        )
+
+    def list_instruments(
+        self,
+        *,
+        market: str | None = None,
+        asset_type: str | None = None,
+        as_of: str | None = None,
+    ) -> tuple[_FakeInstrument, ...]:
+        _ = as_of
+        return (
+            _FakeInstrument(
+                instrument_id="inst-600000",
+                canonical_code="600000.SH",
+                market=market or "CN",
+                asset_type=asset_type or "equity",
+                display_name="浦发银行",
+            ),
         )
 
     def get_minute_bars(self, instrument_id: str, **_: object) -> tuple[object, ...]:

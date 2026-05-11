@@ -92,7 +92,14 @@ def _rebalance_orders(
         _require_columns(current, ("instrument_id", "current_weight"))
     frames: list[pd.DataFrame] = []
     for timestamp, group in target_weights.groupby("timestamp", sort=True):
-        merged = group.merge(current, on="instrument_id", how="left")
+        current_for_timestamp = current.copy()
+        if not current_for_timestamp.empty:
+            current_for_timestamp = current_for_timestamp.loc[
+                :, ["instrument_id", "current_weight"]
+            ]
+        merged = group.merge(current_for_timestamp, on="instrument_id", how="outer")
+        merged["timestamp"] = merged["timestamp"].fillna(timestamp)
+        merged["target_weight"] = merged["target_weight"].fillna(0.0)
         merged["current_weight"] = merged["current_weight"].fillna(0.0)
         merged["delta_weight"] = merged["target_weight"] - merged["current_weight"]
         frames.append(

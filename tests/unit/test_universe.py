@@ -6,7 +6,13 @@ import pandas as pd
 import pytest
 
 from quant_research.artifacts import ArtifactStore
-from quant_research.universe import UniverseBuilder, UniverseSpec, active_on
+from quant_research.universe import (
+    UniverseBuilder,
+    UniverseSpec,
+    active_on,
+    cn_main_board,
+    is_cn_main_board_symbol,
+)
 
 
 def test_universe_builder_builds_static_members() -> None:
@@ -58,6 +64,52 @@ def test_universe_active_on_filters_effective_dates() -> None:
     assert len(active.members) == 2
     assert len(inactive.members) == 0
     assert active.diagnostics.iloc[-1]["filter"] == "active_on"
+
+
+def test_cn_main_board_filters_to_shenzhen_and_shanghai_main_board() -> None:
+    universe = UniverseBuilder().build(
+        UniverseSpec(
+            name="cn-all",
+            symbols=(
+                "600000.SH",
+                "601318.SH",
+                "603000.SH",
+                "605000.SH",
+                "000001.SZ",
+                "001979.SZ",
+                "002415.SZ",
+                "003816.SZ",
+                "300750.SZ",
+                "688001.SH",
+                "920010.BJ",
+            ),
+            market="CN",
+            asset_type="equity",
+        )
+    )
+
+    filtered = cn_main_board(universe)
+
+    assert filtered.members["symbol"].tolist() == [
+        "600000.SH",
+        "601318.SH",
+        "603000.SH",
+        "605000.SH",
+        "000001.SZ",
+        "001979.SZ",
+        "002415.SZ",
+        "003816.SZ",
+    ]
+    assert filtered.diagnostics.iloc[-1]["filter"] == "cn_main_board"
+
+
+def test_is_cn_main_board_symbol_rejects_non_main_board_markets() -> None:
+    assert is_cn_main_board_symbol("600000.SH")
+    assert not is_cn_main_board_symbol("300750.SZ")
+    assert not is_cn_main_board_symbol("688001.SH")
+    assert not is_cn_main_board_symbol("920010.BJ")
+    assert not is_cn_main_board_symbol("00001.HK", market="HK")
+    assert not is_cn_main_board_symbol("510050.SH", asset_type="fund")
 
 
 def test_universe_builder_persists_artifacts(tmp_path: Path) -> None:

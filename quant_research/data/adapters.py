@@ -49,6 +49,22 @@ class QuantDbAdapter:
             ]
         return rows_to_frame(rows)
 
+    def list_instruments(
+        self,
+        *,
+        market: str | None,
+        asset_type: str | None,
+        as_of: str | None,
+    ) -> pd.DataFrame:
+        sdk = self._sdk()
+        with self._runtime_context():
+            rows = sdk.list_instruments(
+                market=market,
+                asset_type=asset_type,
+                as_of=as_of,
+            )
+        return rows_to_frame(rows)
+
     def get_trading_calendar(
         self,
         *,

@@ -100,6 +100,29 @@ class DataPortal:
             symbols, market=market, asset_type=asset_type
         )
 
+    def list_instruments(
+        self,
+        *,
+        market: str | None = None,
+        asset_type: str | None = None,
+        as_of: str | None = None,
+        fields: list[str] | None = None,
+        cache: bool = True,
+    ) -> Any:
+        """Return canonical instruments visible under optional filters."""
+
+        frame = self._cached_frame(
+            dataset="instruments",
+            parameters={"market": market, "asset_type": asset_type, "as_of": as_of},
+            enabled=cache,
+            compute=lambda: self._adapter.list_instruments(
+                market=market,
+                asset_type=asset_type,
+                as_of=as_of,
+            ),
+        )
+        return select_fields(frame, fields)
+
     def get_trading_calendar(
         self,
         market: str,
