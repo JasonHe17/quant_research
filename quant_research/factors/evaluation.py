@@ -37,6 +37,7 @@ class SingleFactorEvaluationResult:
 
     summary: pd.DataFrame
     by_timestamp: pd.DataFrame
+    quantile_by_timestamp: pd.DataFrame
     quantile_returns: pd.DataFrame
     feature_correlation: pd.DataFrame
 
@@ -73,8 +74,9 @@ def evaluate_single_factors(
             label_column=config.label_column,
             quantiles=config.quantiles,
         )
-        quantiles.insert(0, "feature", feature)
-        quantile_frames.append(quantiles)
+        quantiles_by_timestamp = quantiles.copy()
+        quantiles_by_timestamp.insert(0, "feature", feature)
+        quantile_frames.append(quantiles_by_timestamp)
         valid = frame.loc[frame[[feature, config.label_column]].notna().all(axis=1)]
         summary_rows.append(
             _summary_row(
@@ -84,6 +86,11 @@ def evaluate_single_factors(
                 by_timestamp=by_timestamp,
             )
         )
+    quantile_by_timestamp = (
+        pd.concat(quantile_frames, ignore_index=True)
+        if quantile_frames
+        else pd.DataFrame()
+    )
     feature_correlation = frame.loc[:, list(feature_columns)].corr(
         method=config.correlation_method
     )
@@ -96,9 +103,8 @@ def evaluate_single_factors(
         by_timestamp=pd.concat(timestamp_frames, ignore_index=True)
         if timestamp_frames
         else pd.DataFrame(),
-        quantile_returns=pd.concat(quantile_frames, ignore_index=True)
-        if quantile_frames
-        else pd.DataFrame(),
+        quantile_by_timestamp=quantile_by_timestamp,
+        quantile_returns=_summarize_quantiles(quantile_by_timestamp),
         feature_correlation=feature_correlation,
     )
 
@@ -164,13 +170,22 @@ def _evaluate_factor_quantiles(
                     "mean_label": quantile_group[label_column].mean(),
                 }
             )
-    if not rows:
+    return pd.DataFrame(rows)
+
+
+def _summarize_quantiles(quantile_by_timestamp: pd.DataFrame) -> pd.DataFrame:
+    if quantile_by_timestamp.empty:
         return pd.DataFrame(
-            columns=["quantile", "timestamp_count", "sample_count", "mean_label"]
+            columns=[
+                "feature",
+                "quantile",
+                "timestamp_count",
+                "sample_count",
+                "mean_label",
+            ]
         )
-    by_timestamp = pd.DataFrame(rows)
     return (
-        by_timestamp.groupby("quantile", as_index=False)
+        quantile_by_timestamp.groupby(["feature", "quantile"], as_index=False)
         .agg(
             timestamp_count=("timestamp", "nunique"),
             sample_count=("sample_count", "sum"),

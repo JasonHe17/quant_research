@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -15,9 +16,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from quant_research.factors import (
     SingleFactorEvaluationConfig,
+    SingleFactorEvaluationResult,
     evaluate_single_factors,
 )
-from quant_research.models import load_supervised_partitions
+from quant_research.models import infer_feature_columns
 
 
 def main() -> None:
@@ -25,7 +27,6 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     dataset_paths = _dataset_paths(args)
-    frame = load_supervised_partitions(dataset_paths)
     config = SingleFactorEvaluationConfig(
         label_column=args.label_column,
         feature_columns=tuple(args.feature_columns or ()),
@@ -33,7 +34,7 @@ def main() -> None:
         quantiles=args.quantiles,
         correlation_method=args.correlation_method,
     )
-    result = evaluate_single_factors(frame, config)
+    result = _evaluate_dataset_paths(dataset_paths, config)
     summary_path = output_dir / "single_factor_summary.csv"
     by_timestamp_path = output_dir / "single_factor_by_timestamp.csv"
     quantile_path = output_dir / "single_factor_quantiles.csv"
@@ -74,6 +75,187 @@ def _dataset_paths(args: argparse.Namespace) -> list[Path]:
     if not paths:
         raise FileNotFoundError(f"no dataset_*.parquet files found under {dataset_dir}")
     return paths
+
+
+def _evaluate_dataset_paths(
+    dataset_paths: list[Path],
+    config: SingleFactorEvaluationConfig,
+) -> SingleFactorEvaluationResult:
+    feature_columns = config.feature_columns
+    total_rows = 0
+    by_timestamp_frames: list[pd.DataFrame] = []
+    quantile_frames: list[pd.DataFrame] = []
+    corr_stats: _CorrelationStats | None = None
+    for path in dataset_paths:
+        frame = pd.read_parquet(path)
+        total_rows += len(frame)
+        if not feature_columns:
+            feature_columns = infer_feature_columns(
+                frame,
+                label_column=config.label_column,
+            )
+        partition_config = replace(config, feature_columns=feature_columns)
+        print(f"evaluating {path.name}: rows={len(frame)}", flush=True)
+        result = evaluate_single_factors(frame, partition_config)
+        by_timestamp_frames.append(result.by_timestamp)
+        quantile_frames.append(result.quantile_by_timestamp)
+        corr_stats = _update_correlation_stats(
+            corr_stats,
+            frame,
+            feature_columns,
+            method=config.correlation_method,
+        )
+    if corr_stats is None:
+        raise ValueError("no dataset rows loaded")
+    by_timestamp = pd.concat(by_timestamp_frames, ignore_index=True)
+    quantile_by_timestamp = pd.concat(quantile_frames, ignore_index=True)
+    return SingleFactorEvaluationResult(
+        summary=_summarize_by_timestamp(by_timestamp, total_rows=total_rows),
+        by_timestamp=by_timestamp,
+        quantile_by_timestamp=quantile_by_timestamp,
+        quantile_returns=_summarize_quantiles(quantile_by_timestamp),
+        feature_correlation=corr_stats.to_frame(),
+    )
+
+
+def _summarize_by_timestamp(
+    by_timestamp: pd.DataFrame,
+    *,
+    total_rows: int,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for feature, group in by_timestamp.groupby("feature", sort=True):
+        sample_count = int(group["sample_count"].sum())
+        rows.append(
+            {
+                "feature": feature,
+                "sample_count": sample_count,
+                "coverage": sample_count / total_rows if total_rows else 0.0,
+                "timestamp_count": int(group["timestamp"].nunique()),
+                "pearson_ic_mean": _nullable_float(group["pearson_ic"].mean()),
+                "spearman_rank_ic_mean": _nullable_float(
+                    group["spearman_rank_ic"].mean()
+                ),
+                "top_n_mean_label": _nullable_float(group["top_n_mean_label"].mean()),
+                "bottom_n_mean_label": _nullable_float(
+                    group["bottom_n_mean_label"].mean()
+                ),
+                "top_minus_bottom_label": _nullable_float(
+                    group["top_minus_bottom_label"].mean()
+                ),
+                "top_n_turnover": _nullable_float(group["top_n_turnover"].mean()),
+            }
+        )
+    return pd.DataFrame(rows).sort_values(
+        "spearman_rank_ic_mean",
+        ascending=False,
+        na_position="last",
+    )
+
+
+def _summarize_quantiles(quantile_by_timestamp: pd.DataFrame) -> pd.DataFrame:
+    if quantile_by_timestamp.empty:
+        return pd.DataFrame()
+    return (
+        quantile_by_timestamp.groupby(["feature", "quantile"], as_index=False)
+        .agg(
+            timestamp_count=("timestamp", "nunique"),
+            sample_count=("sample_count", "sum"),
+            mean_label=("mean_label", "mean"),
+        )
+        .sort_values(["feature", "quantile"])
+        .reset_index(drop=True)
+    )
+
+
+class _CorrelationStats:
+    def __init__(self, feature_columns: tuple[str, ...], *, method: str) -> None:
+        self.feature_columns = feature_columns
+        self.method = method
+        self.values: dict[tuple[str, str], dict[str, float]] = {}
+        for left in feature_columns:
+            for right in feature_columns:
+                self.values[(left, right)] = {
+                    "count": 0.0,
+                    "sum_x": 0.0,
+                    "sum_y": 0.0,
+                    "sum_x2": 0.0,
+                    "sum_y2": 0.0,
+                    "sum_xy": 0.0,
+                    "weighted_corr": 0.0,
+                    "weight": 0.0,
+                }
+
+    def update(self, frame: pd.DataFrame) -> None:
+        for left in self.feature_columns:
+            for right in self.feature_columns:
+                pair = frame.loc[:, [left, right]].dropna()
+                stats = self.values[(left, right)]
+                if pair.empty:
+                    continue
+                if self.method == "spearman":
+                    corr = (
+                        1.0
+                        if left == right
+                        else pair[left].corr(pair[right], method="spearman")
+                    )
+                    if pd.notna(corr):
+                        stats["weighted_corr"] += float(corr) * len(pair)
+                        stats["weight"] += float(len(pair))
+                    continue
+                x = pair[left].astype(float)
+                y = pair[right].astype(float)
+                stats["count"] += float(len(pair))
+                stats["sum_x"] += float(x.sum())
+                stats["sum_y"] += float(y.sum())
+                stats["sum_x2"] += float((x * x).sum())
+                stats["sum_y2"] += float((y * y).sum())
+                stats["sum_xy"] += float((x * y).sum())
+
+    def to_frame(self) -> pd.DataFrame:
+        rows: list[list[float | None]] = []
+        for left in self.feature_columns:
+            row: list[float | None] = []
+            for right in self.feature_columns:
+                row.append(_correlation_from_stats(self.values[(left, right)], self.method))
+            rows.append(row)
+        return pd.DataFrame(rows, index=self.feature_columns, columns=self.feature_columns)
+
+
+def _update_correlation_stats(
+    stats: _CorrelationStats | None,
+    frame: pd.DataFrame,
+    feature_columns: tuple[str, ...],
+    method: str,
+) -> _CorrelationStats:
+    if stats is None:
+        stats = _CorrelationStats(feature_columns, method=method)
+    stats.update(frame)
+    return stats
+
+
+def _correlation_from_stats(stats: dict[str, float], method: str) -> float | None:
+    if method == "spearman":
+        weight = stats["weight"]
+        if weight == 0:
+            return None
+        return stats["weighted_corr"] / weight
+    count = stats["count"]
+    if count <= 1:
+        return None
+    numerator = stats["sum_xy"] - stats["sum_x"] * stats["sum_y"] / count
+    variance_x = stats["sum_x2"] - stats["sum_x"] ** 2 / count
+    variance_y = stats["sum_y2"] - stats["sum_y"] ** 2 / count
+    denominator = (variance_x * variance_y) ** 0.5
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def _nullable_float(value: object) -> float | None:
+    if pd.isna(value):
+        return None
+    return float(value)
 
 
 def _parse_args() -> argparse.Namespace:
