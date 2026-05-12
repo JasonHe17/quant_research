@@ -21,10 +21,10 @@ from quant_research.metrics.risk import max_drawdown
 from run_baseline_a_real_backtest import (
     BacktestParams,
     _append_frame_csv,
-    _build_next_bar_executions,
     _final_positions,
     _load_bars,
     _simulate,
+    _trade_metrics,
 )
 
 
@@ -38,7 +38,12 @@ class TreeScoreBacktestParams:
     initial_cash: float
     commission_bps: float
     slippage_bps: float
+    sell_stamp_tax_bps: float
+    min_commission: float
     lot_size: int
+    rebalance_every_n_bars: int
+    hold_rank_buffer: int | None
+    min_trade_weight: float
     output_dir: Path
 
 
@@ -64,6 +69,9 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         lot_size=params.lot_size,
         max_symbols=None,
         output_dir=params.output_dir,
+        sell_stamp_tax_bps=params.sell_stamp_tax_bps,
+        min_commission=params.min_commission,
+        min_trade_weight=params.min_trade_weight,
     )
     params.output_dir.mkdir(parents=True, exist_ok=True)
     for filename in ("trades.csv", "equity_curve.csv"):
@@ -71,13 +79,14 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         if path.exists():
             path.unlink()
 
-    signals = _load_top_score_signals(params)
+    ranked_signals = _load_ranked_score_signals(params)
+    signals = _build_buffered_target_weights(ranked_signals, params)
     if signals.empty:
         raise ValueError("no score signals loaded for requested period")
     bars = _load_bars(backtest_params)
     if bars.empty:
         raise ValueError("no bars loaded for requested period")
-    executions = _build_next_bar_executions(bars, signals)
+    executions = _build_tree_score_executions(bars, signals)
     if executions.empty:
         raise ValueError("no executable tree score signals after next-bar shift")
     trades, equity_curve, _, state = _simulate(executions, backtest_params)
@@ -94,6 +103,7 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         "trade_count": float(len(trades)),
         "final_equity": float(equity_values[-1]),
     }
+    metrics.update(_trade_metrics(trades, equity_values))
     summary = {
         "params": {
             "predictions_path": str(params.predictions_path),
@@ -104,7 +114,12 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "initial_cash": params.initial_cash,
             "commission_bps": params.commission_bps,
             "slippage_bps": params.slippage_bps,
+            "sell_stamp_tax_bps": params.sell_stamp_tax_bps,
+            "min_commission": params.min_commission,
             "lot_size": params.lot_size,
+            "rebalance_every_n_bars": params.rebalance_every_n_bars,
+            "hold_rank_buffer": params.hold_rank_buffer,
+            "min_trade_weight": params.min_trade_weight,
         },
         "bar_count": int(len(bars)),
         "signal_count": int(len(signals)),
@@ -121,41 +136,174 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
     }
 
 
-def _load_top_score_signals(params: TreeScoreBacktestParams) -> pd.DataFrame:
+def _load_ranked_score_signals(params: TreeScoreBacktestParams) -> pd.DataFrame:
+    rank_limit = max(params.top_n, params.hold_rank_buffer or params.top_n)
     connection = duckdb.connect()
     try:
         query = """
-            WITH ranked AS (
+            WITH signal_times AS (
                 SELECT
-                    timestamp AS signal_time,
-                    instrument_id,
-                    score,
+                    timestamp,
+                    row_number() OVER (ORDER BY timestamp) AS time_rank
+                FROM (
+                    SELECT DISTINCT timestamp
+                    FROM read_parquet(?)
+                    WHERE timestamp >= ?
+                      AND timestamp <= ?
+                      AND score IS NOT NULL
+                )
+            ),
+            ranked AS (
+                SELECT
+                    p.timestamp AS signal_time,
+                    p.instrument_id,
+                    p.score,
+                    t.time_rank,
                     row_number() OVER (
-                        PARTITION BY timestamp
-                        ORDER BY score DESC, instrument_id ASC
+                        PARTITION BY p.timestamp
+                        ORDER BY p.score DESC, p.instrument_id ASC
                     ) AS rank
-                FROM read_parquet(?)
-                WHERE timestamp >= ?
-                  AND timestamp <= ?
-                  AND score IS NOT NULL
+                FROM read_parquet(?) p
+                JOIN signal_times t
+                  ON p.timestamp = t.timestamp
+                WHERE p.timestamp >= ?
+                  AND p.timestamp <= ?
+                  AND p.score IS NOT NULL
+                  AND ((t.time_rank - 1) % ?) = 0
             )
             SELECT
                 signal_time,
-                signal_time AS bar_end_time,
                 instrument_id,
                 score,
-                rank,
-                1.0 / count(*) OVER (PARTITION BY signal_time) AS target_weight
+                rank
             FROM ranked
             WHERE rank <= ?
             ORDER BY signal_time, rank
         """
         return connection.execute(
             query,
-            [str(params.predictions_path), params.start, params.end, params.top_n],
+            [
+                str(params.predictions_path),
+                params.start,
+                params.end,
+                str(params.predictions_path),
+                params.start,
+                params.end,
+                params.rebalance_every_n_bars,
+                rank_limit,
+            ],
         ).fetchdf()
     finally:
         connection.close()
+
+
+def _build_buffered_target_weights(
+    ranked_signals: pd.DataFrame,
+    params: TreeScoreBacktestParams,
+) -> pd.DataFrame:
+    if ranked_signals.empty:
+        return pd.DataFrame(
+            columns=[
+                "signal_time",
+                "bar_end_time",
+                "instrument_id",
+                "score",
+                "rank",
+                "target_weight",
+            ]
+        )
+    rows: list[pd.DataFrame] = []
+    previous_targets: list[str] = []
+    buffer_rank = params.hold_rank_buffer
+    for signal_time, group in ranked_signals.groupby("signal_time", sort=True):
+        group = group.sort_values(["rank", "instrument_id"]).copy()
+        rank_by_instrument = {
+            str(row.instrument_id): int(row.rank)
+            for row in group.itertuples(index=False)
+        }
+        selected: list[str] = []
+        if buffer_rank is not None:
+            selected.extend(
+                instrument_id
+                for instrument_id in previous_targets
+                if rank_by_instrument.get(instrument_id, buffer_rank + 1)
+                <= buffer_rank
+            )
+        for row in group.itertuples(index=False):
+            instrument_id = str(row.instrument_id)
+            if instrument_id not in selected:
+                selected.append(instrument_id)
+            if len(selected) >= params.top_n:
+                break
+        selected = selected[: params.top_n]
+        if not selected:
+            continue
+        selected_frame = group.loc[group["instrument_id"].astype(str).isin(selected)].copy()
+        selected_frame["_order"] = selected_frame["instrument_id"].astype(str).map(
+            {instrument_id: index for index, instrument_id in enumerate(selected)}
+        )
+        selected_frame = selected_frame.sort_values("_order")
+        selected_frame["bar_end_time"] = signal_time
+        selected_frame["target_weight"] = 1.0 / len(selected_frame)
+        rows.append(
+            selected_frame.loc[
+                :,
+                [
+                    "signal_time",
+                    "bar_end_time",
+                    "instrument_id",
+                    "score",
+                    "rank",
+                    "target_weight",
+                ],
+            ]
+        )
+        previous_targets = selected
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "signal_time",
+                "bar_end_time",
+                "instrument_id",
+                "score",
+                "rank",
+                "target_weight",
+            ]
+        )
+    return pd.concat(rows, ignore_index=True)
+
+
+def _build_tree_score_executions(
+    bars: pd.DataFrame,
+    signals: pd.DataFrame,
+) -> pd.DataFrame:
+    signal_times = sorted(signals["signal_time"].unique().tolist())
+    all_times = sorted(bars["bar_end_time"].unique().tolist())
+    next_time_by_signal = {
+        signal_time: all_times[index + 1]
+        for index, signal_time in enumerate(all_times[:-1])
+        if signal_time in signal_times
+    }
+    shifted = signals.copy()
+    shifted["exec_time"] = shifted["signal_time"].map(next_time_by_signal)
+    shifted = shifted.loc[shifted["exec_time"].notna()].copy()
+    prices = bars.loc[
+        :,
+        [
+            "bar_end_time",
+            "instrument_id",
+            "canonical_code",
+            "open_price",
+            "close_price",
+        ],
+    ].rename(columns={"bar_end_time": "exec_time"})
+    if shifted.empty:
+        return prices.assign(target_weight=pd.NA)
+    target_weights = shifted.loc[
+        :,
+        ["exec_time", "instrument_id", "target_weight"],
+    ].copy()
+    return prices.merge(target_weights, on=["exec_time", "instrument_id"], how="left")
 
 
 def _write_outputs(result: dict[str, object], params: TreeScoreBacktestParams) -> None:
@@ -179,11 +327,30 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--initial-cash", type=float, default=1_000_000.0)
     parser.add_argument("--commission-bps", type=float, default=0.0)
     parser.add_argument("--slippage-bps", type=float, default=0.0)
+    parser.add_argument("--sell-stamp-tax-bps", type=float, default=0.0)
+    parser.add_argument("--min-commission", type=float, default=0.0)
     parser.add_argument("--lot-size", type=int, default=100)
+    parser.add_argument("--rebalance-every-n-bars", type=int, default=1)
+    parser.add_argument("--hold-rank-buffer", type=int)
+    parser.add_argument("--min-trade-weight", type=float, default=0.0)
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
     if args.top_n <= 0:
         raise ValueError("--top-n must be positive")
+    if args.rebalance_every_n_bars <= 0:
+        raise ValueError("--rebalance-every-n-bars must be positive")
+    if args.hold_rank_buffer is not None and args.hold_rank_buffer < args.top_n:
+        raise ValueError("--hold-rank-buffer must be greater than or equal to --top-n")
+    if args.commission_bps < 0:
+        raise ValueError("--commission-bps must be non-negative")
+    if args.slippage_bps < 0:
+        raise ValueError("--slippage-bps must be non-negative")
+    if args.sell_stamp_tax_bps < 0:
+        raise ValueError("--sell-stamp-tax-bps must be non-negative")
+    if args.min_commission < 0:
+        raise ValueError("--min-commission must be non-negative")
+    if not 0 <= args.min_trade_weight <= 1:
+        raise ValueError("--min-trade-weight must be in [0, 1]")
     return TreeScoreBacktestParams(
         predictions_path=Path(args.predictions_path),
         catalog_path=Path(args.catalog_path),
@@ -193,7 +360,12 @@ def _parse_args() -> TreeScoreBacktestParams:
         initial_cash=args.initial_cash,
         commission_bps=args.commission_bps,
         slippage_bps=args.slippage_bps,
+        sell_stamp_tax_bps=args.sell_stamp_tax_bps,
+        min_commission=args.min_commission,
         lot_size=args.lot_size,
+        rebalance_every_n_bars=args.rebalance_every_n_bars,
+        hold_rank_buffer=args.hold_rank_buffer,
+        min_trade_weight=args.min_trade_weight,
         output_dir=Path(args.output_dir),
     )
 

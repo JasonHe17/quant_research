@@ -35,6 +35,9 @@ class BacktestParams:
     lot_size: int
     max_symbols: int | None
     output_dir: Path | None
+    sell_stamp_tax_bps: float = 0.0
+    min_commission: float = 0.0
+    min_trade_weight: float = 0.0
 
 
 @dataclass(slots=True)
@@ -69,6 +72,7 @@ def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
     equity_curves: list[pd.DataFrame] = []
     equity_values = [params.initial_cash]
     trade_count = 0
+    trade_metric_totals = _empty_trade_metric_totals()
     total_bars = 0
     total_signals = 0
     instruments: set[str] = set()
@@ -96,6 +100,10 @@ def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
         )
         if not period_trades.empty:
             trade_count += len(period_trades)
+            _merge_trade_metric_totals(
+                trade_metric_totals,
+                _trade_metric_totals(period_trades),
+            )
             if params.output_dir is not None:
                 _append_frame_csv(period_trades, params.output_dir / "trades.csv")
             else:
@@ -121,6 +129,7 @@ def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
         "trade_count": float(trade_count if params.output_dir is not None else len(all_trades)),
         "final_equity": float(equity_values[-1]),
     }
+    metrics.update(_trade_metrics_from_totals(trade_metric_totals, equity_values))
     return {
         "metrics": metrics,
         "trades": all_trades,
@@ -148,6 +157,7 @@ def run_backtest(bars: pd.DataFrame, params: BacktestParams) -> dict[str, object
         "trade_count": float(len(trades)),
         "final_equity": float(equity_values[-1]),
     }
+    metrics.update(_trade_metrics(trades, equity_values))
     return {
         "metrics": metrics,
         "trades": trades,
@@ -349,52 +359,83 @@ def _simulate(
         }
         state.last_prices.update(close_by_instrument)
         equity = state.cash + _positions_value(state.lots, state.last_prices)
-        targets = {
-            str(row.instrument_id): float(row.target_weight)
-            for row in group.itertuples(index=False)
-        }
-        instruments = sorted(set(state.lots) | set(targets))
-        for instrument_id in instruments:
-            if instrument_id not in price_by_instrument:
-                continue
-            price = price_by_instrument[instrument_id]
-            target_value = equity * targets.get(instrument_id, 0.0)
-            current_value = _instrument_shares(state.lots, instrument_id) * price
-            delta_value = target_value - current_value
-            if delta_value > price * params.lot_size:
-                shares = int(delta_value / price / params.lot_size) * params.lot_size
-                cost_price = price * (1.0 + params.slippage_bps / 10_000.0)
-                notional = shares * cost_price
-                commission = notional * params.commission_bps / 10_000.0
-                if notional + commission <= state.cash:
-                    state.cash -= notional + commission
-                    state.lots.setdefault(instrument_id, []).append(
-                        {"shares": shares, "date": trade_date, "sellable": False}
-                    )
-                    trades.append(
-                        _trade_row(exec_time, instrument_id, "buy", shares, cost_price, commission)
-                    )
-            elif delta_value < 0:
-                shares_to_sell = int(
-                    min(
-                        -delta_value / price,
-                        _sellable_shares(state.lots, instrument_id),
-                    )
-                )
-                if shares_to_sell <= 0:
+        target_rows = group.loc[group["target_weight"].notna()]
+        if not target_rows.empty:
+            targets = {
+                str(row.instrument_id): float(row.target_weight)
+                for row in target_rows.itertuples(index=False)
+            }
+            instruments = sorted(set(state.lots) | set(targets))
+            for instrument_id in instruments:
+                if instrument_id not in price_by_instrument:
                     continue
-                sell_price = price * (1.0 - params.slippage_bps / 10_000.0)
-                sold = _remove_sellable_shares(
-                    state.lots,
-                    instrument_id,
-                    shares_to_sell,
-                )
-                notional = sold * sell_price
-                commission = notional * params.commission_bps / 10_000.0
-                state.cash += notional - commission
-                trades.append(
-                    _trade_row(exec_time, instrument_id, "sell", sold, sell_price, commission)
-                )
+                price = price_by_instrument[instrument_id]
+                target_value = equity * targets.get(instrument_id, 0.0)
+                current_value = _instrument_shares(state.lots, instrument_id) * price
+                delta_value = target_value - current_value
+                if (
+                    params.min_trade_weight > 0
+                    and equity > 0
+                    and abs(delta_value) / equity < params.min_trade_weight
+                ):
+                    continue
+                if delta_value > price * params.lot_size:
+                    shares = int(delta_value / price / params.lot_size) * params.lot_size
+                    cost_price = price * (1.0 + params.slippage_bps / 10_000.0)
+                    notional = shares * cost_price
+                    commission = _commission(notional, params)
+                    slippage_cost = shares * (cost_price - price)
+                    if notional + commission <= state.cash:
+                        state.cash -= notional + commission
+                        state.lots.setdefault(instrument_id, []).append(
+                            {"shares": shares, "date": trade_date, "sellable": False}
+                        )
+                        trades.append(
+                            _trade_row(
+                                exec_time,
+                                instrument_id,
+                                "buy",
+                                shares,
+                                cost_price,
+                                commission,
+                                stamp_tax=0.0,
+                                slippage_cost=slippage_cost,
+                                reference_price=price,
+                            )
+                        )
+                elif delta_value < 0:
+                    shares_to_sell = int(
+                        min(
+                            -delta_value / price,
+                            _sellable_shares(state.lots, instrument_id),
+                        )
+                    )
+                    if shares_to_sell <= 0:
+                        continue
+                    sell_price = price * (1.0 - params.slippage_bps / 10_000.0)
+                    sold = _remove_sellable_shares(
+                        state.lots,
+                        instrument_id,
+                        shares_to_sell,
+                    )
+                    notional = sold * sell_price
+                    commission = _commission(notional, params)
+                    stamp_tax = notional * params.sell_stamp_tax_bps / 10_000.0
+                    slippage_cost = sold * (price - sell_price)
+                    state.cash += notional - commission - stamp_tax
+                    trades.append(
+                        _trade_row(
+                            exec_time,
+                            instrument_id,
+                            "sell",
+                            sold,
+                            sell_price,
+                            commission,
+                            stamp_tax=stamp_tax,
+                            slippage_cost=slippage_cost,
+                            reference_price=price,
+                        )
+                    )
         equity_rows.append(
             {
                 "timestamp": exec_time,
@@ -452,15 +493,90 @@ def _trade_row(
     shares: int,
     price: float,
     commission: float,
+    *,
+    stamp_tax: float,
+    slippage_cost: float,
+    reference_price: float,
 ) -> dict[str, object]:
+    notional = shares * price
+    reference_notional = shares * reference_price
     return {
         "timestamp": timestamp,
         "instrument_id": instrument_id,
         "side": side,
         "shares": shares,
         "price": price,
+        "reference_price": reference_price,
         "commission": commission,
-        "notional": shares * price,
+        "stamp_tax": stamp_tax,
+        "slippage_cost": slippage_cost,
+        "total_cost": commission + stamp_tax + slippage_cost,
+        "notional": notional,
+        "reference_notional": reference_notional,
+    }
+
+
+def _commission(notional: float, params: BacktestParams) -> float:
+    commission = notional * params.commission_bps / 10_000.0
+    if commission > 0 and params.min_commission > 0:
+        return max(commission, params.min_commission)
+    return commission
+
+
+def _trade_metrics(trades: pd.DataFrame, equity_values: list[float]) -> dict[str, float]:
+    if trades.empty:
+        return _trade_metrics_from_totals(_empty_trade_metric_totals(), equity_values)
+    return _trade_metrics_from_totals(_trade_metric_totals(trades), equity_values)
+
+
+def _trade_metric_totals(trades: pd.DataFrame) -> dict[str, float]:
+    buy_notional = float(trades.loc[trades["side"] == "buy", "notional"].sum())
+    sell_notional = float(trades.loc[trades["side"] == "sell", "notional"].sum())
+    return {
+        "buy_notional": buy_notional,
+        "sell_notional": sell_notional,
+        "gross_traded_notional": float(trades["notional"].sum()),
+        "total_commission": float(trades["commission"].sum()),
+        "total_stamp_tax": float(trades["stamp_tax"].sum()),
+        "total_slippage_cost": float(trades["slippage_cost"].sum()),
+    }
+
+
+def _empty_trade_metric_totals() -> dict[str, float]:
+    return {
+        "buy_notional": 0.0,
+        "sell_notional": 0.0,
+        "gross_traded_notional": 0.0,
+        "total_commission": 0.0,
+        "total_stamp_tax": 0.0,
+        "total_slippage_cost": 0.0,
+    }
+
+
+def _merge_trade_metric_totals(
+    totals: dict[str, float],
+    other: dict[str, float],
+) -> None:
+    for key, value in other.items():
+        totals[key] += value
+
+
+def _trade_metrics_from_totals(
+    totals: dict[str, float],
+    equity_values: list[float],
+) -> dict[str, float]:
+    average_equity = sum(equity_values) / len(equity_values) if equity_values else 0.0
+    total_transaction_cost = (
+        totals["total_commission"]
+        + totals["total_stamp_tax"]
+        + totals["total_slippage_cost"]
+    )
+    return {
+        **totals,
+        "gross_turnover": totals["gross_traded_notional"] / average_equity
+        if average_equity
+        else 0.0,
+        "total_transaction_cost": total_transaction_cost,
     }
 
 
@@ -516,6 +632,9 @@ def _write_summary(result: dict[str, object], params: BacktestParams) -> None:
             "liquidity_window_bars": params.liquidity_window_bars,
             "commission_bps": params.commission_bps,
             "slippage_bps": params.slippage_bps,
+            "sell_stamp_tax_bps": params.sell_stamp_tax_bps,
+            "min_commission": params.min_commission,
+            "min_trade_weight": params.min_trade_weight,
             "lot_size": params.lot_size,
             "max_symbols": params.max_symbols,
         },
@@ -550,12 +669,25 @@ def _parse_args() -> BacktestParams:
     parser.add_argument("--liquidity-window-bars", type=int, default=1)
     parser.add_argument("--commission-bps", type=float, default=0.0)
     parser.add_argument("--slippage-bps", type=float, default=0.0)
+    parser.add_argument("--sell-stamp-tax-bps", type=float, default=0.0)
+    parser.add_argument("--min-commission", type=float, default=0.0)
+    parser.add_argument("--min-trade-weight", type=float, default=0.0)
     parser.add_argument("--lot-size", type=int, default=100)
     parser.add_argument("--max-symbols", type=int)
     parser.add_argument("--output-dir")
     args = parser.parse_args()
     if args.top_n <= 0:
         raise ValueError("--top-n must be positive")
+    if args.commission_bps < 0:
+        raise ValueError("--commission-bps must be non-negative")
+    if args.slippage_bps < 0:
+        raise ValueError("--slippage-bps must be non-negative")
+    if args.sell_stamp_tax_bps < 0:
+        raise ValueError("--sell-stamp-tax-bps must be non-negative")
+    if args.min_commission < 0:
+        raise ValueError("--min-commission must be non-negative")
+    if not 0 <= args.min_trade_weight <= 1:
+        raise ValueError("--min-trade-weight must be in [0, 1]")
     return BacktestParams(
         catalog_path=Path(args.catalog_path),
         start=args.start,
@@ -570,6 +702,9 @@ def _parse_args() -> BacktestParams:
         lot_size=args.lot_size,
         max_symbols=args.max_symbols,
         output_dir=Path(args.output_dir) if args.output_dir else None,
+        sell_stamp_tax_bps=args.sell_stamp_tax_bps,
+        min_commission=args.min_commission,
+        min_trade_weight=args.min_trade_weight,
     )
 
 
