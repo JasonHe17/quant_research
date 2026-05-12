@@ -158,6 +158,12 @@ def _run_fold(
             str(args.rebalance_every_n_bars),
             "--min-trade-weight",
             str(args.min_trade_weight),
+            "--limit-up-bps",
+            str(args.limit_up_bps),
+            "--limit-down-bps",
+            str(args.limit_down_bps),
+            "--max-bar-turnover-participation",
+            str(args.max_bar_turnover_participation),
             "--output-dir",
             str(backtest_dir),
             *(
@@ -165,6 +171,7 @@ def _run_fold(
                 if args.hold_rank_buffer is not None
                 else []
             ),
+            *(["--exclude-st"] if args.exclude_st else []),
         ],
     )
     return _fold_row(fold, model_dir=model_dir, backtest_dir=backtest_dir)
@@ -232,6 +239,10 @@ def _write_summary(
             "rebalance_every_n_bars": args.rebalance_every_n_bars,
             "hold_rank_buffer": args.hold_rank_buffer,
             "min_trade_weight": args.min_trade_weight,
+            "exclude_st": args.exclude_st,
+            "limit_up_bps": args.limit_up_bps,
+            "limit_down_bps": args.limit_down_bps,
+            "max_bar_turnover_participation": args.max_bar_turnover_participation,
             "num_boost_round": args.num_boost_round,
             "early_stopping_rounds": args.early_stopping_rounds,
             "num_threads": args.num_threads,
@@ -289,6 +300,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--rebalance-every-n-bars", type=int, default=6)
     parser.add_argument("--hold-rank-buffer", type=int, default=100)
     parser.add_argument("--min-trade-weight", type=float, default=0.002)
+    parser.add_argument("--exclude-st", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--limit-up-bps", type=float, default=980.0)
+    parser.add_argument("--limit-down-bps", type=float, default=980.0)
+    parser.add_argument("--max-bar-turnover-participation", type=float, default=0.05)
     parser.add_argument("--num-boost-round", type=int, default=200)
     parser.add_argument("--early-stopping-rounds", type=int, default=25)
     parser.add_argument("--num-threads", type=int, default=4)
@@ -304,6 +319,12 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--hold-rank-buffer must be greater than or equal to --top-n")
     if args.max_folds is not None and args.max_folds <= 0:
         raise ValueError("--max-folds must be positive")
+    if args.limit_up_bps <= 0:
+        raise ValueError("--limit-up-bps must be positive")
+    if args.limit_down_bps <= 0:
+        raise ValueError("--limit-down-bps must be positive")
+    if not 0 < args.max_bar_turnover_participation <= 1:
+        raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
     return args
 
 

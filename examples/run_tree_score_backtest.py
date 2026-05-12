@@ -21,6 +21,7 @@ from quant_research.metrics.risk import max_drawdown
 from run_baseline_a_real_backtest import (
     BacktestParams,
     _append_frame_csv,
+    _execution_constraint_counts,
     _final_positions,
     _load_bars,
     _simulate,
@@ -44,6 +45,10 @@ class TreeScoreBacktestParams:
     rebalance_every_n_bars: int
     hold_rank_buffer: int | None
     min_trade_weight: float
+    exclude_st: bool
+    limit_up_bps: float | None
+    limit_down_bps: float | None
+    max_bar_turnover_participation: float | None
     output_dir: Path
 
 
@@ -72,6 +77,10 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         sell_stamp_tax_bps=params.sell_stamp_tax_bps,
         min_commission=params.min_commission,
         min_trade_weight=params.min_trade_weight,
+        exclude_st=params.exclude_st,
+        limit_up_bps=params.limit_up_bps,
+        limit_down_bps=params.limit_down_bps,
+        max_bar_turnover_participation=params.max_bar_turnover_participation,
     )
     params.output_dir.mkdir(parents=True, exist_ok=True)
     for filename in ("trades.csv", "equity_curve.csv"):
@@ -89,6 +98,7 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
     executions = _build_tree_score_executions(bars, signals)
     if executions.empty:
         raise ValueError("no executable tree score signals after next-bar shift")
+    execution_constraint_counts = _execution_constraint_counts(executions)
     trades, equity_curve, _, state = _simulate(executions, backtest_params)
     if not trades.empty:
         _append_frame_csv(trades, params.output_dir / "trades.csv")
@@ -120,10 +130,15 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "rebalance_every_n_bars": params.rebalance_every_n_bars,
             "hold_rank_buffer": params.hold_rank_buffer,
             "min_trade_weight": params.min_trade_weight,
+            "exclude_st": params.exclude_st,
+            "limit_up_bps": params.limit_up_bps,
+            "limit_down_bps": params.limit_down_bps,
+            "max_bar_turnover_participation": params.max_bar_turnover_participation,
         },
         "bar_count": int(len(bars)),
         "signal_count": int(len(signals)),
         "execution_row_count": int(len(executions)),
+        "execution_constraint_counts": execution_constraint_counts,
         "instrument_count": int(bars["instrument_id"].nunique()),
         "metrics": metrics,
     }
@@ -295,6 +310,10 @@ def _build_tree_score_executions(
             "canonical_code",
             "open_price",
             "close_price",
+            "turnover",
+            "tradable_bar",
+            "limit_up_open",
+            "limit_down_open",
         ],
     ].rename(columns={"bar_end_time": "exec_time"})
     if shifted.empty:
@@ -333,6 +352,10 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--rebalance-every-n-bars", type=int, default=1)
     parser.add_argument("--hold-rank-buffer", type=int)
     parser.add_argument("--min-trade-weight", type=float, default=0.0)
+    parser.add_argument("--exclude-st", action="store_true")
+    parser.add_argument("--limit-up-bps", type=float)
+    parser.add_argument("--limit-down-bps", type=float)
+    parser.add_argument("--max-bar-turnover-participation", type=float)
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
     if args.top_n <= 0:
@@ -351,6 +374,15 @@ def _parse_args() -> TreeScoreBacktestParams:
         raise ValueError("--min-commission must be non-negative")
     if not 0 <= args.min_trade_weight <= 1:
         raise ValueError("--min-trade-weight must be in [0, 1]")
+    if args.limit_up_bps is not None and args.limit_up_bps <= 0:
+        raise ValueError("--limit-up-bps must be positive")
+    if args.limit_down_bps is not None and args.limit_down_bps <= 0:
+        raise ValueError("--limit-down-bps must be positive")
+    if (
+        args.max_bar_turnover_participation is not None
+        and not 0 < args.max_bar_turnover_participation <= 1
+    ):
+        raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
     return TreeScoreBacktestParams(
         predictions_path=Path(args.predictions_path),
         catalog_path=Path(args.catalog_path),
@@ -366,6 +398,10 @@ def _parse_args() -> TreeScoreBacktestParams:
         rebalance_every_n_bars=args.rebalance_every_n_bars,
         hold_rank_buffer=args.hold_rank_buffer,
         min_trade_weight=args.min_trade_weight,
+        exclude_st=args.exclude_st,
+        limit_up_bps=args.limit_up_bps,
+        limit_down_bps=args.limit_down_bps,
+        max_bar_turnover_participation=args.max_bar_turnover_participation,
         output_dir=Path(args.output_dir),
     )
 
