@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 
@@ -34,7 +35,7 @@ def main() -> None:
         quantiles=args.quantiles,
         correlation_method=args.correlation_method,
     )
-    result = _evaluate_dataset_paths(dataset_paths, config)
+    result = _evaluate_dataset_paths(dataset_paths, config, workers=args.workers)
     summary_path = output_dir / "single_factor_summary.csv"
     by_timestamp_path = output_dir / "single_factor_by_timestamp.csv"
     quantile_path = output_dir / "single_factor_quantiles.csv"
@@ -51,6 +52,7 @@ def main() -> None:
             "top_n": args.top_n,
             "quantiles": args.quantiles,
             "correlation_method": args.correlation_method,
+            "workers": args.workers,
         },
         "artifacts": {
             "summary": str(summary_path),
@@ -80,31 +82,40 @@ def _dataset_paths(args: argparse.Namespace) -> list[Path]:
 def _evaluate_dataset_paths(
     dataset_paths: list[Path],
     config: SingleFactorEvaluationConfig,
+    *,
+    workers: int,
 ) -> SingleFactorEvaluationResult:
-    feature_columns = config.feature_columns
+    feature_columns = config.feature_columns or _infer_feature_columns_from_path(
+        dataset_paths[0],
+        label_column=config.label_column,
+    )
+    partition_config = replace(config, feature_columns=feature_columns)
     total_rows = 0
     by_timestamp_frames: list[pd.DataFrame] = []
     quantile_frames: list[pd.DataFrame] = []
     corr_stats: _CorrelationStats | None = None
-    for path in dataset_paths:
-        frame = pd.read_parquet(path)
-        total_rows += len(frame)
-        if not feature_columns:
-            feature_columns = infer_feature_columns(
-                frame,
-                label_column=config.label_column,
-            )
-        partition_config = replace(config, feature_columns=feature_columns)
-        print(f"evaluating {path.name}: rows={len(frame)}", flush=True)
-        result = evaluate_single_factors(frame, partition_config)
-        by_timestamp_frames.append(result.by_timestamp)
-        quantile_frames.append(result.quantile_by_timestamp)
-        corr_stats = _update_correlation_stats(
-            corr_stats,
-            frame,
-            feature_columns,
-            method=config.correlation_method,
+    if workers == 1:
+        partition_results = (
+            _evaluate_dataset_path(path, partition_config)
+            for path in dataset_paths
         )
+        for partition in partition_results:
+            total_rows += partition.row_count
+            by_timestamp_frames.append(partition.result.by_timestamp)
+            quantile_frames.append(partition.result.quantile_by_timestamp)
+            corr_stats = _merge_correlation_stats(corr_stats, partition.correlation)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                executor.submit(_evaluate_dataset_path, path, partition_config)
+                for path in dataset_paths
+            ]
+            for future in as_completed(futures):
+                partition = future.result()
+                total_rows += partition.row_count
+                by_timestamp_frames.append(partition.result.by_timestamp)
+                quantile_frames.append(partition.result.quantile_by_timestamp)
+                corr_stats = _merge_correlation_stats(corr_stats, partition.correlation)
     if corr_stats is None:
         raise ValueError("no dataset rows loaded")
     by_timestamp = pd.concat(by_timestamp_frames, ignore_index=True)
@@ -115,6 +126,52 @@ def _evaluate_dataset_paths(
         quantile_by_timestamp=quantile_by_timestamp,
         quantile_returns=_summarize_quantiles(quantile_by_timestamp),
         feature_correlation=corr_stats.to_frame(),
+    )
+
+
+class _PartitionEvaluation:
+    def __init__(
+        self,
+        *,
+        row_count: int,
+        result: SingleFactorEvaluationResult,
+        correlation: "_CorrelationStats",
+    ) -> None:
+        self.row_count = row_count
+        self.result = result
+        self.correlation = correlation
+
+
+def _infer_feature_columns_from_path(
+    path: Path,
+    *,
+    label_column: str,
+) -> tuple[str, ...]:
+    frame = pd.read_parquet(path)
+    try:
+        return infer_feature_columns(frame, label_column=label_column)
+    finally:
+        del frame
+
+
+def _evaluate_dataset_path(
+    path: Path,
+    config: SingleFactorEvaluationConfig,
+) -> _PartitionEvaluation:
+    frame = pd.read_parquet(path)
+    print(f"evaluating {path.name}: rows={len(frame)}", flush=True)
+    result = evaluate_single_factors(frame, config)
+    corr_stats = _CorrelationStats(
+        config.feature_columns,
+        method=config.correlation_method,
+    )
+    corr_stats.update(frame)
+    row_count = len(frame)
+    del frame
+    return _PartitionEvaluation(
+        row_count=row_count,
+        result=result,
+        correlation=corr_stats,
     )
 
 
@@ -203,14 +260,23 @@ class _CorrelationStats:
                         stats["weighted_corr"] += float(corr) * len(pair)
                         stats["weight"] += float(len(pair))
                     continue
-                x = pair[left].astype(float)
-                y = pair[right].astype(float)
+                x = pair.iloc[:, 0].astype(float)
+                y = pair.iloc[:, 1].astype(float)
                 stats["count"] += float(len(pair))
                 stats["sum_x"] += float(x.sum())
                 stats["sum_y"] += float(y.sum())
                 stats["sum_x2"] += float((x * x).sum())
                 stats["sum_y2"] += float((y * y).sum())
                 stats["sum_xy"] += float((x * y).sum())
+
+    def merge(self, other: "_CorrelationStats") -> None:
+        if self.feature_columns != other.feature_columns:
+            raise ValueError("cannot merge correlation stats with different features")
+        if self.method != other.method:
+            raise ValueError("cannot merge correlation stats with different methods")
+        for key, stats in self.values.items():
+            for name, value in other.values[key].items():
+                stats[name] += value
 
     def to_frame(self) -> pd.DataFrame:
         rows: list[list[float | None]] = []
@@ -222,15 +288,13 @@ class _CorrelationStats:
         return pd.DataFrame(rows, index=self.feature_columns, columns=self.feature_columns)
 
 
-def _update_correlation_stats(
+def _merge_correlation_stats(
     stats: _CorrelationStats | None,
-    frame: pd.DataFrame,
-    feature_columns: tuple[str, ...],
-    method: str,
+    other: _CorrelationStats,
 ) -> _CorrelationStats:
     if stats is None:
-        stats = _CorrelationStats(feature_columns, method=method)
-    stats.update(frame)
+        return other
+    stats.merge(other)
     return stats
 
 
@@ -272,9 +336,12 @@ def _parse_args() -> argparse.Namespace:
         choices=("pearson", "spearman"),
         default="spearman",
     )
+    parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
     if bool(args.dataset_dir) == bool(args.dataset_paths):
         raise ValueError("provide exactly one of --dataset-dir or --dataset-paths")
+    if args.workers <= 0:
+        raise ValueError("--workers must be positive")
     return args
 
 

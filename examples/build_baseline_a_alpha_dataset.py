@@ -6,6 +6,7 @@ import argparse
 import gc
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 
@@ -62,57 +63,111 @@ def main() -> None:
         end=args.end,
         partition=args.partition,
     )
-    for partition_name, core_start, core_end in chunks:
-        read_start = core_start - pd.Timedelta(days=args.padding_days)
-        read_end = core_end + pd.Timedelta(days=args.padding_days)
-        chunk_params = replace(
-            params,
-            start=_format_timestamp(read_start),
-            end=_format_timestamp(read_end),
+    if args.workers == 1:
+        row_iterable = (
+            _build_partition_dataset(
+                partition_name=partition_name,
+                core_start=core_start,
+                core_end=core_end,
+                params=params,
+                files=files,
+                args=args,
+                label_config=label_config,
+                output_dir=output_dir,
+            )
+            for partition_name, core_start, core_end in chunks
         )
-        bars = _load_bars_from_files(chunk_params, files)
-        if bars.empty:
-            continue
-        print(
-            f"loaded {partition_name}: bars={len(bars)} "
-            f"core={_format_timestamp(core_start)}..{_format_timestamp(core_end)}",
-            flush=True,
-        )
-        features = _build_reversal_feature_matrix(bars, args.lookback_bars)
-        features = _filter_core_window(features, core_start=core_start, core_end=core_end)
-        labels = build_forward_return_labels(bars, label_config)
-        labels = _filter_core_window(labels, core_start=core_start, core_end=core_end)
-        labels = add_cross_sectional_label_rank(
-            labels,
-            label_column=args.label_name,
-            rank_column=f"{args.label_name}_rank",
-        )
-        dataset = join_alpha_features_and_labels(features, labels)
-        dataset_path = output_dir / f"dataset_{partition_name}.parquet"
-        dataset.to_parquet(dataset_path, index=False)
-        feature_path = None
-        label_path = None
-        if args.write_components:
-            feature_path = output_dir / f"features_{partition_name}.parquet"
-            label_path = output_dir / f"labels_{partition_name}.parquet"
-            features.to_parquet(feature_path, index=False)
-            labels.to_parquet(label_path, index=False)
-        row = {
-            "partition": partition_name,
-            "bar_count": len(bars),
-            "feature_row_count": len(features),
-            "label_row_count": len(labels),
-            "dataset_row_count": len(dataset),
-            "instrument_count": int(bars["instrument_id"].nunique()),
-            "dataset_path": str(dataset_path),
-            "features_path": str(feature_path) if feature_path is not None else None,
-            "labels_path": str(label_path) if label_path is not None else None,
-        }
-        rows.append(row)
-        _write_summary(output_dir, args, rows)
-        del bars, features, labels, dataset
-        gc.collect()
+        for row in row_iterable:
+            if row is None:
+                continue
+            rows.append(row)
+            rows.sort(key=lambda item: str(item["partition"]))
+            _write_summary(output_dir, args, rows)
+    else:
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = [
+                executor.submit(
+                    _build_partition_dataset,
+                    partition_name=partition_name,
+                    core_start=core_start,
+                    core_end=core_end,
+                    params=params,
+                    files=files,
+                    args=args,
+                    label_config=label_config,
+                    output_dir=output_dir,
+                )
+                for partition_name, core_start, core_end in chunks
+            ]
+            for future in as_completed(futures):
+                row = future.result()
+                if row is None:
+                    continue
+                rows.append(row)
+                rows.sort(key=lambda item: str(item["partition"]))
+                _write_summary(output_dir, args, rows)
     print(pd.DataFrame(rows).to_string(index=False))
+
+
+def _build_partition_dataset(
+    *,
+    partition_name: str,
+    core_start: pd.Timestamp,
+    core_end: pd.Timestamp,
+    params: BacktestParams,
+    files: list[Path],
+    args: argparse.Namespace,
+    label_config: ForwardReturnLabelConfig,
+    output_dir: Path,
+) -> dict[str, object] | None:
+    read_start = core_start - pd.Timedelta(days=args.padding_days)
+    read_end = core_end + pd.Timedelta(days=args.padding_days)
+    chunk_params = replace(
+        params,
+        start=_format_timestamp(read_start),
+        end=_format_timestamp(read_end),
+    )
+    bars = _load_bars_from_files(chunk_params, files)
+    if bars.empty:
+        return None
+    print(
+        f"loaded {partition_name}: bars={len(bars)} "
+        f"core={_format_timestamp(core_start)}..{_format_timestamp(core_end)}",
+        flush=True,
+    )
+    features = _build_reversal_feature_matrix(bars, args.lookback_bars)
+    features = _filter_core_window(features, core_start=core_start, core_end=core_end)
+    labels = build_forward_return_labels(bars, label_config)
+    labels = _filter_core_window(labels, core_start=core_start, core_end=core_end)
+    labels = add_cross_sectional_label_rank(
+        labels,
+        label_column=args.label_name,
+        rank_column=f"{args.label_name}_rank",
+    )
+    dataset = join_alpha_features_and_labels(features, labels)
+    dataset_path = output_dir / f"dataset_{partition_name}.parquet"
+    dataset.to_parquet(dataset_path, index=False)
+    feature_path = None
+    label_path = None
+    if args.write_components:
+        feature_path = output_dir / f"features_{partition_name}.parquet"
+        label_path = output_dir / f"labels_{partition_name}.parquet"
+        features.to_parquet(feature_path, index=False)
+        labels.to_parquet(label_path, index=False)
+    row = {
+        "partition": partition_name,
+        "bar_count": len(bars),
+        "feature_row_count": len(features),
+        "label_row_count": len(labels),
+        "dataset_row_count": len(dataset),
+        "instrument_count": int(bars["instrument_id"].nunique()),
+        "dataset_path": str(dataset_path),
+        "features_path": str(feature_path) if feature_path is not None else None,
+        "labels_path": str(label_path) if label_path is not None else None,
+    }
+    del bars, features, labels, dataset
+    gc.collect()
+    return row
 
 
 def _time_chunks(
@@ -214,6 +269,7 @@ def _write_summary(
             "write_components": args.write_components,
             "partition": args.partition,
             "padding_days": args.padding_days,
+            "workers": args.workers,
         },
         "partitions": rows,
     }
@@ -240,12 +296,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-symbols", type=int)
     parser.add_argument("--partition", choices=("monthly", "yearly"), default="monthly")
     parser.add_argument("--padding-days", type=int, default=30)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--write-components", action="store_true")
     args = parser.parse_args()
     if any(value <= 0 for value in args.lookback_bars):
         raise ValueError("--lookback-bars values must be positive")
     if args.padding_days < 0:
         raise ValueError("--padding-days must be non-negative")
+    if args.workers <= 0:
+        raise ValueError("--workers must be positive")
     return args
 
 
