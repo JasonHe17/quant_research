@@ -17,8 +17,6 @@ from quant_research.models import (
     TreeBaselineConfig,
     evaluate_cross_sectional_predictions,
     infer_feature_columns,
-    load_supervised_partitions,
-    time_split,
     train_lightgbm_regressor,
 )
 
@@ -28,14 +26,18 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     dataset_paths = _dataset_paths(args)
-    frame = load_supervised_partitions(dataset_paths)
     feature_columns = (
         tuple(args.feature_columns)
         if args.feature_columns
-        else infer_feature_columns(frame, label_column=args.label_column)
+        else _infer_feature_columns_from_path(
+            dataset_paths[0],
+            label_column=args.label_column,
+        )
     )
-    splits = time_split(
-        frame,
+    splits = _load_time_splits(
+        dataset_paths,
+        label_column=args.label_column,
+        feature_columns=feature_columns,
         train_end=args.train_end,
         valid_start=args.valid_start,
         valid_end=args.valid_end,
@@ -54,14 +56,21 @@ def main() -> None:
         num_threads=args.num_threads,
     )
     booster = train_lightgbm_regressor(splits["train"], splits["valid"], config)
-    test = splits["test"].copy()
+    split_rows = {name: int(len(split)) for name, split in splits.items()}
+    del splits["train"]
+    del splits["valid"]
+    test = splits.pop("test")
+    del splits
     if test.empty:
         raise ValueError("test split is empty")
-    test["score"] = booster.predict(test.loc[:, feature_columns])
+    scores = booster.predict(test.loc[:, feature_columns])
+    predictions = test.loc[:, ["timestamp", "instrument_id", args.label_column]].copy()
+    predictions["score"] = scores
+    del test
     predictions_path = output_dir / "predictions.parquet"
-    test.to_parquet(predictions_path, index=False)
+    predictions.to_parquet(predictions_path, index=False)
     metrics, by_timestamp = evaluate_cross_sectional_predictions(
-        test,
+        predictions,
         label_column=args.label_column,
         top_n=args.top_n,
     )
@@ -90,9 +99,7 @@ def main() -> None:
             "num_boost_round": args.num_boost_round,
             "best_iteration": booster.best_iteration,
         },
-        "split_rows": {
-            name: int(len(split)) for name, split in splits.items()
-        },
+        "split_rows": split_rows,
         "metrics": metrics,
         "artifacts": {
             "predictions": str(predictions_path),
@@ -116,6 +123,76 @@ def _dataset_paths(args: argparse.Namespace) -> list[Path]:
     if not paths:
         raise FileNotFoundError(f"no dataset_*.parquet files found under {dataset_dir}")
     return paths
+
+
+def _infer_feature_columns_from_path(
+    path: Path,
+    *,
+    label_column: str,
+) -> tuple[str, ...]:
+    frame = pd.read_parquet(path)
+    try:
+        return infer_feature_columns(frame, label_column=label_column)
+    finally:
+        del frame
+
+
+def _load_time_splits(
+    paths: list[Path],
+    *,
+    label_column: str,
+    feature_columns: tuple[str, ...],
+    train_end: str,
+    valid_start: str | None,
+    valid_end: str | None,
+    test_start: str,
+    test_end: str | None,
+) -> dict[str, pd.DataFrame]:
+    columns = ["timestamp", "instrument_id", label_column, *feature_columns]
+    train_frames: list[pd.DataFrame] = []
+    valid_frames: list[pd.DataFrame] = []
+    test_frames: list[pd.DataFrame] = []
+    for path in paths:
+        frame = pd.read_parquet(path, columns=columns)
+        _downcast_numeric(frame, columns=(label_column, *feature_columns))
+        train_mask = frame["timestamp"] <= train_end
+        if train_mask.any():
+            train_frames.append(
+                frame.loc[train_mask, [label_column, *feature_columns]]
+                .reset_index(drop=True)
+            )
+        if valid_start is not None:
+            valid_mask = frame["timestamp"] >= valid_start
+            if valid_end is not None:
+                valid_mask = valid_mask & (frame["timestamp"] <= valid_end)
+            if valid_mask.any():
+                valid_frames.append(
+                    frame.loc[valid_mask, [label_column, *feature_columns]]
+                    .reset_index(drop=True)
+                )
+        test_mask = frame["timestamp"] >= test_start
+        if test_end is not None:
+            test_mask = test_mask & (frame["timestamp"] <= test_end)
+        if test_mask.any():
+            test_frames.append(frame.loc[test_mask].reset_index(drop=True))
+        del frame
+    return {
+        "train": _concat_or_empty(train_frames, columns=[label_column, *feature_columns]),
+        "valid": _concat_or_empty(valid_frames, columns=[label_column, *feature_columns]),
+        "test": _concat_or_empty(test_frames, columns=columns),
+    }
+
+
+def _downcast_numeric(frame: pd.DataFrame, *, columns: tuple[str, ...]) -> None:
+    for column in columns:
+        if pd.api.types.is_numeric_dtype(frame[column]):
+            frame[column] = pd.to_numeric(frame[column], downcast="float")
+
+
+def _concat_or_empty(frames: list[pd.DataFrame], *, columns: list[str]) -> pd.DataFrame:
+    if not frames:
+        return pd.DataFrame(columns=columns)
+    return pd.concat(frames, ignore_index=True)
 
 
 def _parse_args() -> argparse.Namespace:

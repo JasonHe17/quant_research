@@ -124,7 +124,7 @@ def train_lightgbm_regressor(
             "lightgbm is required for tree baseline training; install it in the "
             "quant environment with `python -m pip install lightgbm`"
         ) from exc
-    _require_columns(train, ("timestamp", "instrument_id", config.label_column))
+    _require_columns(train, (config.label_column,))
     if train.empty:
         raise ValueError("train split is empty")
     feature_columns = _feature_columns_or_infer(train, config)
@@ -138,7 +138,7 @@ def train_lightgbm_regressor(
     valid_names = ["train"]
     callbacks: list[object] = []
     if not valid.empty:
-        _require_columns(valid, ("timestamp", "instrument_id", config.label_column))
+        _require_columns(valid, (config.label_column,))
         valid_sets.append(
             lgb.Dataset(
                 valid.loc[:, feature_columns],
