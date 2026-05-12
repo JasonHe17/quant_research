@@ -17,7 +17,6 @@ if str(PROJECT_ROOT) not in sys.path:
 from quant_research.datasets import (
     ForwardReturnLabelConfig,
     add_cross_sectional_label_rank,
-    build_alpha_feature_matrix,
     build_forward_return_labels,
     join_alpha_features_and_labels,
 )
@@ -105,20 +104,21 @@ def _build_reversal_feature_matrix(
     frame = bars.sort_values(["instrument_id", "bar_end_time"]).copy()
     frame["close_price"] = frame["close_price"].astype(float)
     grouped = frame.groupby("instrument_id", sort=False)
-    factor_frames: list[pd.DataFrame] = []
+    output = frame.loc[:, ["bar_end_time", "instrument_id"]].rename(
+        columns={"bar_end_time": "timestamp"}
+    )
     for lookback_bars in lookback_bars_values:
         factor_name = f"intraday_reversal_5m_lb{lookback_bars}"
-        factor_values = -grouped["close_price"].pct_change(periods=lookback_bars)
-        factor_frame = frame.loc[
-            factor_values.notna(),
-            ["instrument_id", "bar_end_time"],
-        ].copy()
-        factor_frame["factor_name"] = factor_name
-        factor_frame["factor_value"] = factor_values.loc[factor_values.notna()].astype(
-            float
+        output[factor_name] = -grouped["close_price"].pct_change(
+            periods=lookback_bars
         )
-        factor_frames.append(factor_frame)
-    return build_alpha_feature_matrix(factor_frames)
+    feature_columns = [
+        f"intraday_reversal_5m_lb{lookback_bars}"
+        for lookback_bars in lookback_bars_values
+    ]
+    return output.loc[output[feature_columns].notna().any(axis=1)].reset_index(
+        drop=True
+    )
 
 
 def _write_summary(
