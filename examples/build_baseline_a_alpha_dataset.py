@@ -6,6 +6,7 @@ import argparse
 import gc
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -56,31 +57,48 @@ def main() -> None:
         horizon_bars=args.horizon_bars,
         entry_lag_bars=args.entry_lag_bars,
     )
-    for file_path in files:
-        bars = _load_bars_from_files(params, [file_path])
+    chunks = _time_chunks(
+        start=args.start,
+        end=args.end,
+        partition=args.partition,
+    )
+    for partition_name, core_start, core_end in chunks:
+        read_start = core_start - pd.Timedelta(days=args.padding_days)
+        read_end = core_end + pd.Timedelta(days=args.padding_days)
+        chunk_params = replace(
+            params,
+            start=_format_timestamp(read_start),
+            end=_format_timestamp(read_end),
+        )
+        bars = _load_bars_from_files(chunk_params, files)
         if bars.empty:
             continue
-        year = file_path.stem.rsplit("__", maxsplit=1)[-1]
-        print(f"loaded {year}: bars={len(bars)}", flush=True)
+        print(
+            f"loaded {partition_name}: bars={len(bars)} "
+            f"core={_format_timestamp(core_start)}..{_format_timestamp(core_end)}",
+            flush=True,
+        )
         features = _build_reversal_feature_matrix(bars, args.lookback_bars)
+        features = _filter_core_window(features, core_start=core_start, core_end=core_end)
         labels = build_forward_return_labels(bars, label_config)
+        labels = _filter_core_window(labels, core_start=core_start, core_end=core_end)
         labels = add_cross_sectional_label_rank(
             labels,
             label_column=args.label_name,
             rank_column=f"{args.label_name}_rank",
         )
         dataset = join_alpha_features_and_labels(features, labels)
-        dataset_path = output_dir / f"dataset_{year}.parquet"
+        dataset_path = output_dir / f"dataset_{partition_name}.parquet"
         dataset.to_parquet(dataset_path, index=False)
         feature_path = None
         label_path = None
         if args.write_components:
-            feature_path = output_dir / f"features_{year}.parquet"
-            label_path = output_dir / f"labels_{year}.parquet"
+            feature_path = output_dir / f"features_{partition_name}.parquet"
+            label_path = output_dir / f"labels_{partition_name}.parquet"
             features.to_parquet(feature_path, index=False)
             labels.to_parquet(label_path, index=False)
         row = {
-            "year": year,
+            "partition": partition_name,
             "bar_count": len(bars),
             "feature_row_count": len(features),
             "label_row_count": len(labels),
@@ -95,6 +113,64 @@ def main() -> None:
         del bars, features, labels, dataset
         gc.collect()
     print(pd.DataFrame(rows).to_string(index=False))
+
+
+def _time_chunks(
+    *,
+    start: str,
+    end: str,
+    partition: str,
+) -> list[tuple[str, pd.Timestamp, pd.Timestamp]]:
+    start_ts = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    if start_ts > end_ts:
+        raise ValueError("--start must be before --end")
+    if partition == "yearly":
+        frequency = "YS"
+        name_format = "%Y"
+    elif partition == "monthly":
+        frequency = "MS"
+        name_format = "%Y_%m"
+    else:
+        raise ValueError("--partition must be monthly or yearly")
+    boundary_start = start_ts.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if partition == "yearly":
+        boundary_start = boundary_start.replace(month=1)
+    starts = pd.date_range(boundary_start, end_ts, freq=frequency)
+    chunks: list[tuple[str, pd.Timestamp, pd.Timestamp]] = []
+    for index, period_start in enumerate(starts):
+        next_start = (
+            starts[index + 1]
+            if index + 1 < len(starts)
+            else _next_period_start(period_start, partition)
+        )
+        core_start = max(start_ts, period_start)
+        core_end = min(end_ts, next_start - pd.Timedelta(microseconds=1))
+        if core_start <= core_end:
+            chunks.append((period_start.strftime(name_format), core_start, core_end))
+    return chunks
+
+
+def _filter_core_window(
+    frame: pd.DataFrame,
+    *,
+    core_start: pd.Timestamp,
+    core_end: pd.Timestamp,
+) -> pd.DataFrame:
+    return frame.loc[
+        (frame["timestamp"] >= _format_timestamp(core_start))
+        & (frame["timestamp"] <= _format_timestamp(core_end))
+    ].reset_index(drop=True)
+
+
+def _next_period_start(period_start: pd.Timestamp, partition: str) -> pd.Timestamp:
+    if partition == "yearly":
+        return period_start + pd.DateOffset(years=1)
+    return period_start + pd.DateOffset(months=1)
+
+
+def _format_timestamp(timestamp: pd.Timestamp) -> str:
+    return timestamp.isoformat()
 
 
 def _build_reversal_feature_matrix(
@@ -136,6 +212,8 @@ def _write_summary(
             "entry_lag_bars": args.entry_lag_bars,
             "max_symbols": args.max_symbols,
             "write_components": args.write_components,
+            "partition": args.partition,
+            "padding_days": args.padding_days,
         },
         "partitions": rows,
     }
@@ -160,10 +238,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--horizon-bars", type=int, default=48)
     parser.add_argument("--entry-lag-bars", type=int, default=1)
     parser.add_argument("--max-symbols", type=int)
+    parser.add_argument("--partition", choices=("monthly", "yearly"), default="monthly")
+    parser.add_argument("--padding-days", type=int, default=30)
     parser.add_argument("--write-components", action="store_true")
     args = parser.parse_args()
     if any(value <= 0 for value in args.lookback_bars):
         raise ValueError("--lookback-bars values must be positive")
+    if args.padding_days < 0:
+        raise ValueError("--padding-days must be non-negative")
     return args
 
 
