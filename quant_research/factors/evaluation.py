@@ -19,6 +19,7 @@ class SingleFactorEvaluationConfig:
     top_n: int = 50
     quantiles: int = 5
     correlation_method: str = "spearman"
+    include_feature_correlation: bool = True
 
     def __post_init__(self) -> None:
         if not self.label_column:
@@ -91,8 +92,10 @@ def evaluate_single_factors(
         if quantile_frames
         else pd.DataFrame()
     )
-    feature_correlation = frame.loc[:, list(feature_columns)].corr(
-        method=config.correlation_method
+    feature_correlation = (
+        frame.loc[:, list(feature_columns)].corr(method=config.correlation_method)
+        if config.include_feature_correlation
+        else pd.DataFrame(index=feature_columns, columns=feature_columns)
     )
     return SingleFactorEvaluationResult(
         summary=pd.DataFrame(summary_rows).sort_values(

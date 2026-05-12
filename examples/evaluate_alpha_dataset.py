@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 
@@ -35,7 +35,13 @@ def main() -> None:
         quantiles=args.quantiles,
         correlation_method=args.correlation_method,
     )
-    result = _evaluate_dataset_paths(dataset_paths, config, workers=args.workers)
+    result = _evaluate_dataset_paths(
+        dataset_paths,
+        config,
+        workers=args.workers,
+        backend=args.backend,
+        skip_feature_correlation=args.skip_feature_correlation,
+    )
     summary_path = output_dir / "single_factor_summary.csv"
     by_timestamp_path = output_dir / "single_factor_by_timestamp.csv"
     quantile_path = output_dir / "single_factor_quantiles.csv"
@@ -52,7 +58,9 @@ def main() -> None:
             "top_n": args.top_n,
             "quantiles": args.quantiles,
             "correlation_method": args.correlation_method,
+            "skip_feature_correlation": args.skip_feature_correlation,
             "workers": args.workers,
+            "backend": args.backend,
         },
         "artifacts": {
             "summary": str(summary_path),
@@ -84,30 +92,49 @@ def _evaluate_dataset_paths(
     config: SingleFactorEvaluationConfig,
     *,
     workers: int,
+    backend: str,
+    skip_feature_correlation: bool,
 ) -> SingleFactorEvaluationResult:
     feature_columns = config.feature_columns or _infer_feature_columns_from_path(
         dataset_paths[0],
         label_column=config.label_column,
     )
-    partition_config = replace(config, feature_columns=feature_columns)
+    partition_config = replace(
+        config,
+        feature_columns=feature_columns,
+        include_feature_correlation=False,
+    )
     total_rows = 0
     by_timestamp_frames: list[pd.DataFrame] = []
     quantile_frames: list[pd.DataFrame] = []
     corr_stats: _CorrelationStats | None = None
     if workers == 1:
         partition_results = (
-            _evaluate_dataset_path(path, partition_config)
+            _evaluate_dataset_path(
+                path,
+                partition_config,
+                skip_feature_correlation=skip_feature_correlation,
+            )
             for path in dataset_paths
         )
         for partition in partition_results:
             total_rows += partition.row_count
             by_timestamp_frames.append(partition.result.by_timestamp)
             quantile_frames.append(partition.result.quantile_by_timestamp)
-            corr_stats = _merge_correlation_stats(corr_stats, partition.correlation)
+            if partition.correlation is not None:
+                corr_stats = _merge_correlation_stats(corr_stats, partition.correlation)
     else:
-        with ThreadPoolExecutor(max_workers=workers) as executor:
+        executor_class = (
+            ProcessPoolExecutor if backend == "process" else ThreadPoolExecutor
+        )
+        with executor_class(max_workers=workers) as executor:
             futures = [
-                executor.submit(_evaluate_dataset_path, path, partition_config)
+                executor.submit(
+                    _evaluate_dataset_path,
+                    path,
+                    partition_config,
+                    skip_feature_correlation=skip_feature_correlation,
+                )
                 for path in dataset_paths
             ]
             for future in as_completed(futures):
@@ -115,17 +142,26 @@ def _evaluate_dataset_paths(
                 total_rows += partition.row_count
                 by_timestamp_frames.append(partition.result.by_timestamp)
                 quantile_frames.append(partition.result.quantile_by_timestamp)
-                corr_stats = _merge_correlation_stats(corr_stats, partition.correlation)
-    if corr_stats is None:
+                if partition.correlation is not None:
+                    corr_stats = _merge_correlation_stats(
+                        corr_stats,
+                        partition.correlation,
+                    )
+    if not by_timestamp_frames:
         raise ValueError("no dataset rows loaded")
     by_timestamp = pd.concat(by_timestamp_frames, ignore_index=True)
     quantile_by_timestamp = pd.concat(quantile_frames, ignore_index=True)
+    feature_correlation = (
+        corr_stats.to_frame()
+        if corr_stats is not None
+        else pd.DataFrame(index=feature_columns, columns=feature_columns)
+    )
     return SingleFactorEvaluationResult(
         summary=_summarize_by_timestamp(by_timestamp, total_rows=total_rows),
         by_timestamp=by_timestamp,
         quantile_by_timestamp=quantile_by_timestamp,
         quantile_returns=_summarize_quantiles(quantile_by_timestamp),
-        feature_correlation=corr_stats.to_frame(),
+        feature_correlation=feature_correlation,
     )
 
 
@@ -135,7 +171,7 @@ class _PartitionEvaluation:
         *,
         row_count: int,
         result: SingleFactorEvaluationResult,
-        correlation: "_CorrelationStats",
+        correlation: "_CorrelationStats | None",
     ) -> None:
         self.row_count = row_count
         self.result = result
@@ -157,15 +193,19 @@ def _infer_feature_columns_from_path(
 def _evaluate_dataset_path(
     path: Path,
     config: SingleFactorEvaluationConfig,
+    *,
+    skip_feature_correlation: bool,
 ) -> _PartitionEvaluation:
     frame = pd.read_parquet(path)
     print(f"evaluating {path.name}: rows={len(frame)}", flush=True)
     result = evaluate_single_factors(frame, config)
-    corr_stats = _CorrelationStats(
-        config.feature_columns,
-        method=config.correlation_method,
-    )
-    corr_stats.update(frame)
+    corr_stats = None
+    if not skip_feature_correlation:
+        corr_stats = _CorrelationStats(
+            config.feature_columns,
+            method=config.correlation_method,
+        )
+        corr_stats.update(frame)
     row_count = len(frame)
     del frame
     return _PartitionEvaluation(
@@ -336,7 +376,14 @@ def _parse_args() -> argparse.Namespace:
         choices=("pearson", "spearman"),
         default="spearman",
     )
+    parser.add_argument("--skip-feature-correlation", action="store_true")
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--backend",
+        choices=("thread", "process"),
+        default="thread",
+        help="parallel execution backend used when --workers is greater than 1",
+    )
     args = parser.parse_args()
     if bool(args.dataset_dir) == bool(args.dataset_paths):
         raise ValueError("provide exactly one of --dataset-dir or --dataset-paths")
