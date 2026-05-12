@@ -18,7 +18,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from quant_research.datasets import (
     ForwardReturnLabelConfig,
+    IntradayFeatureConfig,
     add_cross_sectional_label_rank,
+    build_intraday_feature_matrix,
     build_forward_return_labels,
     join_alpha_features_and_labels,
 )
@@ -135,7 +137,17 @@ def _build_partition_dataset(
         f"core={_format_timestamp(core_start)}..{_format_timestamp(core_end)}",
         flush=True,
     )
-    features = _build_reversal_feature_matrix(bars, args.lookback_bars)
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=tuple(args.factor_groups),
+            reversal_lookback_bars=tuple(args.lookback_bars),
+            momentum_lookback_bars=tuple(args.momentum_lookback_bars),
+            volatility_windows=tuple(args.volatility_windows),
+            volume_windows=tuple(args.volume_windows),
+            turnover_windows=tuple(args.turnover_windows),
+        ),
+    )
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
     labels = build_forward_return_labels(bars, label_config)
     labels = _filter_core_window(labels, core_start=core_start, core_end=core_end)
@@ -228,30 +240,6 @@ def _format_timestamp(timestamp: pd.Timestamp) -> str:
     return timestamp.isoformat()
 
 
-def _build_reversal_feature_matrix(
-    bars: pd.DataFrame,
-    lookback_bars_values: list[int],
-) -> pd.DataFrame:
-    frame = bars.sort_values(["instrument_id", "bar_end_time"]).copy()
-    frame["close_price"] = frame["close_price"].astype(float)
-    grouped = frame.groupby("instrument_id", sort=False)
-    output = frame.loc[:, ["bar_end_time", "instrument_id"]].rename(
-        columns={"bar_end_time": "timestamp"}
-    )
-    for lookback_bars in lookback_bars_values:
-        factor_name = f"intraday_reversal_5m_lb{lookback_bars}"
-        output[factor_name] = -grouped["close_price"].pct_change(
-            periods=lookback_bars
-        )
-    feature_columns = [
-        f"intraday_reversal_5m_lb{lookback_bars}"
-        for lookback_bars in lookback_bars_values
-    ]
-    return output.loc[output[feature_columns].notna().any(axis=1)].reset_index(
-        drop=True
-    )
-
-
 def _write_summary(
     output_dir: Path,
     args: argparse.Namespace,
@@ -261,7 +249,12 @@ def _write_summary(
         "params": {
             "start": args.start,
             "end": args.end,
+            "factor_groups": args.factor_groups,
             "lookback_bars": args.lookback_bars,
+            "momentum_lookback_bars": args.momentum_lookback_bars,
+            "volatility_windows": args.volatility_windows,
+            "volume_windows": args.volume_windows,
+            "turnover_windows": args.turnover_windows,
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
             "entry_lag_bars": args.entry_lag_bars,
@@ -289,7 +282,31 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--factor-groups",
+        nargs="+",
+        default=["reversal"],
+        choices=(
+            "all",
+            "reversal",
+            "momentum",
+            "volatility",
+            "volume",
+            "turnover",
+            "bar_return",
+            "liquidity_impact",
+        ),
+    )
     parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 3, 6])
+    parser.add_argument(
+        "--momentum-lookback-bars",
+        type=int,
+        nargs="+",
+        default=[3, 6, 12],
+    )
+    parser.add_argument("--volatility-windows", type=int, nargs="+", default=[6, 12, 24])
+    parser.add_argument("--volume-windows", type=int, nargs="+", default=[12, 48])
+    parser.add_argument("--turnover-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--label-name", default="forward_return")
     parser.add_argument("--horizon-bars", type=int, default=48)
     parser.add_argument("--entry-lag-bars", type=int, default=1)
@@ -301,6 +318,14 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if any(value <= 0 for value in args.lookback_bars):
         raise ValueError("--lookback-bars values must be positive")
+    if any(value <= 0 for value in args.momentum_lookback_bars):
+        raise ValueError("--momentum-lookback-bars values must be positive")
+    if any(value <= 0 for value in args.volatility_windows):
+        raise ValueError("--volatility-windows values must be positive")
+    if any(value <= 0 for value in args.volume_windows):
+        raise ValueError("--volume-windows values must be positive")
+    if any(value <= 0 for value in args.turnover_windows):
+        raise ValueError("--turnover-windows values must be positive")
     if args.padding_days < 0:
         raise ValueError("--padding-days must be non-negative")
     if args.workers <= 0:
