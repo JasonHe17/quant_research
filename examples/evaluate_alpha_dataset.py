@@ -377,11 +377,11 @@ def _parse_args() -> argparse.Namespace:
         default="spearman",
     )
     parser.add_argument("--skip-feature-correlation", action="store_true")
-    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
         "--backend",
         choices=("thread", "process"),
-        default="thread",
+        default="process",
         help="parallel execution backend used when --workers is greater than 1",
     )
     args = parser.parse_args()
