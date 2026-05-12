@@ -16,6 +16,9 @@ dependencies = [
 dev = [
     "pytest>=8",
 ]
+ml = [
+    "lightgbm>=4.6",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
