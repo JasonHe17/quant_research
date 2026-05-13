@@ -54,6 +54,8 @@ def main() -> None:
             "methods": args.methods,
             "statuses": args.statuses,
             "max_partitions": args.max_partitions,
+            "partition_start": args.partition_start,
+            "partition_end": args.partition_end,
         },
         **scores_summary,
     }
@@ -69,11 +71,19 @@ def main() -> None:
 
 def _dataset_paths(args: argparse.Namespace) -> list[Path]:
     paths = sorted(Path(args.dataset_dir).glob("dataset_*.parquet"))
+    if args.partition_start:
+        paths = [path for path in paths if _partition_name(path) >= args.partition_start]
+    if args.partition_end:
+        paths = [path for path in paths if _partition_name(path) <= args.partition_end]
     if args.max_partitions is not None:
         paths = paths[: args.max_partitions]
     if not paths:
         raise FileNotFoundError(f"no dataset_*.parquet files found under {args.dataset_dir}")
     return paths
+
+
+def _partition_name(path: Path) -> str:
+    return path.stem.removeprefix("dataset_")
 
 
 def _load_correlation(path: Path) -> pd.DataFrame:
@@ -179,6 +189,14 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--statuses", nargs="+", default=["candidate"])
     parser.add_argument("--max-partitions", type=int)
+    parser.add_argument(
+        "--partition-start",
+        help="first dataset partition to include, for example 2023_04",
+    )
+    parser.add_argument(
+        "--partition-end",
+        help="last dataset partition to include, for example 2023_06",
+    )
     parser.add_argument("--decorrelation-ridge", type=float, default=0.05)
     parser.add_argument("--run-backtests", action="store_true")
     parser.add_argument(
@@ -214,6 +232,8 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.max_partitions is not None and args.max_partitions <= 0:
         raise ValueError("--max-partitions must be positive")
+    if args.partition_start and args.partition_end and args.partition_start > args.partition_end:
+        raise ValueError("--partition-start must not be after --partition-end")
     if args.decorrelation_ridge < 0:
         raise ValueError("--decorrelation-ridge must be non-negative")
     if args.top_n <= 0:

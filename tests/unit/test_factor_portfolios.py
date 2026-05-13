@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from examples.run_candidate_factor_portfolios import _dataset_paths
 from quant_research.portfolio import (
     CandidateFactor,
     build_composite_scores,
@@ -109,3 +110,24 @@ def test_write_score_partitions_writes_one_partition_per_method(tmp_path: Path) 
 
     assert summary["methods"]["equal"]["row_count"] == 2
     assert Path(tmp_path / "scores" / "equal" / "score_2024_01.parquet").exists()
+
+
+def test_candidate_factor_script_filters_dataset_partitions(tmp_path: Path) -> None:
+    for partition in ("2023_01", "2023_02", "2023_03", "2023_04"):
+        (tmp_path / f"dataset_{partition}.parquet").touch()
+
+    args = type(
+        "Args",
+        (),
+        {
+            "dataset_dir": str(tmp_path),
+            "partition_start": "2023_02",
+            "partition_end": "2023_03",
+            "max_partitions": None,
+        },
+    )()
+
+    assert [path.name for path in _dataset_paths(args)] == [
+        "dataset_2023_02.parquet",
+        "dataset_2023_03.parquet",
+    ]

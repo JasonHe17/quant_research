@@ -60,6 +60,9 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --streaming-chunk month
 ```
 
+Use `--partition-start` and `--partition-end` to isolate a specific month or
+quarter without creating a temporary dataset directory.
+
 ## Outputs
 
 The script writes:
