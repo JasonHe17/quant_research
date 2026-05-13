@@ -102,14 +102,25 @@ When a policy uses `policy_exit_rank` or `hold_rank_buffer` above `top_n`, the
 score loader must read through the larger rank so the policy can distinguish
 buffered holds from true exits.
 
-Initial Q1 2023 decorrelated smoke:
+Initial Q1 2023 policy comparison:
 
-| Variant | Return | Max drawdown | Gross turnover | Trades | Cost |
+| Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| decorrelated | naive top-50 every bar | 2.49% | -7.16% | 118.49 | 6,348 | 81,779 |
+| decorrelated | daily rank buffer, entry 50 / exit 150, drop 10 | 7.92% | -6.00% | 47.42 | 1,148 | 33,462 |
+| equal | naive top-50 every bar | 1.09% | -8.44% | 118.94 | 6,380 | 81,839 |
+| equal | daily rank buffer, entry 50 / exit 150, drop 10 | 9.04% | -5.10% | 53.68 | 1,101 | 37,853 |
+| ic_weighted | naive top-50 every bar | 0.32% | -8.16% | 118.77 | 6,367 | 80,795 |
+| ic_weighted | daily rank buffer, entry 50 / exit 150, drop 10 | 7.38% | -4.81% | 53.45 | 1,089 | 37,442 |
+
+Initial 2023 full-year decorrelated comparison:
+
+| Policy | Return | Max drawdown | Gross turnover | Trades | Cost |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| naive top-50 every bar | 2.49% | -7.16% | 118.49 | 6,348 | 81,779 |
-| rank buffer, every bar, entry 50 / exit 150, drop 2 | 6.10% | -6.44% | 101.14 | 1,963 | 70,884 |
-| rank buffer, daily, entry 50 / exit 150, drop 10 | 7.92% | -6.00% | 47.42 | 1,148 | 33,462 |
+| naive top-50 every bar | -15.12% | -26.55% | 495.76 | 26,754 | 310,553 |
+| daily rank buffer, entry 50 / exit 150, drop 10 | 8.41% | -12.15% | 158.63 | 4,801 | 112,619 |
 
 The initial result supports making `rank_buffer_drop` with a lower rebalance
 frequency the default candidate for the next broader policy experiment. It is
-not yet a promotion result; it only covers the Q1 2023 decorrelated score.
+not yet a promotion result; it still needs method-by-method full-year coverage,
+multi-year validation, and cost stress checks.
