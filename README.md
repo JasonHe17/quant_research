@@ -51,6 +51,18 @@ it does not load large market data or write cache artifacts.
 ## Architecture
 
 - [Framework Pipeline v0](docs/architecture/framework_pipeline.md)
+- [Framework v1 Acceptance Plan](docs/validation/framework_v1_acceptance.md)
+
+## Framework v1 Acceptance
+
+Run the standard multi-year acceptance suite before promoting framework changes:
+
+```bash
+conda run -n quant python examples/run_framework_v1_benchmark.py \
+  --output-dir runs/framework_v1_acceptance/standard
+```
+
+Use `--profile quick --max-symbols 2` only for smoke checks.
 
 ## DataPortal v0
 

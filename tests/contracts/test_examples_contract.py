@@ -18,3 +18,18 @@ def test_real_data_smoke_example_has_cli_help() -> None:
     assert result.returncode == 0
     assert "--workspace-root" in result.stdout
     assert "--quant-dataset-root" in result.stdout
+
+
+def test_framework_v1_benchmark_example_has_cli_help() -> None:
+    script = Path("examples/run_framework_v1_benchmark.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--output-dir" in result.stdout
+    assert "--dry-run" in result.stdout
