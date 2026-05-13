@@ -192,6 +192,7 @@ def _fold_row(
     backtest = json.loads((backtest_dir / "summary.json").read_text(encoding="utf-8"))
     model_metrics = model["metrics"]
     backtest_metrics = backtest["metrics"]
+    execution_counts = backtest.get("execution_constraint_counts", {})
     return {
         "fold": fold.name,
         "train_end": fold.train_end,
@@ -214,6 +215,18 @@ def _fold_row(
         "total_transaction_cost": backtest_metrics.get("total_transaction_cost"),
         "signal_count": backtest.get("signal_count"),
         "bar_count": backtest.get("bar_count"),
+        "non_tradable_row_count": execution_counts.get("non_tradable_row_count"),
+        "limit_up_open_row_count": execution_counts.get("limit_up_open_row_count"),
+        "limit_down_open_row_count": execution_counts.get("limit_down_open_row_count"),
+        "positive_target_non_tradable_row_count": execution_counts.get(
+            "positive_target_non_tradable_row_count"
+        ),
+        "positive_target_limit_up_open_row_count": execution_counts.get(
+            "positive_target_limit_up_open_row_count"
+        ),
+        "positive_target_limit_down_open_row_count": execution_counts.get(
+            "positive_target_limit_down_open_row_count"
+        ),
     }
 
 
@@ -271,6 +284,15 @@ def _aggregate(frame: pd.DataFrame) -> dict[str, float | int | None]:
         "mean_gross_turnover": _nullable_float(frame["gross_turnover"].mean()),
         "mean_model_rank_ic": _nullable_float(frame["model_rank_ic"].mean()),
         "mean_model_top_bottom": _nullable_float(frame["model_top_bottom"].mean()),
+        "total_positive_target_non_tradable_row_count": _nullable_int_sum(
+            frame, "positive_target_non_tradable_row_count"
+        ),
+        "total_positive_target_limit_up_open_row_count": _nullable_int_sum(
+            frame, "positive_target_limit_up_open_row_count"
+        ),
+        "total_positive_target_limit_down_open_row_count": _nullable_int_sum(
+            frame, "positive_target_limit_down_open_row_count"
+        ),
     }
 
 
@@ -278,6 +300,12 @@ def _nullable_float(value: object) -> float | None:
     if pd.isna(value):
         return None
     return float(value)
+
+
+def _nullable_int_sum(frame: pd.DataFrame, column: str) -> int | None:
+    if column not in frame.columns or frame[column].isna().all():
+        return None
+    return int(frame[column].fillna(0).sum())
 
 
 def _parse_args() -> argparse.Namespace:
