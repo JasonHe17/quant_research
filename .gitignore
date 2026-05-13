@@ -13,3 +13,4 @@ venv/
 .env
 quant_research_cache/
 research_store/
+runs/

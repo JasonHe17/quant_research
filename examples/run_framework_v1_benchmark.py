@@ -43,6 +43,8 @@ class FrameworkV1BenchmarkConfig:
     limit_up_bps: float
     limit_down_bps: float
     data_access_mode: str
+    streaming_chunk: str
+    streaming_chunk_padding_days: int
     dataset_workers: int
     evaluation_workers: int
     evaluation_backend: str
@@ -51,6 +53,7 @@ class FrameworkV1BenchmarkConfig:
     padding_days: int
     cost_stress_multiplier: float
     enforce_gates: bool
+    resume_existing: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +121,8 @@ def run_framework_v1_benchmark(
         _write_summary(output_dir, summary)
         return summary
     for name, command in commands.items():
+        if config.resume_existing and _stage_complete(config, name):
+            continue
         _run_command(command, log_path=logs_dir / f"{name}.log")
     summary = _collect_completed_summary(config, commands=commands)
     _write_summary(output_dir, summary)
@@ -239,6 +244,10 @@ def _backtest_command(
         str(config.limit_down_bps),
         "--data-access-mode",
         config.data_access_mode,
+        "--streaming-chunk",
+        config.streaming_chunk,
+        "--streaming-chunk-padding-days",
+        str(config.streaming_chunk_padding_days),
         "--output-dir",
         str(backtest_dir),
     ]
@@ -347,6 +356,20 @@ def _run_command(command: list[str], *, log_path: Path) -> None:
             f"benchmark command failed with code {result.returncode}: "
             f"{command[1]} (see {log_path})"
         )
+
+
+def _stage_complete(config: FrameworkV1BenchmarkConfig, stage_name: str) -> bool:
+    artifacts = _artifact_paths(config)
+    if stage_name == "dataset":
+        return Path(str(artifacts["dataset_summary"])).exists()
+    if stage_name == "factor_evaluation":
+        return Path(str(artifacts["factor_evaluation_summary"])).exists()
+    if stage_name.startswith("backtest_"):
+        scenario_name = stage_name.removeprefix("backtest_")
+        summaries = artifacts["backtest_summaries"]
+        if isinstance(summaries, dict):
+            return Path(str(summaries.get(scenario_name, ""))).exists()
+    return False
 
 
 def _collect_completed_summary(
@@ -728,6 +751,8 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
         limit_up_bps=args.limit_up_bps,
         limit_down_bps=args.limit_down_bps,
         data_access_mode=args.data_access_mode,
+        streaming_chunk=args.streaming_chunk,
+        streaming_chunk_padding_days=args.streaming_chunk_padding_days,
         dataset_workers=args.dataset_workers,
         evaluation_workers=args.evaluation_workers,
         evaluation_backend=args.evaluation_backend,
@@ -736,6 +761,7 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
         padding_days=args.padding_days,
         cost_stress_multiplier=args.cost_stress_multiplier,
         enforce_gates=args.enforce_gates,
+        resume_existing=args.resume_existing,
     )
 
 
@@ -782,8 +808,20 @@ def _parse_args() -> argparse.Namespace:
         choices=("data_portal", "fast_parquet"),
         default="fast_parquet",
     )
+    parser.add_argument(
+        "--streaming-chunk",
+        choices=("year", "month"),
+        default="month",
+        help="Chunk size passed to fast_parquet streaming backtests.",
+    )
+    parser.add_argument(
+        "--streaming-chunk-padding-days",
+        type=int,
+        default=10,
+        help="Padding passed to fast_parquet streaming chunks.",
+    )
     parser.add_argument("--dataset-workers", type=int, default=1)
-    parser.add_argument("--evaluation-workers", type=int, default=1)
+    parser.add_argument("--evaluation-workers", type=int, default=4)
     parser.add_argument(
         "--evaluation-backend",
         choices=("thread", "process"),
@@ -797,6 +835,11 @@ def _parse_args() -> argparse.Namespace:
         "--enforce-gates",
         action="store_true",
         help="exit non-zero when acceptance failure gates fail",
+    )
+    parser.add_argument(
+        "--resume-existing",
+        action="store_true",
+        help="skip benchmark stages whose expected summary artifacts already exist",
     )
     parser.add_argument(
         "--dry-run",
@@ -837,6 +880,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--min-trade-weight must be in [0, 1]")
     if args.padding_days < 0:
         raise ValueError("--padding-days must be non-negative")
+    if args.streaming_chunk_padding_days < 0:
+        raise ValueError("--streaming-chunk-padding-days must be non-negative")
     if args.cost_stress_multiplier < 1:
         raise ValueError("--cost-stress-multiplier must be at least 1")
 

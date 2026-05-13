@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import gc
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import sys
@@ -57,6 +58,17 @@ class BacktestParams:
     max_bar_turnover_participation: float | None = None
     allow_same_bar_capacity: bool = False
     data_access_mode: str = "data_portal"
+    streaming_chunk: str = "year"
+    streaming_chunk_padding_days: int = 10
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingWorkUnit:
+    files: list[Path]
+    load_start: str
+    load_end: str
+    signal_start: str
+    signal_end: str
 
 
 SimulationState = TargetWeightSimulationState
@@ -76,8 +88,8 @@ def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
     if params.data_access_mode == "data_portal":
         bars = _load_bars(params)
         return run_backtest(bars, params)
-    files = _minute_bar_files(params)
-    if not files:
+    work_units = _streaming_work_units(params)
+    if not work_units:
         raise FileNotFoundError("no 5-minute CN equity parquet files found")
     state = SimulationState(
         cash=float(params.initial_cash),
@@ -100,13 +112,26 @@ def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
             path = params.output_dir / filename
             if path.exists():
                 path.unlink()
-    for file_path in files:
-        bars = _load_bars_from_files(params, [file_path])
+    for work_unit in work_units:
+        bars = _load_bars_from_files(
+            params,
+            work_unit.files,
+            start=work_unit.load_start,
+            end=work_unit.load_end,
+        )
         if bars.empty:
             continue
-        total_bars += len(bars)
-        instruments.update(str(value) for value in bars["instrument_id"].unique())
+        in_signal_window = (
+            (bars["bar_end_time"] >= work_unit.signal_start)
+            & (bars["bar_end_time"] <= work_unit.signal_end)
+        )
+        total_bars += int(in_signal_window.sum())
+        instruments.update(
+            str(value)
+            for value in bars.loc[in_signal_window, "instrument_id"].unique()
+        )
         signals = _build_reversal_signals(bars, params)
+        signals = _filter_signals_to_work_unit(signals, work_unit)
         total_signals += len(signals)
         executions = _build_next_bar_executions(bars, signals)
         if executions.empty:
@@ -278,8 +303,16 @@ def _main_board_symbols_from_data_portal(
     return symbols
 
 
-def _load_bars_from_files(params: BacktestParams, files: list[Path]) -> pd.DataFrame:
+def _load_bars_from_files(
+    params: BacktestParams,
+    files: list[Path],
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> pd.DataFrame:
     scan_target = ", ".join(f"'{path.as_posix()}'" for path in files)
+    query_start = start or params.start
+    query_end = end or params.end
     symbol_limit_clause = ""
     if params.max_symbols is not None:
         symbol_limit_clause = f"""
@@ -337,7 +370,7 @@ def _load_bars_from_files(params: BacktestParams, files: list[Path]) -> pd.DataF
               {symbol_limit_clause}
             ORDER BY bar_end_time, instrument_id
         """
-        frame = connection.execute(query, [params.start, params.end]).fetchdf()
+        frame = connection.execute(query, [query_start, query_end]).fetchdf()
     finally:
         connection.close()
     if frame.empty:
@@ -361,10 +394,19 @@ def _add_execution_constraint_columns(
 
 
 def _minute_bar_files(params: BacktestParams) -> list[Path]:
+    return _minute_bar_files_for_range(params, start=params.start, end=params.end)
+
+
+def _minute_bar_files_for_range(
+    params: BacktestParams,
+    *,
+    start: str,
+    end: str,
+) -> list[Path]:
     canonical_root = params.catalog_path.parent.parent
     data_dir = canonical_root / "v1" / "market" / "records=minute_bar"
-    start_year = int(params.start[:4])
-    end_year = int(params.end[:4])
+    start_year = int(start[:4])
+    end_year = int(end[:4])
     files: list[Path] = []
     for year in range(start_year, end_year + 1):
         path = (
@@ -374,6 +416,86 @@ def _minute_bar_files(params: BacktestParams) -> list[Path]:
         if path.exists():
             files.append(path)
     return files
+
+
+def _streaming_work_units(params: BacktestParams) -> list[StreamingWorkUnit]:
+    if params.streaming_chunk == "year":
+        units: list[StreamingWorkUnit] = []
+        for year in range(int(params.start[:4]), int(params.end[:4]) + 1):
+            signal_start = max(params.start, f"{year}-01-01T00:00:00+08:00")
+            signal_end = min(params.end, f"{year}-12-31T23:59:59+08:00")
+            files = _minute_bar_files_for_range(
+                params,
+                start=signal_start,
+                end=signal_end,
+            )
+            if files:
+                units.append(
+                    StreamingWorkUnit(
+                        files=files,
+                        load_start=signal_start,
+                        load_end=signal_end,
+                        signal_start=signal_start,
+                        signal_end=signal_end,
+                    )
+                )
+        return units
+    if params.streaming_chunk != "month":
+        raise ValueError(f"unsupported streaming chunk: {params.streaming_chunk}")
+
+    start_dt = datetime.fromisoformat(params.start)
+    end_dt = datetime.fromisoformat(params.end)
+    month_start = start_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    units = []
+    while month_start <= end_dt:
+        next_month = _add_month(month_start)
+        month_end = next_month - timedelta(seconds=1)
+        signal_start_dt = max(start_dt, month_start)
+        signal_end_dt = min(end_dt, month_end)
+        load_start_dt = signal_start_dt - timedelta(
+            days=max(0, params.streaming_chunk_padding_days)
+        )
+        load_end_dt = min(
+            end_dt,
+            signal_end_dt + timedelta(days=max(1, params.streaming_chunk_padding_days)),
+        )
+        load_start = _format_datetime(load_start_dt)
+        load_end = _format_datetime(load_end_dt)
+        files = _minute_bar_files_for_range(params, start=load_start, end=load_end)
+        if files:
+            units.append(
+                StreamingWorkUnit(
+                    files=files,
+                    load_start=load_start,
+                    load_end=load_end,
+                    signal_start=_format_datetime(signal_start_dt),
+                    signal_end=_format_datetime(signal_end_dt),
+                )
+            )
+        month_start = next_month
+    return units
+
+
+def _filter_signals_to_work_unit(
+    signals: pd.DataFrame,
+    work_unit: StreamingWorkUnit,
+) -> pd.DataFrame:
+    if signals.empty:
+        return signals
+    return signals.loc[
+        (signals["signal_time"] >= work_unit.signal_start)
+        & (signals["signal_time"] <= work_unit.signal_end)
+    ].copy()
+
+
+def _add_month(value: datetime) -> datetime:
+    if value.month == 12:
+        return value.replace(year=value.year + 1, month=1)
+    return value.replace(month=value.month + 1)
+
+
+def _format_datetime(value: datetime) -> str:
+    return value.isoformat(timespec="seconds")
 
 
 def _build_reversal_signals(
@@ -693,6 +815,8 @@ def _write_summary(result: dict[str, object], params: BacktestParams) -> None:
             "max_bar_turnover_participation": params.max_bar_turnover_participation,
             "allow_same_bar_capacity": params.allow_same_bar_capacity,
             "data_access_mode": params.data_access_mode,
+            "streaming_chunk": params.streaming_chunk,
+            "streaming_chunk_padding_days": params.streaming_chunk_padding_days,
             "lot_size": params.lot_size,
             "max_symbols": params.max_symbols,
         },
@@ -757,6 +881,21 @@ def _parse_args() -> BacktestParams:
             "shortcut until quantdb exposes a batch bar SDK."
         ),
     )
+    parser.add_argument(
+        "--streaming-chunk",
+        choices=("year", "month"),
+        default="year",
+        help="Chunk size used by fast_parquet streaming backtests.",
+    )
+    parser.add_argument(
+        "--streaming-chunk-padding-days",
+        type=int,
+        default=10,
+        help=(
+            "Calendar-day padding loaded around each fast_parquet streaming "
+            "chunk for lookback and next-bar execution continuity."
+        ),
+    )
     parser.add_argument("--output-dir")
     args = parser.parse_args()
     if args.top_n <= 0:
@@ -780,6 +919,8 @@ def _parse_args() -> BacktestParams:
         and not 0 < args.max_bar_turnover_participation <= 1
     ):
         raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
+    if args.streaming_chunk_padding_days < 0:
+        raise ValueError("--streaming-chunk-padding-days must be non-negative")
     return BacktestParams(
         catalog_path=Path(args.catalog_path),
         start=args.start,
@@ -803,6 +944,8 @@ def _parse_args() -> BacktestParams:
         max_bar_turnover_participation=args.max_bar_turnover_participation,
         allow_same_bar_capacity=args.allow_same_bar_capacity,
         data_access_mode=args.data_access_mode,
+        streaming_chunk=args.streaming_chunk,
+        streaming_chunk_padding_days=args.streaming_chunk_padding_days,
     )
 
 

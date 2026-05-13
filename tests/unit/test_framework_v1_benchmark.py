@@ -5,6 +5,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from examples.run_framework_v1_benchmark import _run_command
+
 
 def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
     tmp_path: Path,
@@ -46,6 +50,7 @@ def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
         "backtest_full_high_cost",
     }
     assert summary["config"]["profile"] == "standard"
+    assert summary["config"]["evaluation_workers"] == 4
     assert "acceptance_plan" in summary
     assert "full_high_cost" in summary["backtests"]
     assert "build_baseline_a_alpha_dataset.py" in commands["dataset"][1]
@@ -69,6 +74,19 @@ def test_framework_v1_benchmark_profiles_define_expected_scenarios(
     assert "backtest_full_trade_filter_stress" in robust["commands"]
     assert "backtest_full_high_cost" in robust["commands"]
     assert robust["acceptance_plan"]["profile"] == "robust"
+
+
+def test_framework_v1_benchmark_command_failures_raise(tmp_path: Path) -> None:
+    log_path = tmp_path / "logs" / "failed.log"
+
+    with pytest.raises(RuntimeError, match="benchmark command failed with code 7"):
+        _run_command(
+            [sys.executable, "-c", "import sys; sys.exit(7)"],
+            log_path=log_path,
+        )
+
+    assert log_path.exists()
+    assert "sys.exit(7)" in log_path.read_text(encoding="utf-8")
 
 
 def _dry_run(script: Path, output_dir: Path, *, profile: str) -> dict[str, object]:

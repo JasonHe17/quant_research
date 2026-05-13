@@ -42,6 +42,11 @@ Default settings:
 - Dataset partitioning: monthly, with 30 calendar days of warmup padding.
 - Factors: all currently implemented intraday factor groups.
 - Labels: one-bar delayed entry, 48 five-minute-bar forward return.
+- Factor evaluation: four worker processes by default; reduce with
+  `--evaluation-workers` on memory-constrained machines.
+- Backtest streaming: fast parquet runs use monthly chunks by default, with
+  10 calendar days of boundary padding for lookback and next-bar continuity.
+  Increase memory headroom before switching `--streaming-chunk year`.
 - Costs: 3 bps commission, 1 bp slippage, 5 bps sell stamp tax, 5 CNY minimum
   commission, 100-share board lot, T+1 selling.
 - Tradability: ST exclusion, suspension filter, open-limit buy/sell blocks.
@@ -71,6 +76,9 @@ The benchmark writes:
 - `backtests/<scenario>/`: trades, equity curve, final positions, and summary
   for each execution scenario.
 - `logs/`: stdout/stderr for every stage.
+
+Interrupted runs can continue with `--resume-existing`; completed stages are
+detected by their summary JSON files and skipped.
 
 ## Failure Gates
 
