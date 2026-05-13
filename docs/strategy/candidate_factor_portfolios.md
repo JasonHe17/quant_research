@@ -113,14 +113,21 @@ Initial Q1 2023 policy comparison:
 | ic_weighted | naive top-50 every bar | 0.32% | -8.16% | 118.77 | 6,367 | 80,795 |
 | ic_weighted | daily rank buffer, entry 50 / exit 150, drop 10 | 7.38% | -4.81% | 53.45 | 1,089 | 37,442 |
 
-Initial 2023 full-year decorrelated comparison:
+Initial 2023 full-year policy comparison:
 
-| Policy | Return | Max drawdown | Gross turnover | Trades | Cost |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| naive top-50 every bar | -15.12% | -26.55% | 495.76 | 26,754 | 310,553 |
-| daily rank buffer, entry 50 / exit 150, drop 10 | 8.41% | -12.15% | 158.63 | 4,801 | 112,619 |
+| Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| decorrelated | naive top-50 every bar | -15.12% | -26.55% | 495.76 | 26,754 | 310,553 |
+| decorrelated | daily rank buffer, entry 50 / exit 150, drop 10 | 8.41% | -12.15% | 158.63 | 4,801 | 112,619 |
+| equal | naive top-50 every bar | -25.09% | -34.10% | 495.89 | 26,768 | 299,109 |
+| equal | daily rank buffer, entry 50 / exit 150, drop 10 | -2.29% | -17.41% | 198.35 | 4,619 | 133,317 |
+| ic_weighted | naive top-50 every bar | -20.75% | -29.20% | 496.39 | 26,908 | 304,434 |
+| ic_weighted | daily rank buffer, entry 50 / exit 150, drop 10 | -2.17% | -17.75% | 202.63 | 4,534 | 134,450 |
 
 The initial result supports making `rank_buffer_drop` with a lower rebalance
 frequency the default candidate for the next broader policy experiment. It is
 not yet a promotion result; it still needs method-by-method full-year coverage,
-multi-year validation, and cost stress checks.
+multi-year validation, and cost stress checks. The 2023 full-year result also
+shows that the trading policy is not enough by itself: the decorrelated
+combination turns positive, while equal and IC-weighted remain slightly negative
+after costs.
