@@ -47,6 +47,13 @@ Default settings:
 - Backtest streaming: fast parquet runs use monthly chunks by default, with
   10 calendar days of boundary padding for lookback and next-bar continuity.
   Increase memory headroom before switching `--streaming-chunk year`.
+- Backtest scheduling: after dataset and factor evaluation complete, backtest
+  scenarios run through a resource-aware scheduler. `--backtest-workers`
+  defaults to `2`, while `--backtest-memory-budget-gb 0` auto-detects available
+  memory and uses a conservative fraction. Tune `--full-backtest-memory-gb` and
+  `--yearly-backtest-memory-gb` when a machine has known memory headroom. A
+  backtest whose estimate exceeds the configured budget is rejected before
+  launch.
 - Costs: 3 bps commission, 1 bp slippage, 5 bps sell stamp tax, 5 CNY minimum
   commission, 100-share board lot, T+1 selling.
 - Tradability: ST exclusion, suspension filter, open-limit buy/sell blocks.

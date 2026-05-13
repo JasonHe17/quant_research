@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from examples.run_framework_v1_benchmark import _run_command
+from examples.run_framework_v1_benchmark import (
+    BacktestJob,
+    _can_launch_backtest_job,
+    _run_command,
+)
 
 
 def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
@@ -51,10 +55,13 @@ def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
     }
     assert summary["config"]["profile"] == "standard"
     assert summary["config"]["evaluation_workers"] == 4
+    assert summary["config"]["backtest_workers"] == 2
+    assert summary["config"]["backtest_memory_budget_gb"] is None
     assert "acceptance_plan" in summary
     assert "full_high_cost" in summary["backtests"]
     assert "build_baseline_a_alpha_dataset.py" in commands["dataset"][1]
     assert "run_baseline_a_real_backtest.py" in commands["backtest_full_base"][1]
+    assert "--streaming-chunk" in commands["backtest_full_base"]
 
 
 def test_framework_v1_benchmark_profiles_define_expected_scenarios(
@@ -87,6 +94,37 @@ def test_framework_v1_benchmark_command_failures_raise(tmp_path: Path) -> None:
 
     assert log_path.exists()
     assert "sys.exit(7)" in log_path.read_text(encoding="utf-8")
+
+
+def test_backtest_memory_gate_blocks_jobs_over_budget(
+    tmp_path: Path,
+) -> None:
+    job = BacktestJob(
+        stage_name="backtest_full_base",
+        scenario_name="full_base",
+        command=[sys.executable, "-c", "pass"],
+        log_path=tmp_path / "log.txt",
+        memory_estimate_gb=8.0,
+    )
+
+    assert not _can_launch_backtest_job(
+        job,
+        running_memory_gb=0.0,
+        memory_budget_gb=4.0,
+        running_count=0,
+    )
+    assert not _can_launch_backtest_job(
+        job,
+        running_memory_gb=6.0,
+        memory_budget_gb=10.0,
+        running_count=1,
+    )
+    assert _can_launch_backtest_job(
+        job,
+        running_memory_gb=2.0,
+        memory_budget_gb=10.0,
+        running_count=1,
+    )
 
 
 def _dry_run(script: Path, output_dir: Path, *, profile: str) -> dict[str, object]:

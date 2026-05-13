@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
@@ -52,6 +53,10 @@ class FrameworkV1BenchmarkConfig:
     partition: str
     padding_days: int
     cost_stress_multiplier: float
+    backtest_workers: int
+    backtest_memory_budget_gb: float | None
+    full_backtest_memory_gb: float
+    yearly_backtest_memory_gb: float
     enforce_gates: bool
     resume_existing: bool
 
@@ -69,6 +74,17 @@ class BacktestScenario:
     min_commission: float
     min_trade_weight: float
     description: str
+
+
+@dataclass(frozen=True, slots=True)
+class BacktestJob:
+    """One scheduled backtest command with a memory estimate."""
+
+    stage_name: str
+    scenario_name: str
+    command: list[str]
+    log_path: Path
+    memory_estimate_gb: float
 
 
 def main() -> None:
@@ -120,10 +136,9 @@ def run_framework_v1_benchmark(
         )
         _write_summary(output_dir, summary)
         return summary
-    for name, command in commands.items():
-        if config.resume_existing and _stage_complete(config, name):
-            continue
-        _run_command(command, log_path=logs_dir / f"{name}.log")
+    _run_required_stage(config, commands, "dataset", logs_dir)
+    _run_required_stage(config, commands, "factor_evaluation", logs_dir)
+    _run_backtest_commands(config, commands=commands, logs_dir=logs_dir)
     summary = _collect_completed_summary(config, commands=commands)
     _write_summary(output_dir, summary)
     if config.enforce_gates and summary["acceptance"]["overall_status"] == "fail":
@@ -356,6 +371,141 @@ def _run_command(command: list[str], *, log_path: Path) -> None:
             f"benchmark command failed with code {result.returncode}: "
             f"{command[1]} (see {log_path})"
         )
+
+
+def _run_required_stage(
+    config: FrameworkV1BenchmarkConfig,
+    commands: dict[str, list[str]],
+    stage_name: str,
+    logs_dir: Path,
+) -> None:
+    if config.resume_existing and _stage_complete(config, stage_name):
+        return
+    _run_command(commands[stage_name], log_path=logs_dir / f"{stage_name}.log")
+
+
+def _run_backtest_commands(
+    config: FrameworkV1BenchmarkConfig,
+    *,
+    commands: dict[str, list[str]],
+    logs_dir: Path,
+) -> None:
+    jobs = _pending_backtest_jobs(config, commands=commands, logs_dir=logs_dir)
+    if not jobs:
+        return
+    if config.backtest_workers == 1 or len(jobs) == 1:
+        for job in jobs:
+            _run_command(job.command, log_path=job.log_path)
+        return
+    _run_backtest_jobs_with_budget(
+        jobs,
+        max_workers=config.backtest_workers,
+        memory_budget_gb=_effective_backtest_memory_budget_gb(config),
+    )
+
+
+def _pending_backtest_jobs(
+    config: FrameworkV1BenchmarkConfig,
+    *,
+    commands: dict[str, list[str]],
+    logs_dir: Path,
+) -> list[BacktestJob]:
+    jobs: list[BacktestJob] = []
+    for scenario in _backtest_scenarios(config):
+        stage_name = f"backtest_{scenario.name}"
+        if config.resume_existing and _stage_complete(config, stage_name):
+            continue
+        jobs.append(
+            BacktestJob(
+                stage_name=stage_name,
+                scenario_name=scenario.name,
+                command=commands[stage_name],
+                log_path=logs_dir / f"{stage_name}.log",
+                memory_estimate_gb=_backtest_memory_estimate_gb(config, scenario),
+            )
+        )
+    return jobs
+
+
+def _run_backtest_jobs_with_budget(
+    jobs: list[BacktestJob],
+    *,
+    max_workers: int,
+    memory_budget_gb: float,
+) -> None:
+    pending = list(jobs)
+    running: dict[Future[None], BacktestJob] = {}
+    running_memory_gb = 0.0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        while pending or running:
+            while pending and len(running) < max_workers:
+                job = pending[0]
+                if not _can_launch_backtest_job(
+                    job,
+                    running_memory_gb=running_memory_gb,
+                    memory_budget_gb=memory_budget_gb,
+                    running_count=len(running),
+                ):
+                    break
+                pending.pop(0)
+                future = executor.submit(_run_command, job.command, log_path=job.log_path)
+                running[future] = job
+                running_memory_gb += job.memory_estimate_gb
+            if not running:
+                job = pending[0]
+                raise RuntimeError(
+                    f"backtest job {job.stage_name} requires an estimated "
+                    f"{job.memory_estimate_gb:.2f} GB, above the configured "
+                    f"budget of {memory_budget_gb:.2f} GB"
+                )
+            done, _ = wait(running, return_when=FIRST_COMPLETED)
+            for future in done:
+                job = running.pop(future)
+                running_memory_gb -= job.memory_estimate_gb
+                future.result()
+
+
+def _can_launch_backtest_job(
+    job: BacktestJob,
+    *,
+    running_memory_gb: float,
+    memory_budget_gb: float,
+    running_count: int,
+) -> bool:
+    return running_memory_gb + job.memory_estimate_gb <= memory_budget_gb
+
+
+def _backtest_memory_estimate_gb(
+    config: FrameworkV1BenchmarkConfig,
+    scenario: BacktestScenario,
+) -> float:
+    if scenario.name.startswith("year_"):
+        return config.yearly_backtest_memory_gb
+    return config.full_backtest_memory_gb
+
+
+def _effective_backtest_memory_budget_gb(config: FrameworkV1BenchmarkConfig) -> float:
+    if config.backtest_memory_budget_gb is not None:
+        return config.backtest_memory_budget_gb
+    available = _available_memory_gb()
+    if available is None:
+        return max(config.full_backtest_memory_gb, config.yearly_backtest_memory_gb)
+    return max(
+        min(available * 0.60, available - 2.0),
+        min(config.full_backtest_memory_gb, config.yearly_backtest_memory_gb),
+    )
+
+
+def _available_memory_gb() -> float | None:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return None
+    for line in meminfo.read_text(encoding="utf-8").splitlines():
+        if line.startswith("MemAvailable:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                return float(parts[1]) / 1024.0 / 1024.0
+    return None
 
 
 def _stage_complete(config: FrameworkV1BenchmarkConfig, stage_name: str) -> bool:
@@ -760,6 +910,14 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
         partition=args.partition,
         padding_days=args.padding_days,
         cost_stress_multiplier=args.cost_stress_multiplier,
+        backtest_workers=args.backtest_workers,
+        backtest_memory_budget_gb=(
+            args.backtest_memory_budget_gb
+            if args.backtest_memory_budget_gb > 0
+            else None
+        ),
+        full_backtest_memory_gb=args.full_backtest_memory_gb,
+        yearly_backtest_memory_gb=args.yearly_backtest_memory_gb,
         enforce_gates=args.enforce_gates,
         resume_existing=args.resume_existing,
     )
@@ -832,6 +990,33 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--padding-days", type=int, default=30)
     parser.add_argument("--cost-stress-multiplier", type=float, default=2.0)
     parser.add_argument(
+        "--backtest-workers",
+        type=int,
+        default=2,
+        help="maximum number of backtest subprocesses to run concurrently",
+    )
+    parser.add_argument(
+        "--backtest-memory-budget-gb",
+        type=float,
+        default=0.0,
+        help=(
+            "memory budget for concurrent backtests; 0 auto-detects available "
+            "memory and uses a conservative fraction"
+        ),
+    )
+    parser.add_argument(
+        "--full-backtest-memory-gb",
+        type=float,
+        default=8.0,
+        help="estimated memory footprint for each full-window backtest",
+    )
+    parser.add_argument(
+        "--yearly-backtest-memory-gb",
+        type=float,
+        default=6.0,
+        help="estimated memory footprint for each yearly backtest",
+    )
+    parser.add_argument(
         "--enforce-gates",
         action="store_true",
         help="exit non-zero when acceptance failure gates fail",
@@ -873,6 +1058,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         "lot_size",
         "dataset_workers",
         "evaluation_workers",
+        "backtest_workers",
     ):
         if getattr(args, name) <= 0:
             raise ValueError(f"--{name.replace('_', '-')} must be positive")
@@ -884,6 +1070,13 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--streaming-chunk-padding-days must be non-negative")
     if args.cost_stress_multiplier < 1:
         raise ValueError("--cost-stress-multiplier must be at least 1")
+    for name in (
+        "backtest_memory_budget_gb",
+        "full_backtest_memory_gb",
+        "yearly_backtest_memory_gb",
+    ):
+        if getattr(args, name) < 0:
+            raise ValueError(f"--{name.replace('_', '-')} must be non-negative")
 
 
 if __name__ == "__main__":
