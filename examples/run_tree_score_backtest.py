@@ -20,12 +20,21 @@ from quant_research.metrics.risk import max_drawdown
 
 from run_baseline_a_real_backtest import (
     BacktestParams,
+    SimulationState,
     _append_frame_csv,
+    _empty_execution_constraint_counts,
+    _empty_trade_metric_totals,
     _execution_constraint_counts,
     _final_positions,
     _load_bars,
+    _load_bars_from_files,
+    _merge_execution_constraint_counts,
+    _merge_trade_metric_totals,
     _simulate,
     _trade_metrics,
+    _trade_metric_totals,
+    _trade_metrics_from_totals,
+    _streaming_work_units,
 )
 
 
@@ -49,6 +58,9 @@ class TreeScoreBacktestParams:
     limit_up_bps: float | None
     limit_down_bps: float | None
     max_bar_turnover_participation: float | None
+    data_access_mode: str
+    streaming_chunk: str
+    streaming_chunk_padding_days: int
     output_dir: Path
 
 
@@ -81,12 +93,17 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         limit_up_bps=params.limit_up_bps,
         limit_down_bps=params.limit_down_bps,
         max_bar_turnover_participation=params.max_bar_turnover_participation,
+        data_access_mode=params.data_access_mode,
+        streaming_chunk=params.streaming_chunk,
+        streaming_chunk_padding_days=params.streaming_chunk_padding_days,
     )
     params.output_dir.mkdir(parents=True, exist_ok=True)
     for filename in ("trades.csv", "equity_curve.csv"):
         path = params.output_dir / filename
         if path.exists():
             path.unlink()
+    if params.data_access_mode == "fast_parquet":
+        return _run_tree_score_backtest_streaming(params, backtest_params)
 
     ranked_signals = _load_ranked_score_signals(params)
     signals = _build_buffered_target_weights(ranked_signals, params)
@@ -134,6 +151,9 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "limit_up_bps": params.limit_up_bps,
             "limit_down_bps": params.limit_down_bps,
             "max_bar_turnover_participation": params.max_bar_turnover_participation,
+            "data_access_mode": params.data_access_mode,
+            "streaming_chunk": params.streaming_chunk,
+            "streaming_chunk_padding_days": params.streaming_chunk_padding_days,
         },
         "bar_count": int(len(bars)),
         "signal_count": int(len(signals)),
@@ -151,8 +171,114 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
     }
 
 
-def _load_ranked_score_signals(params: TreeScoreBacktestParams) -> pd.DataFrame:
+def _run_tree_score_backtest_streaming(
+    params: TreeScoreBacktestParams,
+    backtest_params: BacktestParams,
+) -> dict[str, object]:
+    if params.hold_rank_buffer is not None:
+        raise ValueError("streaming score backtests do not support hold-rank buffer yet")
+    state = SimulationState(
+        cash=float(params.initial_cash),
+        lots={},
+        previous_date=None,
+        last_prices={},
+    )
+    equity_values = [params.initial_cash]
+    trade_count = 0
+    trade_metric_totals = _empty_trade_metric_totals()
+    execution_constraint_counts = _empty_execution_constraint_counts()
+    total_bars = 0
+    total_signals = 0
+    total_executions = 0
+    instruments: set[str] = set()
+    for work_unit in _streaming_work_units(backtest_params):
+        bars = _load_bars_from_files(
+            backtest_params,
+            work_unit.files,
+            start=work_unit.load_start,
+            end=work_unit.load_end,
+        )
+        if bars.empty:
+            continue
+        in_signal_window = (
+            (bars["bar_end_time"] >= work_unit.signal_start)
+            & (bars["bar_end_time"] <= work_unit.signal_end)
+        )
+        total_bars += int(in_signal_window.sum())
+        instruments.update(
+            str(value)
+            for value in bars.loc[in_signal_window, "instrument_id"].unique()
+        )
+        ranked_signals = _load_ranked_score_signals(
+            params,
+            start=work_unit.signal_start,
+            end=work_unit.signal_end,
+        )
+        signals = _build_buffered_target_weights(ranked_signals, params)
+        total_signals += len(signals)
+        executions = _build_tree_score_executions(bars, signals)
+        if executions.empty:
+            continue
+        total_executions += len(executions)
+        _merge_execution_constraint_counts(
+            execution_constraint_counts,
+            _execution_constraint_counts(executions),
+        )
+        period_trades, period_equity, _, state = _simulate(
+            executions,
+            backtest_params,
+            state=state,
+        )
+        if not period_trades.empty:
+            trade_count += len(period_trades)
+            _merge_trade_metric_totals(
+                trade_metric_totals,
+                _trade_metric_totals(period_trades),
+            )
+            _append_frame_csv(period_trades, params.output_dir / "trades.csv")
+        if not period_equity.empty:
+            equity_values.extend(period_equity["equity"].astype(float).tolist())
+            _append_frame_csv(period_equity, params.output_dir / "equity_curve.csv")
+        del bars, ranked_signals, signals, executions, period_trades, period_equity
+    if len(equity_values) == 1:
+        raise ValueError("no executable score signals after next-bar shift")
+    final_positions = _final_positions(state.lots)
+    final_positions.to_csv(params.output_dir / "final_positions.csv", index=False)
+    metrics = {
+        "total_return": total_return(params.initial_cash, equity_values[-1]),
+        "max_drawdown": max_drawdown(equity_values),
+        "trade_count": float(trade_count),
+        "final_equity": float(equity_values[-1]),
+    }
+    metrics.update(_trade_metrics_from_totals(trade_metric_totals, equity_values))
+    summary = _summary_payload(
+        params,
+        bar_count=total_bars,
+        signal_count=total_signals,
+        execution_row_count=total_executions,
+        execution_constraint_counts=execution_constraint_counts,
+        instrument_count=len(instruments),
+        metrics=metrics,
+    )
+    return {
+        "summary": summary,
+        "metrics": metrics,
+        "trades": pd.DataFrame(),
+        "equity_curve": pd.DataFrame(),
+        "final_positions": final_positions,
+    }
+
+
+def _load_ranked_score_signals(
+    params: TreeScoreBacktestParams,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> pd.DataFrame:
     rank_limit = max(params.top_n, params.hold_rank_buffer or params.top_n)
+    start = start or params.start
+    end = end or params.end
+    scan_target = _prediction_scan_target(params.predictions_path)
     connection = duckdb.connect()
     try:
         query = """
@@ -198,18 +324,67 @@ def _load_ranked_score_signals(params: TreeScoreBacktestParams) -> pd.DataFrame:
         return connection.execute(
             query,
             [
-                str(params.predictions_path),
-                params.start,
-                params.end,
-                str(params.predictions_path),
-                params.start,
-                params.end,
+                scan_target,
+                start,
+                end,
+                scan_target,
+                start,
+                end,
                 params.rebalance_every_n_bars,
                 rank_limit,
             ],
         ).fetchdf()
     finally:
         connection.close()
+
+
+def _prediction_scan_target(path: Path) -> str:
+    if path.is_dir():
+        return str(path / "*.parquet")
+    return str(path)
+
+
+def _summary_payload(
+    params: TreeScoreBacktestParams,
+    *,
+    bar_count: int,
+    signal_count: int,
+    execution_row_count: int,
+    execution_constraint_counts: dict[str, int],
+    instrument_count: int,
+    metrics: dict[str, float],
+) -> dict[str, object]:
+    return {
+        "params": {
+            "predictions_path": str(params.predictions_path),
+            "catalog_path": str(params.catalog_path),
+            "start": params.start,
+            "end": params.end,
+            "top_n": params.top_n,
+            "initial_cash": params.initial_cash,
+            "commission_bps": params.commission_bps,
+            "slippage_bps": params.slippage_bps,
+            "sell_stamp_tax_bps": params.sell_stamp_tax_bps,
+            "min_commission": params.min_commission,
+            "lot_size": params.lot_size,
+            "rebalance_every_n_bars": params.rebalance_every_n_bars,
+            "hold_rank_buffer": params.hold_rank_buffer,
+            "min_trade_weight": params.min_trade_weight,
+            "exclude_st": params.exclude_st,
+            "limit_up_bps": params.limit_up_bps,
+            "limit_down_bps": params.limit_down_bps,
+            "max_bar_turnover_participation": params.max_bar_turnover_participation,
+            "data_access_mode": params.data_access_mode,
+            "streaming_chunk": params.streaming_chunk,
+            "streaming_chunk_padding_days": params.streaming_chunk_padding_days,
+        },
+        "bar_count": int(bar_count),
+        "signal_count": int(signal_count),
+        "execution_row_count": int(execution_row_count),
+        "execution_constraint_counts": execution_constraint_counts,
+        "instrument_count": int(instrument_count),
+        "metrics": metrics,
+    }
 
 
 def _build_buffered_target_weights(
@@ -356,6 +531,17 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--limit-up-bps", type=float)
     parser.add_argument("--limit-down-bps", type=float)
     parser.add_argument("--max-bar-turnover-participation", type=float)
+    parser.add_argument(
+        "--data-access-mode",
+        choices=("data_portal", "fast_parquet"),
+        default="data_portal",
+    )
+    parser.add_argument(
+        "--streaming-chunk",
+        choices=("year", "month"),
+        default="month",
+    )
+    parser.add_argument("--streaming-chunk-padding-days", type=int, default=10)
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
     if args.top_n <= 0:
@@ -383,6 +569,8 @@ def _parse_args() -> TreeScoreBacktestParams:
         and not 0 < args.max_bar_turnover_participation <= 1
     ):
         raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
+    if args.streaming_chunk_padding_days < 0:
+        raise ValueError("--streaming-chunk-padding-days must be non-negative")
     return TreeScoreBacktestParams(
         predictions_path=Path(args.predictions_path),
         catalog_path=Path(args.catalog_path),
@@ -402,6 +590,9 @@ def _parse_args() -> TreeScoreBacktestParams:
         limit_up_bps=args.limit_up_bps,
         limit_down_bps=args.limit_down_bps,
         max_bar_turnover_participation=args.max_bar_turnover_participation,
+        data_access_mode=args.data_access_mode,
+        streaming_chunk=args.streaming_chunk,
+        streaming_chunk_padding_days=args.streaming_chunk_padding_days,
         output_dir=Path(args.output_dir),
     )
 

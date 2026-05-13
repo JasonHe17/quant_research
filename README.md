@@ -53,6 +53,7 @@ it does not load large market data or write cache artifacts.
 - [Framework Pipeline v0](docs/architecture/framework_pipeline.md)
 - [Framework v1 Acceptance Plan](docs/validation/framework_v1_acceptance.md)
 - [Factor Admission Plan](docs/validation/factor_admission.md)
+- [Candidate Factor Portfolio Experiments](docs/strategy/candidate_factor_portfolios.md)
 
 ## Framework v1 Acceptance
 
@@ -71,6 +72,16 @@ After the standard suite passes, generate a factor admission report:
 conda run -n quant python examples/analyze_framework_v1_acceptance.py \
   --benchmark-summary runs/framework_v1_acceptance/standard/benchmark_summary.json \
   --output-dir runs/framework_v1_acceptance/standard/factor_admission
+```
+
+Then build candidate-factor portfolio scores:
+
+```bash
+conda run -n quant python examples/run_candidate_factor_portfolios.py \
+  --dataset-dir runs/framework_v1_acceptance/standard/alpha_dataset \
+  --admission-report runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json \
+  --output-dir runs/candidate_factor_portfolios/smoke_2023_01 \
+  --max-partitions 1
 ```
 
 ## DataPortal v0

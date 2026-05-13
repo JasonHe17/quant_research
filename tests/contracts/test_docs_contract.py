@@ -32,3 +32,14 @@ def test_readme_links_factor_admission_document() -> None:
     text = doc.read_text(encoding="utf-8")
     assert "Factor Admission Plan" in text
     assert "Default Gates" in text
+
+
+def test_readme_links_candidate_factor_portfolio_document() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    doc = Path("docs/strategy/candidate_factor_portfolios.md")
+
+    assert "docs/strategy/candidate_factor_portfolios.md" in readme
+    assert doc.exists()
+    text = doc.read_text(encoding="utf-8")
+    assert "Candidate Factor Portfolio Experiments" in text
+    assert "Score Construction" in text

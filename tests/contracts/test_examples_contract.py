@@ -48,3 +48,18 @@ def test_framework_v1_acceptance_analysis_example_has_cli_help() -> None:
     assert result.returncode == 0
     assert "--benchmark-summary" in result.stdout
     assert "--enforce-candidates" in result.stdout
+
+
+def test_candidate_factor_portfolios_example_has_cli_help() -> None:
+    script = Path("examples/run_candidate_factor_portfolios.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--admission-report" in result.stdout
+    assert "--run-backtests" in result.stdout
