@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
@@ -38,6 +38,7 @@ def main() -> None:
     result = _evaluate_dataset_paths(
         dataset_paths,
         config,
+        output_dir=output_dir,
         workers=args.workers,
         backend=args.backend,
         skip_feature_correlation=args.skip_feature_correlation,
@@ -67,6 +68,7 @@ def main() -> None:
             "by_timestamp": str(by_timestamp_path),
             "quantiles": str(quantile_path),
             "feature_correlation": str(correlation_path),
+            "partition_artifacts": str(output_dir / "_partitions"),
         },
         "summary": result.summary.to_dict("records"),
     }
@@ -91,6 +93,7 @@ def _evaluate_dataset_paths(
     dataset_paths: list[Path],
     config: SingleFactorEvaluationConfig,
     *,
+    output_dir: Path,
     workers: int,
     backend: str,
     skip_feature_correlation: bool,
@@ -104,23 +107,25 @@ def _evaluate_dataset_paths(
         feature_columns=feature_columns,
         include_feature_correlation=False,
     )
+    partition_dir = output_dir / "_partitions"
+    partition_dir.mkdir(parents=True, exist_ok=True)
+    _clear_partition_artifacts(partition_dir)
     total_rows = 0
-    by_timestamp_frames: list[pd.DataFrame] = []
-    quantile_frames: list[pd.DataFrame] = []
+    partition_artifacts: list[_PartitionEvaluation] = []
     corr_stats: _CorrelationStats | None = None
     if workers == 1:
         partition_results = (
             _evaluate_dataset_path(
                 path,
                 partition_config,
+                partition_dir=partition_dir,
                 skip_feature_correlation=skip_feature_correlation,
             )
             for path in dataset_paths
         )
         for partition in partition_results:
             total_rows += partition.row_count
-            by_timestamp_frames.append(partition.result.by_timestamp)
-            quantile_frames.append(partition.result.quantile_by_timestamp)
+            partition_artifacts.append(partition)
             if partition.correlation is not None:
                 corr_stats = _merge_correlation_stats(corr_stats, partition.correlation)
     else:
@@ -133,6 +138,7 @@ def _evaluate_dataset_paths(
                     _evaluate_dataset_path,
                     path,
                     partition_config,
+                    partition_dir=partition_dir,
                     skip_feature_correlation=skip_feature_correlation,
                 )
                 for path in dataset_paths
@@ -140,15 +146,23 @@ def _evaluate_dataset_paths(
             for future in as_completed(futures):
                 partition = future.result()
                 total_rows += partition.row_count
-                by_timestamp_frames.append(partition.result.by_timestamp)
-                quantile_frames.append(partition.result.quantile_by_timestamp)
+                partition_artifacts.append(partition)
                 if partition.correlation is not None:
                     corr_stats = _merge_correlation_stats(
                         corr_stats,
                         partition.correlation,
                     )
-    if not by_timestamp_frames:
+    if not partition_artifacts:
         raise ValueError("no dataset rows loaded")
+    partition_artifacts.sort(key=lambda item: item.name)
+    by_timestamp_frames = [
+        pd.read_parquet(artifact.by_timestamp_path)
+        for artifact in partition_artifacts
+    ]
+    quantile_frames = [
+        pd.read_parquet(artifact.quantile_by_timestamp_path)
+        for artifact in partition_artifacts
+    ]
     by_timestamp = pd.concat(by_timestamp_frames, ignore_index=True)
     quantile_by_timestamp = pd.concat(quantile_frames, ignore_index=True)
     feature_correlation = (
@@ -165,17 +179,13 @@ def _evaluate_dataset_paths(
     )
 
 
+@dataclass(frozen=True, slots=True)
 class _PartitionEvaluation:
-    def __init__(
-        self,
-        *,
-        row_count: int,
-        result: SingleFactorEvaluationResult,
-        correlation: "_CorrelationStats | None",
-    ) -> None:
-        self.row_count = row_count
-        self.result = result
-        self.correlation = correlation
+    name: str
+    row_count: int
+    by_timestamp_path: Path
+    quantile_by_timestamp_path: Path
+    correlation: "_CorrelationStats | None"
 
 
 def _infer_feature_columns_from_path(
@@ -194,11 +204,16 @@ def _evaluate_dataset_path(
     path: Path,
     config: SingleFactorEvaluationConfig,
     *,
+    partition_dir: Path,
     skip_feature_correlation: bool,
 ) -> _PartitionEvaluation:
     frame = pd.read_parquet(path)
     print(f"evaluating {path.name}: rows={len(frame)}", flush=True)
     result = evaluate_single_factors(frame, config)
+    by_timestamp_path = partition_dir / f"{path.stem}_by_timestamp.parquet"
+    quantile_by_timestamp_path = partition_dir / f"{path.stem}_quantiles.parquet"
+    result.by_timestamp.to_parquet(by_timestamp_path, index=False)
+    result.quantile_by_timestamp.to_parquet(quantile_by_timestamp_path, index=False)
     corr_stats = None
     if not skip_feature_correlation:
         corr_stats = _CorrelationStats(
@@ -208,11 +223,19 @@ def _evaluate_dataset_path(
         corr_stats.update(frame)
     row_count = len(frame)
     del frame
+    del result
     return _PartitionEvaluation(
+        name=path.stem,
         row_count=row_count,
-        result=result,
+        by_timestamp_path=by_timestamp_path,
+        quantile_by_timestamp_path=quantile_by_timestamp_path,
         correlation=corr_stats,
     )
+
+
+def _clear_partition_artifacts(partition_dir: Path) -> None:
+    for path in partition_dir.glob("*.parquet"):
+        path.unlink()
 
 
 def _summarize_by_timestamp(

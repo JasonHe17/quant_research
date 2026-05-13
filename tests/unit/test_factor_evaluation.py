@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
-from quant_research.factors import (
+from examples.evaluate_alpha_dataset import (
+    _evaluate_dataset_path,
     SingleFactorEvaluationConfig,
+)
+from quant_research.factors import (
     evaluate_single_factors,
 )
 
@@ -81,3 +86,39 @@ def test_single_factor_evaluation_rejects_missing_label() -> None:
 
     with pytest.raises(ValueError, match="missing required columns"):
         evaluate_single_factors(frame)
+
+
+def test_partition_evaluation_writes_artifacts_without_returning_frames(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    partition_dir = tmp_path / "partitions"
+    partition_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "t0",
+                "instrument_id": "a",
+                "alpha": 0.9,
+                "forward_return": 0.03,
+            },
+            {
+                "timestamp": "t0",
+                "instrument_id": "b",
+                "alpha": 0.1,
+                "forward_return": -0.01,
+            },
+        ]
+    ).to_parquet(dataset_path, index=False)
+
+    partition = _evaluate_dataset_path(
+        dataset_path,
+        SingleFactorEvaluationConfig(feature_columns=("alpha",), top_n=1),
+        partition_dir=partition_dir,
+        skip_feature_correlation=True,
+    )
+
+    assert partition.row_count == 2
+    assert partition.by_timestamp_path.exists()
+    assert partition.quantile_by_timestamp_path.exists()
+    assert not hasattr(partition, "result")
