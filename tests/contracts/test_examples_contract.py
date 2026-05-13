@@ -33,3 +33,18 @@ def test_framework_v1_benchmark_example_has_cli_help() -> None:
     assert result.returncode == 0
     assert "--output-dir" in result.stdout
     assert "--dry-run" in result.stdout
+
+
+def test_framework_v1_acceptance_analysis_example_has_cli_help() -> None:
+    script = Path("examples/analyze_framework_v1_acceptance.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--benchmark-summary" in result.stdout
+    assert "--enforce-candidates" in result.stdout

@@ -21,3 +21,14 @@ def test_readme_links_framework_v1_acceptance_document() -> None:
     text = doc.read_text(encoding="utf-8")
     assert "Framework v1 Acceptance Plan" in text
     assert "Failure Gates" in text
+
+
+def test_readme_links_factor_admission_document() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    doc = Path("docs/validation/factor_admission.md")
+
+    assert "docs/validation/factor_admission.md" in readme
+    assert doc.exists()
+    text = doc.read_text(encoding="utf-8")
+    assert "Factor Admission Plan" in text
+    assert "Default Gates" in text

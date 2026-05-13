@@ -52,6 +52,7 @@ it does not load large market data or write cache artifacts.
 
 - [Framework Pipeline v0](docs/architecture/framework_pipeline.md)
 - [Framework v1 Acceptance Plan](docs/validation/framework_v1_acceptance.md)
+- [Factor Admission Plan](docs/validation/factor_admission.md)
 
 ## Framework v1 Acceptance
 
@@ -63,6 +64,14 @@ conda run -n quant python examples/run_framework_v1_benchmark.py \
 ```
 
 Use `--profile quick --max-symbols 2` only for smoke checks.
+
+After the standard suite passes, generate a factor admission report:
+
+```bash
+conda run -n quant python examples/analyze_framework_v1_acceptance.py \
+  --benchmark-summary runs/framework_v1_acceptance/standard/benchmark_summary.json \
+  --output-dir runs/framework_v1_acceptance/standard/factor_admission
+```
 
 ## DataPortal v0
 
