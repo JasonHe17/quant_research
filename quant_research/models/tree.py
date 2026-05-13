@@ -70,6 +70,9 @@ def infer_feature_columns(
         "exit_timestamp",
         "entry_price",
         "exit_price",
+        "entry_tradable_bar",
+        "entry_limit_up_open",
+        "entry_limit_down_open",
         *exclude_columns,
     }
     features: list[str] = []

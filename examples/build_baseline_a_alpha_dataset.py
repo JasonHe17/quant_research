@@ -15,6 +15,9 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+EXAMPLES_DIR = Path(__file__).resolve().parent
+if str(EXAMPLES_DIR) not in sys.path:
+    sys.path.insert(0, str(EXAMPLES_DIR))
 
 from quant_research.datasets import (
     ForwardReturnLabelConfig,
@@ -50,6 +53,9 @@ def main() -> None:
         lot_size=100,
         max_symbols=args.max_symbols,
         output_dir=None,
+        exclude_st=args.exclude_st,
+        limit_up_bps=args.limit_up_bps,
+        limit_down_bps=args.limit_down_bps,
     )
     files = _minute_bar_files(params)
     if not files:
@@ -151,6 +157,10 @@ def _build_partition_dataset(
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
     labels = build_forward_return_labels(bars, label_config)
     labels = _filter_core_window(labels, core_start=core_start, core_end=core_end)
+    labels = _add_entry_execution_columns(labels, bars)
+    label_row_count_before_entry_filter = len(labels)
+    entry_filter_counts = _entry_execution_filter_counts(labels)
+    labels = _filter_entry_execution_constraints(labels, args)
     labels = add_cross_sectional_label_rank(
         labels,
         label_column=args.label_name,
@@ -170,9 +180,11 @@ def _build_partition_dataset(
         "partition": partition_name,
         "bar_count": len(bars),
         "feature_row_count": len(features),
+        "label_row_count_before_entry_filter": label_row_count_before_entry_filter,
         "label_row_count": len(labels),
         "dataset_row_count": len(dataset),
         "instrument_count": int(bars["instrument_id"].nunique()),
+        **entry_filter_counts,
         "dataset_path": str(dataset_path),
         "features_path": str(feature_path) if feature_path is not None else None,
         "labels_path": str(label_path) if label_path is not None else None,
@@ -230,6 +242,77 @@ def _filter_core_window(
     ].reset_index(drop=True)
 
 
+def _add_entry_execution_columns(labels: pd.DataFrame, bars: pd.DataFrame) -> pd.DataFrame:
+    if labels.empty:
+        return labels.assign(
+            entry_tradable_bar=pd.Series(dtype=bool),
+            entry_limit_up_open=pd.Series(dtype=bool),
+            entry_limit_down_open=pd.Series(dtype=bool),
+        )
+    execution_columns = [
+        "instrument_id",
+        "bar_end_time",
+        "tradable_bar",
+        "limit_up_open",
+        "limit_down_open",
+    ]
+    missing = [column for column in execution_columns if column not in bars.columns]
+    if missing:
+        raise ValueError(f"bars missing execution columns: {missing}")
+    entry_execution = bars.loc[:, execution_columns].rename(
+        columns={
+            "bar_end_time": "entry_timestamp",
+            "tradable_bar": "entry_tradable_bar",
+            "limit_up_open": "entry_limit_up_open",
+            "limit_down_open": "entry_limit_down_open",
+        }
+    )
+    enriched = labels.merge(
+        entry_execution,
+        on=["instrument_id", "entry_timestamp"],
+        how="left",
+    )
+    for column in (
+        "entry_tradable_bar",
+        "entry_limit_up_open",
+        "entry_limit_down_open",
+    ):
+        enriched[column] = enriched[column].fillna(False).astype(bool)
+    return enriched
+
+
+def _entry_execution_filter_counts(labels: pd.DataFrame) -> dict[str, int]:
+    if labels.empty:
+        return {
+            "entry_non_tradable_label_count": 0,
+            "entry_limit_up_label_count": 0,
+            "entry_limit_down_label_count": 0,
+        }
+    return {
+        "entry_non_tradable_label_count": int(
+            (~labels["entry_tradable_bar"].astype(bool)).sum()
+        ),
+        "entry_limit_up_label_count": int(labels["entry_limit_up_open"].astype(bool).sum()),
+        "entry_limit_down_label_count": int(
+            labels["entry_limit_down_open"].astype(bool).sum()
+        ),
+    }
+
+
+def _filter_entry_execution_constraints(
+    labels: pd.DataFrame,
+    args: argparse.Namespace,
+) -> pd.DataFrame:
+    if labels.empty:
+        return labels.reset_index(drop=True)
+    mask = pd.Series(True, index=labels.index)
+    if args.filter_entry_tradable:
+        mask = mask & labels["entry_tradable_bar"].astype(bool)
+    if args.filter_entry_limit_up:
+        mask = mask & ~labels["entry_limit_up_open"].astype(bool)
+    return labels.loc[mask].reset_index(drop=True)
+
+
 def _next_period_start(period_start: pd.Timestamp, partition: str) -> pd.Timestamp:
     if partition == "yearly":
         return period_start + pd.DateOffset(years=1)
@@ -258,6 +341,11 @@ def _write_summary(
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
             "entry_lag_bars": args.entry_lag_bars,
+            "exclude_st": args.exclude_st,
+            "limit_up_bps": args.limit_up_bps,
+            "limit_down_bps": args.limit_down_bps,
+            "filter_entry_tradable": args.filter_entry_tradable,
+            "filter_entry_limit_up": args.filter_entry_limit_up,
             "max_symbols": args.max_symbols,
             "write_components": args.write_components,
             "partition": args.partition,
@@ -310,6 +398,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--label-name", default="forward_return")
     parser.add_argument("--horizon-bars", type=int, default=48)
     parser.add_argument("--entry-lag-bars", type=int, default=1)
+    parser.add_argument("--exclude-st", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--limit-up-bps", type=float, default=980.0)
+    parser.add_argument("--limit-down-bps", type=float, default=980.0)
+    parser.add_argument(
+        "--filter-entry-tradable",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--filter-entry-limit-up",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--max-symbols", type=int)
     parser.add_argument("--partition", choices=("monthly", "yearly"), default="monthly")
     parser.add_argument("--padding-days", type=int, default=30)
@@ -330,6 +431,10 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--padding-days must be non-negative")
     if args.workers <= 0:
         raise ValueError("--workers must be positive")
+    if args.limit_up_bps <= 0:
+        raise ValueError("--limit-up-bps must be positive")
+    if args.limit_down_bps <= 0:
+        raise ValueError("--limit-down-bps must be positive")
     return args
 
 

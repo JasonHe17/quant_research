@@ -23,6 +23,9 @@ def test_infer_feature_columns_excludes_labels_and_execution_columns() -> None:
             "exit_price": [11.0],
             "entry_timestamp": ["t1"],
             "exit_timestamp": ["t2"],
+            "entry_tradable_bar": [True],
+            "entry_limit_up_open": [False],
+            "entry_limit_down_open": [False],
         }
     )
 

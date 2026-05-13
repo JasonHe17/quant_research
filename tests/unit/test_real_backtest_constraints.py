@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 
+from examples.build_baseline_a_alpha_dataset import (
+    _add_entry_execution_columns,
+    _entry_execution_filter_counts,
+    _filter_entry_execution_constraints,
+)
 from examples.run_baseline_a_real_backtest import (
     BacktestParams,
     SimulationState,
@@ -191,6 +197,67 @@ def test_execution_constraint_counts_include_targeted_limit_rows() -> None:
         "positive_target_limit_up_open_row_count": 1,
         "positive_target_limit_down_open_row_count": 0,
     }
+
+
+def test_entry_execution_filter_removes_unbuyable_training_labels() -> None:
+    labels = pd.DataFrame(
+        [
+            {
+                "timestamp": "t0",
+                "instrument_id": "buyable",
+                "entry_timestamp": "t1",
+                "forward_return": 0.01,
+            },
+            {
+                "timestamp": "t0",
+                "instrument_id": "limit-up",
+                "entry_timestamp": "t1",
+                "forward_return": 0.10,
+            },
+            {
+                "timestamp": "t0",
+                "instrument_id": "halted",
+                "entry_timestamp": "t1",
+                "forward_return": 0.20,
+            },
+        ]
+    )
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "buyable",
+                "bar_end_time": "t1",
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "limit-up",
+                "bar_end_time": "t1",
+                "tradable_bar": True,
+                "limit_up_open": True,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "halted",
+                "bar_end_time": "t1",
+                "tradable_bar": False,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+        ]
+    )
+
+    enriched = _add_entry_execution_columns(labels, bars)
+    counts = _entry_execution_filter_counts(enriched)
+    filtered = _filter_entry_execution_constraints(
+        enriched,
+        SimpleNamespace(filter_entry_tradable=True, filter_entry_limit_up=True),
+    )
+
+    assert counts["entry_non_tradable_label_count"] == 1
+    assert counts["entry_limit_up_label_count"] == 1
+    assert filtered["instrument_id"].tolist() == ["buyable"]
 
 
 def _params(**overrides: object) -> BacktestParams:
