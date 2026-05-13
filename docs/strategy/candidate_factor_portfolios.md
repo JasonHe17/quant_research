@@ -131,3 +131,35 @@ multi-year validation, and cost stress checks. The 2023 full-year result also
 shows that the trading policy is not enough by itself: the decorrelated
 combination turns positive, while equal and IC-weighted remain slightly negative
 after costs.
+
+Initial 2023 decorrelated cost stress:
+
+| Cost profile | Commission bps | Slippage bps | Sell tax bps | Return | Max drawdown | Gross turnover | Trades | Cost |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| zero cost | 0 | 0 | 0 | 20.56% | -10.63% | 158.44 | 4,849 | 0 |
+| base cost | 3 | 1 | 5 | 8.41% | -12.15% | 158.63 | 4,801 | 112,619 |
+| stressed cost | 6 | 2 | 10 | -2.16% | -16.93% | 159.05 | 4,767 | 211,509 |
+
+The zero-cost and base-cost gap confirms that costs absorb roughly 12
+percentage points of 2023 return. The stressed-cost run turns negative, so the
+policy has positive net alpha under current assumptions but does not yet have a
+large cost safety margin.
+
+Initial Q1 2023 decorrelated parameter grid:
+
+| Exit rank | Drop | Return | Max drawdown | Gross turnover | Trades | Cost |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 | 5 | 7.21% | -6.21% | 46.97 | 598 | 33,076 |
+| 100 | 10 | 9.18% | -5.91% | 53.89 | 1,102 | 38,010 |
+| 100 | 20 | 9.77% | -5.44% | 60.60 | 2,173 | 42,714 |
+| 150 | 5 | 8.20% | -5.86% | 41.23 | 617 | 29,292 |
+| 150 | 10 | 7.92% | -6.00% | 47.42 | 1,148 | 33,462 |
+| 150 | 20 | 9.60% | -5.10% | 54.10 | 2,228 | 38,228 |
+| 200 | 5 | 9.40% | -5.85% | 38.23 | 640 | 27,380 |
+| 200 | 10 | 8.35% | -6.18% | 42.36 | 1,160 | 30,147 |
+| 200 | 20 | 8.47% | -5.26% | 49.20 | 2,243 | 34,772 |
+
+The grid suggests the policy improvement is not a one-parameter artifact. Wider
+exit buffers reduce turnover, and larger drop budgets can improve Q1 return but
+raise trade count and cost. Use `exit_rank=150 or 200` and `drop=5 or 10` as the
+next conservative search region before expanding to multi-year runs.
