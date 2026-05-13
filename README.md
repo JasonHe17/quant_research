@@ -51,6 +51,7 @@ it does not load large market data or write cache artifacts.
 ## Architecture
 
 - [Framework Pipeline v0](docs/architecture/framework_pipeline.md)
+- [Production Strategy Framework and Roadmap](docs/architecture/production_strategy_framework.md)
 - [Framework v1 Acceptance Plan](docs/validation/framework_v1_acceptance.md)
 - [Factor Admission Plan](docs/validation/factor_admission.md)
 - [Candidate Factor Portfolio Experiments](docs/strategy/candidate_factor_portfolios.md)

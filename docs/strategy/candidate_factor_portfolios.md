@@ -75,3 +75,41 @@ The script writes:
 The score backtest supports fast parquet monthly streaming. Keep
 `--hold-rank-buffer` disabled for streaming runs until stateful buffered holding
 is added.
+
+Use the production-oriented policy path for turnover-control experiments:
+
+```bash
+conda run -n quant python examples/run_tree_score_backtest.py \
+  --predictions-path runs/candidate_factor_portfolios/q1_2023/scores/decorrelated/*.parquet \
+  --start 2023-01-03T09:35:00+08:00 \
+  --end 2023-03-31T15:00:00+08:00 \
+  --top-n 50 \
+  --trade-policy rank_buffer_drop \
+  --rebalance-every-n-bars 48 \
+  --policy-entry-rank 50 \
+  --policy-exit-rank 150 \
+  --policy-max-entries-per-rebalance 10 \
+  --policy-max-exits-per-rebalance 10 \
+  --policy-no-trade-weight-band 0.002 \
+  --policy-partial-rebalance-rate 1.0 \
+  --data-access-mode fast_parquet \
+  --streaming-chunk month \
+  --output-dir runs/candidate_factor_portfolios/policy_q1_2023/decorrelated
+```
+
+The old `naive_top_n` path remains available only as a baseline comparison.
+When a policy uses `policy_exit_rank` or `hold_rank_buffer` above `top_n`, the
+score loader must read through the larger rank so the policy can distinguish
+buffered holds from true exits.
+
+Initial Q1 2023 decorrelated smoke:
+
+| Variant | Return | Max drawdown | Gross turnover | Trades | Cost |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| naive top-50 every bar | 2.49% | -7.16% | 118.49 | 6,348 | 81,779 |
+| rank buffer, every bar, entry 50 / exit 150, drop 2 | 6.10% | -6.44% | 101.14 | 1,963 | 70,884 |
+| rank buffer, daily, entry 50 / exit 150, drop 10 | 7.92% | -6.00% | 47.42 | 1,148 | 33,462 |
+
+The initial result supports making `rank_buffer_drop` with a lower rebalance
+frequency the default candidate for the next broader policy experiment. It is
+not yet a promotion result; it only covers the Q1 2023 decorrelated score.

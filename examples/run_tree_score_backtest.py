@@ -17,6 +17,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from quant_research.metrics.performance import total_return
 from quant_research.metrics.risk import max_drawdown
+from quant_research.strategies import (
+    RankBufferDropConfig,
+    RankBufferDropPolicy,
+    empty_portfolio_state,
+)
 
 from run_baseline_a_real_backtest import (
     BacktestParams,
@@ -51,8 +56,19 @@ class TreeScoreBacktestParams:
     sell_stamp_tax_bps: float
     min_commission: float
     lot_size: int
+    trade_policy: str
     rebalance_every_n_bars: int
     hold_rank_buffer: int | None
+    policy_entry_rank: int | None
+    policy_exit_rank: int | None
+    policy_max_entries_per_rebalance: int | None
+    policy_max_exits_per_rebalance: int | None
+    policy_min_hold_bars: int
+    policy_min_expected_edge_bps: float | None
+    policy_estimated_cost_bps: float
+    policy_no_trade_weight_band: float
+    policy_partial_rebalance_rate: float
+    policy_max_gross_turnover_per_rebalance: float | None
     min_trade_weight: float
     exclude_st: bool
     limit_up_bps: float | None
@@ -62,6 +78,15 @@ class TreeScoreBacktestParams:
     streaming_chunk: str
     streaming_chunk_padding_days: int
     output_dir: Path
+
+
+@dataclass(frozen=True, slots=True)
+class TargetWeightBuildResult:
+    """Target weights plus state and diagnostics from a strategy policy pass."""
+
+    target_weights: pd.DataFrame
+    policy_state: pd.DataFrame
+    diagnostics: pd.DataFrame
 
 
 def main() -> None:
@@ -106,7 +131,8 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         return _run_tree_score_backtest_streaming(params, backtest_params)
 
     ranked_signals = _load_ranked_score_signals(params)
-    signals = _build_buffered_target_weights(ranked_signals, params)
+    target_build = _build_target_weights(ranked_signals, params)
+    signals = target_build.target_weights
     if signals.empty:
         raise ValueError("no score signals loaded for requested period")
     bars = _load_bars(backtest_params)
@@ -144,8 +170,19 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "sell_stamp_tax_bps": params.sell_stamp_tax_bps,
             "min_commission": params.min_commission,
             "lot_size": params.lot_size,
+            "trade_policy": params.trade_policy,
             "rebalance_every_n_bars": params.rebalance_every_n_bars,
             "hold_rank_buffer": params.hold_rank_buffer,
+            "policy_entry_rank": params.policy_entry_rank,
+            "policy_exit_rank": params.policy_exit_rank,
+            "policy_max_entries_per_rebalance": params.policy_max_entries_per_rebalance,
+            "policy_max_exits_per_rebalance": params.policy_max_exits_per_rebalance,
+            "policy_min_hold_bars": params.policy_min_hold_bars,
+            "policy_min_expected_edge_bps": params.policy_min_expected_edge_bps,
+            "policy_estimated_cost_bps": params.policy_estimated_cost_bps,
+            "policy_no_trade_weight_band": params.policy_no_trade_weight_band,
+            "policy_partial_rebalance_rate": params.policy_partial_rebalance_rate,
+            "policy_max_gross_turnover_per_rebalance": params.policy_max_gross_turnover_per_rebalance,
             "min_trade_weight": params.min_trade_weight,
             "exclude_st": params.exclude_st,
             "limit_up_bps": params.limit_up_bps,
@@ -160,6 +197,7 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         "execution_row_count": int(len(executions)),
         "execution_constraint_counts": execution_constraint_counts,
         "instrument_count": int(bars["instrument_id"].nunique()),
+        "policy_diagnostics": _summarize_policy_diagnostics(target_build.diagnostics),
         "metrics": metrics,
     }
     return {
@@ -175,7 +213,7 @@ def _run_tree_score_backtest_streaming(
     params: TreeScoreBacktestParams,
     backtest_params: BacktestParams,
 ) -> dict[str, object]:
-    if params.hold_rank_buffer is not None:
+    if params.hold_rank_buffer is not None and params.trade_policy == "naive_top_n":
         raise ValueError("streaming score backtests do not support hold-rank buffer yet")
     state = SimulationState(
         cash=float(params.initial_cash),
@@ -191,6 +229,8 @@ def _run_tree_score_backtest_streaming(
     total_signals = 0
     total_executions = 0
     instruments: set[str] = set()
+    policy_state = empty_portfolio_state()
+    policy_diagnostics: list[pd.DataFrame] = []
     for work_unit in _streaming_work_units(backtest_params):
         bars = _load_bars_from_files(
             backtest_params,
@@ -214,7 +254,15 @@ def _run_tree_score_backtest_streaming(
             start=work_unit.signal_start,
             end=work_unit.signal_end,
         )
-        signals = _build_buffered_target_weights(ranked_signals, params)
+        target_build = _build_target_weights(
+            ranked_signals,
+            params,
+            policy_state=policy_state,
+        )
+        signals = target_build.target_weights
+        policy_state = target_build.policy_state
+        if not target_build.diagnostics.empty:
+            policy_diagnostics.append(target_build.diagnostics)
         total_signals += len(signals)
         executions = _build_tree_score_executions(bars, signals)
         if executions.empty:
@@ -258,6 +306,7 @@ def _run_tree_score_backtest_streaming(
         execution_row_count=total_executions,
         execution_constraint_counts=execution_constraint_counts,
         instrument_count=len(instruments),
+        policy_diagnostics=_summarize_policy_diagnostics(_concat_policy_diagnostics(policy_diagnostics)),
         metrics=metrics,
     )
     return {
@@ -275,7 +324,7 @@ def _load_ranked_score_signals(
     start: str | None = None,
     end: str | None = None,
 ) -> pd.DataFrame:
-    rank_limit = max(params.top_n, params.hold_rank_buffer or params.top_n)
+    rank_limit = _score_rank_limit(params)
     start = start or params.start
     end = end or params.end
     scan_target = _prediction_scan_target(params.predictions_path)
@@ -338,10 +387,147 @@ def _load_ranked_score_signals(
         connection.close()
 
 
+def _score_rank_limit(params: TreeScoreBacktestParams) -> int:
+    limits = [params.top_n]
+    if params.hold_rank_buffer is not None:
+        limits.append(params.hold_rank_buffer)
+    if params.trade_policy == "rank_buffer_drop":
+        if params.policy_entry_rank is not None:
+            limits.append(params.policy_entry_rank)
+        if params.policy_exit_rank is not None:
+            limits.append(params.policy_exit_rank)
+    return max(limits)
+
+
 def _prediction_scan_target(path: Path) -> str:
     if path.is_dir():
         return str(path / "*.parquet")
     return str(path)
+
+
+def _build_target_weights(
+    ranked_signals: pd.DataFrame,
+    params: TreeScoreBacktestParams,
+    *,
+    policy_state: pd.DataFrame | None = None,
+) -> TargetWeightBuildResult:
+    if params.trade_policy == "naive_top_n":
+        return TargetWeightBuildResult(
+            target_weights=_build_buffered_target_weights(ranked_signals, params),
+            policy_state=policy_state
+            if policy_state is not None
+            else empty_portfolio_state(),
+            diagnostics=pd.DataFrame(),
+        )
+    if params.trade_policy != "rank_buffer_drop":
+        raise ValueError(f"unsupported trade policy: {params.trade_policy}")
+    policy = RankBufferDropPolicy(_rank_buffer_drop_config(params))
+    diagnostics: list[pd.DataFrame] = []
+    targets: list[pd.DataFrame] = []
+    state = policy_state if policy_state is not None else empty_portfolio_state()
+    for signal_time, group in ranked_signals.groupby("signal_time", sort=True):
+        forecasts = group.rename(columns={"signal_time": "timestamp"}).loc[
+            :, ["timestamp", "instrument_id", "score", "rank"]
+        ]
+        result = policy.decide(forecasts, state)
+        state = result.policy_state
+        diagnostics.append(result.diagnostics)
+        target = result.portfolio_intent.loc[
+            result.portfolio_intent["policy_target_weight"].astype(float) > 0,
+            [
+                "timestamp",
+                "instrument_id",
+                "score",
+                "rank",
+                "policy_target_weight",
+            ],
+        ].copy()
+        if target.empty:
+            continue
+        target = target.rename(
+            columns={
+                "timestamp": "signal_time",
+                "policy_target_weight": "target_weight",
+            }
+        )
+        target["bar_end_time"] = signal_time
+        targets.append(
+            target.loc[
+                :,
+                [
+                    "signal_time",
+                    "bar_end_time",
+                    "instrument_id",
+                    "score",
+                    "rank",
+                    "target_weight",
+                ],
+            ]
+        )
+    if targets:
+        target_weights = pd.concat(targets, ignore_index=True)
+    else:
+        target_weights = _empty_target_weight_frame()
+    return TargetWeightBuildResult(
+        target_weights=target_weights,
+        policy_state=state,
+        diagnostics=_concat_policy_diagnostics(diagnostics),
+    )
+
+
+def _rank_buffer_drop_config(params: TreeScoreBacktestParams) -> RankBufferDropConfig:
+    return RankBufferDropConfig(
+        target_count=params.top_n,
+        entry_rank=params.policy_entry_rank or params.top_n,
+        exit_rank=params.policy_exit_rank or max(params.top_n, params.hold_rank_buffer or params.top_n),
+        max_entries_per_rebalance=params.policy_max_entries_per_rebalance,
+        max_exits_per_rebalance=params.policy_max_exits_per_rebalance,
+        min_hold_bars=params.policy_min_hold_bars,
+        min_expected_edge_bps=params.policy_min_expected_edge_bps,
+        estimated_cost_bps=params.policy_estimated_cost_bps,
+        no_trade_weight_band=params.policy_no_trade_weight_band,
+        partial_rebalance_rate=params.policy_partial_rebalance_rate,
+        max_gross_turnover_per_rebalance=params.policy_max_gross_turnover_per_rebalance,
+    )
+
+
+def _concat_policy_diagnostics(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    non_empty = [frame for frame in frames if not frame.empty]
+    if not non_empty:
+        return pd.DataFrame()
+    return pd.concat(non_empty, ignore_index=True)
+
+
+def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float | int]:
+    if diagnostics.empty:
+        return {
+            "decision_timestamp_count": 0,
+            "planned_gross_turnover": 0.0,
+            "order_intent_count": 0,
+            "entry_count": 0,
+            "exit_count": 0,
+            "resize_count": 0,
+            "hold_count": 0,
+            "no_trade_count": 0,
+            "below_edge_count": 0,
+            "below_weight_band_count": 0,
+            "t1_sell_blocked_count": 0,
+            "turnover_scaled_count": 0,
+        }
+    return {
+        "decision_timestamp_count": int(len(diagnostics)),
+        "planned_gross_turnover": float(diagnostics["planned_gross_turnover"].sum()),
+        "order_intent_count": int(diagnostics["order_intent_count"].sum()),
+        "entry_count": int(diagnostics["entry_count"].sum()),
+        "exit_count": int(diagnostics["exit_count"].sum()),
+        "resize_count": int(diagnostics["resize_count"].sum()),
+        "hold_count": int(diagnostics["hold_count"].sum()),
+        "no_trade_count": int(diagnostics["no_trade_count"].sum()),
+        "below_edge_count": int(diagnostics["below_edge_count"].sum()),
+        "below_weight_band_count": int(diagnostics["below_weight_band_count"].sum()),
+        "t1_sell_blocked_count": int(diagnostics["t1_sell_blocked_count"].sum()),
+        "turnover_scaled_count": int(diagnostics["turnover_scaled_count"].sum()),
+    }
 
 
 def _summary_payload(
@@ -352,6 +538,7 @@ def _summary_payload(
     execution_row_count: int,
     execution_constraint_counts: dict[str, int],
     instrument_count: int,
+    policy_diagnostics: dict[str, float | int],
     metrics: dict[str, float],
 ) -> dict[str, object]:
     return {
@@ -367,8 +554,19 @@ def _summary_payload(
             "sell_stamp_tax_bps": params.sell_stamp_tax_bps,
             "min_commission": params.min_commission,
             "lot_size": params.lot_size,
+            "trade_policy": params.trade_policy,
             "rebalance_every_n_bars": params.rebalance_every_n_bars,
             "hold_rank_buffer": params.hold_rank_buffer,
+            "policy_entry_rank": params.policy_entry_rank,
+            "policy_exit_rank": params.policy_exit_rank,
+            "policy_max_entries_per_rebalance": params.policy_max_entries_per_rebalance,
+            "policy_max_exits_per_rebalance": params.policy_max_exits_per_rebalance,
+            "policy_min_hold_bars": params.policy_min_hold_bars,
+            "policy_min_expected_edge_bps": params.policy_min_expected_edge_bps,
+            "policy_estimated_cost_bps": params.policy_estimated_cost_bps,
+            "policy_no_trade_weight_band": params.policy_no_trade_weight_band,
+            "policy_partial_rebalance_rate": params.policy_partial_rebalance_rate,
+            "policy_max_gross_turnover_per_rebalance": params.policy_max_gross_turnover_per_rebalance,
             "min_trade_weight": params.min_trade_weight,
             "exclude_st": params.exclude_st,
             "limit_up_bps": params.limit_up_bps,
@@ -383,6 +581,7 @@ def _summary_payload(
         "execution_row_count": int(execution_row_count),
         "execution_constraint_counts": execution_constraint_counts,
         "instrument_count": int(instrument_count),
+        "policy_diagnostics": policy_diagnostics,
         "metrics": metrics,
     }
 
@@ -392,16 +591,7 @@ def _build_buffered_target_weights(
     params: TreeScoreBacktestParams,
 ) -> pd.DataFrame:
     if ranked_signals.empty:
-        return pd.DataFrame(
-            columns=[
-                "signal_time",
-                "bar_end_time",
-                "instrument_id",
-                "score",
-                "rank",
-                "target_weight",
-            ]
-        )
+        return _empty_target_weight_frame()
     rows: list[pd.DataFrame] = []
     previous_targets: list[str] = []
     buffer_rank = params.hold_rank_buffer
@@ -450,17 +640,21 @@ def _build_buffered_target_weights(
         )
         previous_targets = selected
     if not rows:
-        return pd.DataFrame(
-            columns=[
-                "signal_time",
-                "bar_end_time",
-                "instrument_id",
-                "score",
-                "rank",
-                "target_weight",
-            ]
-        )
+        return _empty_target_weight_frame()
     return pd.concat(rows, ignore_index=True)
+
+
+def _empty_target_weight_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "signal_time",
+            "bar_end_time",
+            "instrument_id",
+            "score",
+            "rank",
+            "target_weight",
+        ]
+    )
 
 
 def _build_tree_score_executions(
@@ -524,8 +718,23 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--sell-stamp-tax-bps", type=float, default=0.0)
     parser.add_argument("--min-commission", type=float, default=0.0)
     parser.add_argument("--lot-size", type=int, default=100)
+    parser.add_argument(
+        "--trade-policy",
+        choices=("naive_top_n", "rank_buffer_drop"),
+        default="naive_top_n",
+    )
     parser.add_argument("--rebalance-every-n-bars", type=int, default=1)
     parser.add_argument("--hold-rank-buffer", type=int)
+    parser.add_argument("--policy-entry-rank", type=int)
+    parser.add_argument("--policy-exit-rank", type=int)
+    parser.add_argument("--policy-max-entries-per-rebalance", type=int)
+    parser.add_argument("--policy-max-exits-per-rebalance", type=int)
+    parser.add_argument("--policy-min-hold-bars", type=int, default=0)
+    parser.add_argument("--policy-min-expected-edge-bps", type=float)
+    parser.add_argument("--policy-estimated-cost-bps", type=float, default=0.0)
+    parser.add_argument("--policy-no-trade-weight-band", type=float, default=0.0)
+    parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
+    parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
     parser.add_argument("--min-trade-weight", type=float, default=0.0)
     parser.add_argument("--exclude-st", action="store_true")
     parser.add_argument("--limit-up-bps", type=float)
@@ -550,6 +759,42 @@ def _parse_args() -> TreeScoreBacktestParams:
         raise ValueError("--rebalance-every-n-bars must be positive")
     if args.hold_rank_buffer is not None and args.hold_rank_buffer < args.top_n:
         raise ValueError("--hold-rank-buffer must be greater than or equal to --top-n")
+    if args.policy_entry_rank is not None and args.policy_entry_rank <= 0:
+        raise ValueError("--policy-entry-rank must be positive")
+    if args.policy_exit_rank is not None and args.policy_exit_rank <= 0:
+        raise ValueError("--policy-exit-rank must be positive")
+    entry_rank = args.policy_entry_rank or args.top_n
+    exit_rank = args.policy_exit_rank or max(args.top_n, args.hold_rank_buffer or args.top_n)
+    if exit_rank < entry_rank:
+        raise ValueError("--policy-exit-rank must be greater than or equal to entry rank")
+    if (
+        args.policy_max_entries_per_rebalance is not None
+        and args.policy_max_entries_per_rebalance < 0
+    ):
+        raise ValueError("--policy-max-entries-per-rebalance must be non-negative")
+    if (
+        args.policy_max_exits_per_rebalance is not None
+        and args.policy_max_exits_per_rebalance < 0
+    ):
+        raise ValueError("--policy-max-exits-per-rebalance must be non-negative")
+    if args.policy_min_hold_bars < 0:
+        raise ValueError("--policy-min-hold-bars must be non-negative")
+    if (
+        args.policy_min_expected_edge_bps is not None
+        and args.policy_min_expected_edge_bps < 0
+    ):
+        raise ValueError("--policy-min-expected-edge-bps must be non-negative")
+    if args.policy_estimated_cost_bps < 0:
+        raise ValueError("--policy-estimated-cost-bps must be non-negative")
+    if args.policy_no_trade_weight_band < 0:
+        raise ValueError("--policy-no-trade-weight-band must be non-negative")
+    if not 0 < args.policy_partial_rebalance_rate <= 1:
+        raise ValueError("--policy-partial-rebalance-rate must be in (0, 1]")
+    if (
+        args.policy_max_gross_turnover_per_rebalance is not None
+        and args.policy_max_gross_turnover_per_rebalance < 0
+    ):
+        raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
     if args.commission_bps < 0:
         raise ValueError("--commission-bps must be non-negative")
     if args.slippage_bps < 0:
@@ -583,8 +828,19 @@ def _parse_args() -> TreeScoreBacktestParams:
         sell_stamp_tax_bps=args.sell_stamp_tax_bps,
         min_commission=args.min_commission,
         lot_size=args.lot_size,
+        trade_policy=args.trade_policy,
         rebalance_every_n_bars=args.rebalance_every_n_bars,
         hold_rank_buffer=args.hold_rank_buffer,
+        policy_entry_rank=args.policy_entry_rank,
+        policy_exit_rank=args.policy_exit_rank,
+        policy_max_entries_per_rebalance=args.policy_max_entries_per_rebalance,
+        policy_max_exits_per_rebalance=args.policy_max_exits_per_rebalance,
+        policy_min_hold_bars=args.policy_min_hold_bars,
+        policy_min_expected_edge_bps=args.policy_min_expected_edge_bps,
+        policy_estimated_cost_bps=args.policy_estimated_cost_bps,
+        policy_no_trade_weight_band=args.policy_no_trade_weight_band,
+        policy_partial_rebalance_rate=args.policy_partial_rebalance_rate,
+        policy_max_gross_turnover_per_rebalance=args.policy_max_gross_turnover_per_rebalance,
         min_trade_weight=args.min_trade_weight,
         exclude_st=args.exclude_st,
         limit_up_bps=args.limit_up_bps,

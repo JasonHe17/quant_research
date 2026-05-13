@@ -23,6 +23,17 @@ def test_readme_links_framework_v1_acceptance_document() -> None:
     assert "Failure Gates" in text
 
 
+def test_readme_links_production_strategy_framework_document() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    doc = Path("docs/architecture/production_strategy_framework.md")
+
+    assert "docs/architecture/production_strategy_framework.md" in readme
+    assert doc.exists()
+    text = doc.read_text(encoding="utf-8")
+    assert "Production Strategy Framework and Roadmap" in text
+    assert "Technical Roadmap" in text
+
+
 def test_readme_links_factor_admission_document() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     doc = Path("docs/validation/factor_admission.md")
