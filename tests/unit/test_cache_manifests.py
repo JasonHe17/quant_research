@@ -143,3 +143,4 @@ def test_dataframe_cache_reuses_cached_artifact(tmp_path: Path) -> None:
     manifests = cache.manifests.list(snapshot="2026-05-09", dataset="bars")
     assert len(manifests) == 1
     assert manifests[0].artifact_path.exists()
+    assert manifests[0].artifact_path.suffix == ".parquet"

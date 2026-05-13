@@ -176,6 +176,9 @@ def _evaluate_dataset_paths(
         quantile_by_timestamp=quantile_by_timestamp,
         quantile_returns=_summarize_quantiles(quantile_by_timestamp),
         feature_correlation=feature_correlation,
+        decay_by_label=pd.DataFrame(),
+        group_summary=pd.DataFrame(),
+        multiple_testing=pd.DataFrame(),
     )
 
 

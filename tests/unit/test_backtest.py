@@ -11,6 +11,7 @@ from quant_research.backtest import (
     BacktestEngine,
     BacktestFrames,
     ExecutionModel,
+    TargetWeightExecutionConfig,
 )
 
 
@@ -34,6 +35,43 @@ def test_backtest_engine_runs_simulator_and_computes_metrics() -> None:
         "quantity",
         "price",
     ]
+
+
+def test_backtest_engine_runs_target_weight_execution_core() -> None:
+    config = BacktestConfig(
+        name="target-weight",
+        start="2025-01-03T09:30:00+08:00",
+        end="2025-01-03T09:35:00+08:00",
+        data_snapshot="2026-05-09",
+        initial_cash=1_000.0,
+        frequency="5m",
+    )
+    executions = pd.DataFrame(
+        [
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "inst-1",
+                "open_price": 10.0,
+                "close_price": 11.0,
+                "turnover": 1_000_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 1.0,
+            }
+        ]
+    )
+
+    result = BacktestEngine().run_target_weight(
+        config,
+        executions,
+        TargetWeightExecutionConfig(initial_cash=1_000.0, lot_size=1),
+    )
+
+    assert result.trades.loc[0, "quantity"] == 100
+    assert result.positions.loc[0, "market_value"] == 1_100.0
+    assert result.metrics["total_return"] == pytest.approx(0.1)
+    assert result.diagnostics.loc[0, "trade_count"] == 1
 
 
 def test_backtest_engine_persists_artifacts(tmp_path: Path) -> None:

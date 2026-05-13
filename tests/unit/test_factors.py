@@ -80,8 +80,12 @@ def test_factor_engine_persists_factor_result(tmp_path: Path) -> None:
         factor, context, persist=True
     )
     loaded = store.read_factor("close_return_1m")
+    manifest = store.read_artifact_manifest(store.factor_path("close_return_1m"))
 
     assert store.factor_path("close_return_1m").exists()
+    assert store.factor_path("close_return_1m").suffix == ".parquet"
+    assert manifest["format"] == "parquet"
+    assert manifest["row_count"] == len(result.frame)
     assert loaded.equals(result.frame)
 
 

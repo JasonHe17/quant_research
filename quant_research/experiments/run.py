@@ -9,7 +9,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from quant_research.experiments.config import ExperimentConfig
+from quant_research.experiments.provenance import artifact_hashes
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +27,8 @@ class ExperimentRun:
     artifacts: dict[str, str] = field(default_factory=dict)
     metrics: dict[str, float] = field(default_factory=dict)
     cache_manifest_ids: tuple[str, ...] = ()
+    provenance: dict[str, object] = field(default_factory=dict)
+    artifact_hashes: dict[str, str] = field(default_factory=dict)
     notes: str | None = None
 
     @classmethod
@@ -37,6 +42,8 @@ class ExperimentRun:
         artifacts: dict[str, str] | None = None,
         metrics: dict[str, float] | None = None,
         cache_manifest_ids: tuple[str, ...] = (),
+        provenance: dict[str, object] | None = None,
+        artifact_hashes: dict[str, str] | None = None,
         notes: str | None = None,
     ) -> "ExperimentRun":
         started = started_at or datetime.now(timezone.utc)
@@ -48,6 +55,8 @@ class ExperimentRun:
             artifacts=dict(artifacts or {}),
             metrics=dict(metrics or {}),
             cache_manifest_ids=tuple(cache_manifest_ids),
+            provenance=dict(provenance or {}),
+            artifact_hashes=dict(artifact_hashes or {}),
             notes=notes,
         )
 
@@ -57,19 +66,28 @@ class ExperimentRun:
         artifacts: dict[str, str] | None = None,
         metrics: dict[str, float] | None = None,
         cache_manifest_ids: tuple[str, ...] | None = None,
+        provenance: dict[str, object] | None = None,
+        artifact_hashes: dict[str, str] | None = None,
         finished_at: datetime | None = None,
     ) -> "ExperimentRun":
+        merged_artifacts = {**self.artifacts, **dict(artifacts or {})}
+        merged_artifact_hashes = {
+            **self.artifact_hashes,
+            **dict(artifact_hashes or {}),
+        }
         return ExperimentRun(
             run_id=self.run_id,
             config=self.config,
             started_at=self.started_at,
             status="completed",
             finished_at=finished_at or datetime.now(timezone.utc),
-            artifacts={**self.artifacts, **dict(artifacts or {})},
+            artifacts=merged_artifacts,
             metrics={**self.metrics, **dict(metrics or {})},
             cache_manifest_ids=cache_manifest_ids
             if cache_manifest_ids is not None
             else self.cache_manifest_ids,
+            provenance={**self.provenance, **dict(provenance or {})},
+            artifact_hashes=merged_artifact_hashes,
             notes=self.notes,
         )
 
@@ -85,6 +103,8 @@ class ExperimentRun:
             artifacts=dict(self.artifacts),
             metrics=dict(self.metrics),
             cache_manifest_ids=tuple(self.cache_manifest_ids),
+            provenance=dict(self.provenance),
+            artifact_hashes=dict(self.artifact_hashes),
             notes=notes,
         )
 
@@ -100,6 +120,8 @@ class ExperimentRun:
             "artifacts": dict(self.artifacts),
             "metrics": dict(self.metrics),
             "cache_manifest_ids": list(self.cache_manifest_ids),
+            "provenance": dict(self.provenance),
+            "artifact_hashes": dict(self.artifact_hashes),
             "notes": self.notes,
         }
 
@@ -124,6 +146,11 @@ class ExperimentRun:
             cache_manifest_ids=tuple(
                 str(item) for item in payload.get("cache_manifest_ids", ())
             ),
+            provenance=dict(payload.get("provenance", {})),
+            artifact_hashes={
+                str(key): str(value)
+                for key, value in payload.get("artifact_hashes", {}).items()
+            },
             notes=str(payload["notes"]) if payload.get("notes") is not None else None,
         )
 
@@ -137,6 +164,12 @@ class ExperimentRunStore:
     def run_path(self, run_id: str) -> Path:
         return self.root / "experiments" / f"{_safe_path_component(run_id)}.json"
 
+    def run_dir(self, run_id: str) -> Path:
+        return self.root / "experiment_runs" / _safe_path_component(run_id)
+
+    def immutable_run_path(self, run_id: str) -> Path:
+        return self.run_dir(run_id) / "run.json"
+
     def write(self, run: ExperimentRun) -> Path:
         path = self.run_path(run.run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +178,24 @@ class ExperimentRunStore:
             + "\n",
             encoding="utf-8",
         )
+        return path
+
+    def write_immutable(self, run: ExperimentRun) -> Path:
+        """Write one immutable run directory.
+
+        Rewriting the same run with identical content is allowed; changing an
+        existing immutable run raises ``FileExistsError``.
+        """
+
+        path = self.immutable_run_path(run.run_id)
+        payload = json.dumps(run.to_dict(), ensure_ascii=True, indent=2, sort_keys=True) + "\n"
+        if path.exists():
+            existing = path.read_text(encoding="utf-8")
+            if existing != payload:
+                raise FileExistsError(f"immutable run already exists: {path}")
+            return path
+        path.parent.mkdir(parents=True, exist_ok=False)
+        path.write_text(payload, encoding="utf-8")
         return path
 
     def read(self, run_id: str) -> ExperimentRun:
@@ -162,6 +213,40 @@ class ExperimentRunStore:
         if status is not None:
             runs = [run for run in runs if run.status == status]
         return tuple(sorted(runs, key=lambda run: (run.started_at, run.run_id)))
+
+    def summary_frame(self, *, status: str | None = None) -> pd.DataFrame:
+        """Return a lightweight comparison table for stored runs."""
+
+        rows: list[dict[str, object]] = []
+        for run in self.list(status=status):
+            row: dict[str, object] = {
+                "run_id": run.run_id,
+                "name": run.config.name,
+                "status": run.status,
+                "data_snapshot": run.config.data_snapshot,
+                "started_at": run.started_at.isoformat(),
+                "finished_at": run.finished_at.isoformat()
+                if run.finished_at is not None
+                else None,
+                "tag_count": len(run.config.tags),
+                "artifact_count": len(run.artifacts),
+                "cache_manifest_count": len(run.cache_manifest_ids),
+                "environment_hash": run.provenance.get("environment_hash"),
+                "code_version": run.provenance.get("code_version"),
+            }
+            for metric_name, metric_value in run.metrics.items():
+                row[f"metric:{metric_name}"] = metric_value
+            rows.append(row)
+        return pd.DataFrame(rows)
+
+    def verify_artifacts(self, run: ExperimentRun) -> dict[str, bool]:
+        """Check whether local artifacts still match captured hashes."""
+
+        current = artifact_hashes(run.artifacts)
+        return {
+            name: current.get(name) == expected
+            for name, expected in run.artifact_hashes.items()
+        }
 
 
 def _make_run_id(*, config: ExperimentConfig, started_at: datetime) -> str:

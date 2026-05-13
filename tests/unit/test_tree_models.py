@@ -26,6 +26,14 @@ def test_infer_feature_columns_excludes_labels_and_execution_columns() -> None:
             "entry_tradable_bar": [True],
             "entry_limit_up_open": [False],
             "entry_limit_down_open": [False],
+            "tradable_bar": [True],
+            "buyable_bar": [True],
+            "sellable_bar": [True],
+            "suspended_bar": [False],
+            "limit_up_open": [False],
+            "limit_down_open": [False],
+            "is_st": [False],
+            "previous_close": [9.9],
         }
     )
 

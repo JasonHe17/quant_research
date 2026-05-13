@@ -165,7 +165,7 @@ config = ExperimentConfig(
 run = runner.create_run(config)
 completed = runner.complete_run(
     run,
-    artifacts={"factor": "research_store/factors/close_return.pkl"},
+    artifacts={"factor": "research_store/factors/close_return.parquet"},
     metrics={"total_return": 0.12},
     cache_manifest_ids=("manifest-id",),
 )

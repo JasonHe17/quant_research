@@ -18,7 +18,7 @@ class CachePolicy:
 
     root: Path
     enabled: bool = True
-    artifact_format: str = "pickle"
+    artifact_format: str = "parquet"
 
     @classmethod
     def disabled(cls) -> "CachePolicy":
@@ -91,15 +91,11 @@ class DataFrameCache:
         return frame
 
     def read(self, manifest: CacheManifest) -> pd.DataFrame:
-        if self.policy.artifact_format != "pickle":
-            raise ValueError(f"Unsupported cache format: {self.policy.artifact_format}")
-        return pd.read_pickle(manifest.artifact_path)
+        return _read_frame(manifest.artifact_path)
 
     def write(self, frame: pd.DataFrame, manifest: CacheManifest) -> Path:
-        if self.policy.artifact_format != "pickle":
-            raise ValueError(f"Unsupported cache format: {self.policy.artifact_format}")
         manifest.artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        frame.to_pickle(manifest.artifact_path)
+        _write_frame(frame, manifest.artifact_path)
         return self.manifests.write(manifest)
 
 
@@ -116,9 +112,29 @@ def catalog_reference_for_path(path: str | Path) -> str:
 
 
 def _artifact_suffix(format_name: str) -> str:
+    if format_name == "parquet":
+        return "parquet"
     if format_name == "pickle":
         return "pkl"
     raise ValueError(f"Unsupported cache format: {format_name}")
+
+
+def _read_frame(path: Path) -> pd.DataFrame:
+    if path.suffix == ".parquet":
+        return pd.read_parquet(path)
+    if path.suffix == ".pkl":
+        return pd.read_pickle(path)
+    raise ValueError(f"Unsupported cache artifact suffix: {path.suffix}")
+
+
+def _write_frame(frame: pd.DataFrame, path: Path) -> None:
+    if path.suffix == ".parquet":
+        frame.to_parquet(path)
+        return
+    if path.suffix == ".pkl":
+        frame.to_pickle(path)
+        return
+    raise ValueError(f"Unsupported cache artifact suffix: {path.suffix}")
 
 
 def _safe_path_component(value: str) -> str:

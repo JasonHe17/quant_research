@@ -22,16 +22,7 @@ class UniverseBuilder:
         persist: bool = False,
     ) -> Universe:
         members = _members_from_spec(spec, data=data)
-        diagnostics = pd.DataFrame(
-            [
-                {
-                    "universe_name": spec.name,
-                    "member_count": len(members),
-                    "market": spec.market,
-                    "asset_type": spec.asset_type,
-                }
-            ]
-        )
+        diagnostics = _diagnostics_from_members(spec, members)
         universe = Universe(spec=spec, members=members, diagnostics=diagnostics)
         if persist:
             if self.artifact_store is None:
@@ -42,6 +33,8 @@ class UniverseBuilder:
 
 def _members_from_spec(spec: UniverseSpec, *, data: object | None) -> pd.DataFrame:
     if data is None:
+        if spec.symbols == ("*",):
+            raise ValueError("wildcard universe requires a DataPortal")
         return pd.DataFrame(
             [
                 {
@@ -55,6 +48,37 @@ def _members_from_spec(spec: UniverseSpec, *, data: object | None) -> pd.DataFra
                 for symbol in spec.symbols
             ]
         )
+    if spec.symbols == ("*",):
+        listed = data.list_instruments(
+            market=spec.market,
+            asset_type=spec.asset_type,
+            as_of=spec.end or spec.start,
+        )
+        _require_columns(
+            listed,
+            ("instrument_id", "canonical_code", "market", "asset_type"),
+        )
+        members = listed.loc[
+            :, ["canonical_code", "instrument_id", "market", "asset_type"]
+        ].copy()
+        members = members.rename(columns={"canonical_code": "symbol"})
+        members["effective_from"] = (
+            listed["effective_from"] if "effective_from" in listed.columns else spec.start
+        )
+        members["effective_to"] = (
+            listed["effective_to"] if "effective_to" in listed.columns else spec.end
+        )
+        return members.loc[
+            :,
+            [
+                "symbol",
+                "instrument_id",
+                "market",
+                "asset_type",
+                "effective_from",
+                "effective_to",
+            ],
+        ].sort_values("symbol").reset_index(drop=True)
     resolved = data.resolve_instruments(
         list(spec.symbols),
         market=spec.market,
@@ -87,3 +111,35 @@ def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
     missing = [column for column in columns if column not in frame.columns]
     if missing:
         raise ValueError(f"missing required columns: {missing}")
+
+
+def _diagnostics_from_members(spec: UniverseSpec, members: pd.DataFrame) -> pd.DataFrame:
+    effective_from_missing = (
+        int(members["effective_from"].isna().sum())
+        if "effective_from" in members.columns
+        else len(members)
+    )
+    effective_to_missing = (
+        int(members["effective_to"].isna().sum())
+        if "effective_to" in members.columns
+        else len(members)
+    )
+    return pd.DataFrame(
+        [
+            {
+                "universe_name": spec.name,
+                "member_count": len(members),
+                "unique_symbol_count": int(members["symbol"].nunique())
+                if "symbol" in members.columns
+                else 0,
+                "market": spec.market,
+                "asset_type": spec.asset_type,
+                "start": spec.start,
+                "end": spec.end,
+                "source": "data_portal" if spec.symbols == ("*",) else "symbols",
+                "effective_from_missing_count": effective_from_missing,
+                "effective_to_missing_count": effective_to_missing,
+                "open_ended_member_count": effective_to_missing,
+            }
+        ]
+    )

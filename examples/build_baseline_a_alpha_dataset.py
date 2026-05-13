@@ -20,13 +20,16 @@ if str(EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(EXAMPLES_DIR))
 
 from quant_research.datasets import (
+    DatasetPartitionManifest,
     ForwardReturnLabelConfig,
     IntradayFeatureConfig,
     add_cross_sectional_label_rank,
     build_intraday_feature_matrix,
     build_forward_return_labels,
     join_alpha_features_and_labels,
+    write_dataset_manifest,
 )
+from quant_research.data.cache import catalog_reference_for_path
 
 from run_baseline_a_real_backtest import (
     BacktestParams,
@@ -56,6 +59,7 @@ def main() -> None:
         exclude_st=args.exclude_st,
         limit_up_bps=args.limit_up_bps,
         limit_down_bps=args.limit_down_bps,
+        data_access_mode="fast_parquet",
     )
     files = _minute_bar_files(params)
     if not files:
@@ -176,6 +180,31 @@ def _build_partition_dataset(
         label_path = output_dir / f"labels_{partition_name}.parquet"
         features.to_parquet(feature_path, index=False)
         labels.to_parquet(label_path, index=False)
+    feature_columns = tuple(
+        column
+        for column in dataset.columns
+        if column.startswith("intraday_")
+    )
+    label_columns = (args.label_name, f"{args.label_name}_rank")
+    source_artifacts = {}
+    if feature_path is not None:
+        source_artifacts["features"] = str(feature_path)
+    if label_path is not None:
+        source_artifacts["labels"] = str(label_path)
+    manifest = DatasetPartitionManifest.create(
+        name="baseline_a_alpha_dataset",
+        partition=partition_name,
+        dataset_path=dataset_path,
+        row_count=len(dataset),
+        feature_columns=feature_columns,
+        label_columns=label_columns,
+        parameters=_manifest_parameters(args),
+        data_snapshot=args.data_snapshot,
+        catalog_reference=catalog_reference_for_path(args.catalog_path),
+        source_artifacts=source_artifacts,
+    )
+    manifest_path = output_dir / f"dataset_{partition_name}.manifest.json"
+    write_dataset_manifest(manifest, manifest_path)
     row = {
         "partition": partition_name,
         "bar_count": len(bars),
@@ -186,6 +215,7 @@ def _build_partition_dataset(
         "instrument_count": int(bars["instrument_id"].nunique()),
         **entry_filter_counts,
         "dataset_path": str(dataset_path),
+        "manifest_path": str(manifest_path),
         "features_path": str(feature_path) if feature_path is not None else None,
         "labels_path": str(label_path) if label_path is not None else None,
     }
@@ -351,6 +381,7 @@ def _write_summary(
             "partition": args.partition,
             "padding_days": args.padding_days,
             "workers": args.workers,
+            "data_snapshot": args.data_snapshot,
         },
         "partitions": rows,
     }
@@ -416,6 +447,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--padding-days", type=int, default=30)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--write-components", action="store_true")
+    parser.add_argument("--data-snapshot")
     args = parser.parse_args()
     if any(value <= 0 for value in args.lookback_bars):
         raise ValueError("--lookback-bars values must be positive")
@@ -436,6 +468,53 @@ def _parse_args() -> argparse.Namespace:
     if args.limit_down_bps <= 0:
         raise ValueError("--limit-down-bps must be positive")
     return args
+
+
+def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "start": args.start,
+        "end": args.end,
+        "factor_groups": list(args.factor_groups),
+        "lookback_bars": list(args.lookback_bars),
+        "momentum_lookback_bars": list(args.momentum_lookback_bars),
+        "volatility_windows": list(args.volatility_windows),
+        "volume_windows": list(args.volume_windows),
+        "turnover_windows": list(args.turnover_windows),
+        "label_name": args.label_name,
+        "horizon_bars": args.horizon_bars,
+        "entry_lag_bars": args.entry_lag_bars,
+        "exclude_st": args.exclude_st,
+        "limit_up_bps": args.limit_up_bps,
+        "limit_down_bps": args.limit_down_bps,
+        "filter_entry_tradable": args.filter_entry_tradable,
+        "filter_entry_limit_up": args.filter_entry_limit_up,
+        "max_symbols": args.max_symbols,
+        "universe": {
+            "market": "CN",
+            "asset_type": "equity",
+            "board": "main_board",
+        },
+        "partition": args.partition,
+        "padding_days": args.padding_days,
+        "warmup_window": {
+            "padding_days": args.padding_days,
+            "max_lookback_bars": max(
+                [
+                    *args.lookback_bars,
+                    *args.momentum_lookback_bars,
+                    *args.volatility_windows,
+                    *args.volume_windows,
+                    *args.turnover_windows,
+                ]
+            ),
+        },
+        "entry_exit_assumption": {
+            "entry_lag_bars": args.entry_lag_bars,
+            "horizon_bars": args.horizon_bars,
+            "entry_price": "close_price",
+            "exit_price": "close_price",
+        },
+    }
 
 
 if __name__ == "__main__":

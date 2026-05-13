@@ -73,6 +73,18 @@ def infer_feature_columns(
         "entry_tradable_bar",
         "entry_limit_up_open",
         "entry_limit_down_open",
+        "tradable_bar",
+        "buyable_bar",
+        "sellable_bar",
+        "suspended_bar",
+        "limit_up_open",
+        "limit_down_open",
+        "is_st",
+        "previous_close",
+        "trade_date",
+        "sample_count",
+        "rank",
+        "diagnostic",
         *exclude_columns,
     }
     features: list[str] = []
@@ -198,8 +210,13 @@ def evaluate_cross_sectional_predictions(
             {
                 "timestamp": timestamp,
                 "sample_count": len(valid),
-                "pearson_ic": valid[score_column].corr(valid[label_column]),
-                "spearman_rank_ic": valid[score_column].corr(
+                "pearson_ic": _correlation(
+                    valid[score_column],
+                    valid[label_column],
+                    method="pearson",
+                ),
+                "spearman_rank_ic": _correlation(
+                    valid[score_column],
                     valid[label_column],
                     method="spearman",
                 ),
@@ -249,6 +266,12 @@ def _nullable_float(value: object) -> float | None:
     if pd.isna(value):
         return None
     return float(value)
+
+
+def _correlation(left: pd.Series, right: pd.Series, *, method: str) -> float:
+    if method == "spearman":
+        return float(left.rank(method="average").corr(right.rank(method="average")))
+    return float(left.corr(right))
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

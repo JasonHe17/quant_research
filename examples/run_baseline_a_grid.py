@@ -270,6 +270,7 @@ def _build_grid_runs(args: argparse.Namespace) -> list[GridRun]:
             lot_size=args.lot_size,
             max_symbols=args.max_symbols,
             output_dir=run_dir if args.write_run_artifacts else None,
+            data_access_mode="fast_parquet",
         )
         state = SimulationState(
             cash=float(args.initial_cash),

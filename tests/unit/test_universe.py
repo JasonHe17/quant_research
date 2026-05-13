@@ -30,6 +30,7 @@ def test_universe_builder_builds_static_members() -> None:
     assert universe.members["instrument_id"].tolist() == ["600000.SH", "000001.SZ"]
     assert universe.members["effective_from"].unique().tolist() == ["2024-01-01"]
     assert universe.diagnostics.loc[0, "member_count"] == 2
+    assert universe.diagnostics.loc[0, "source"] == "symbols"
 
 
 def test_universe_builder_resolves_members_with_data_portal() -> None:
@@ -45,6 +46,28 @@ def test_universe_builder_resolves_members_with_data_portal() -> None:
 
     assert universe.members.loc[0, "symbol"] == "600000.SH"
     assert universe.members.loc[0, "instrument_id"] == "inst-600000"
+
+
+def test_universe_builder_builds_wildcard_members_from_data_portal() -> None:
+    universe = UniverseBuilder().build(
+        UniverseSpec(
+            name="all-cn-equity",
+            symbols=("*",),
+            market="CN",
+            asset_type="equity",
+            start="2024-01-01",
+            end="2024-12-31",
+        ),
+        data=_FakeDataPortal(),
+    )
+
+    filtered = cn_main_board(universe)
+
+    assert universe.members["symbol"].tolist() == ["300750.SZ", "600000.SH"]
+    assert filtered.members["symbol"].tolist() == ["600000.SH"]
+    assert universe.diagnostics.loc[0, "source"] == "data_portal"
+    assert universe.diagnostics.loc[0, "effective_from_missing_count"] == 0
+    assert filtered.diagnostics.iloc[-1]["filter"] == "cn_main_board"
 
 
 def test_universe_active_on_filters_effective_dates() -> None:
@@ -140,6 +163,35 @@ def test_universe_spec_validates_inputs() -> None:
 
 
 class _FakeDataPortal:
+    def list_instruments(
+        self,
+        *,
+        market: str | None = None,
+        asset_type: str | None = None,
+        as_of: str | None = None,
+    ) -> pd.DataFrame:
+        _ = as_of
+        return pd.DataFrame(
+            [
+                {
+                    "canonical_code": "600000.SH",
+                    "instrument_id": "inst-600000",
+                    "market": market,
+                    "asset_type": asset_type,
+                    "effective_from": "2024-01-01",
+                    "effective_to": "2024-12-31",
+                },
+                {
+                    "canonical_code": "300750.SZ",
+                    "instrument_id": "inst-300750",
+                    "market": market,
+                    "asset_type": asset_type,
+                    "effective_from": "2024-01-01",
+                    "effective_to": "2024-12-31",
+                },
+            ]
+        )
+
     def resolve_instruments(
         self,
         symbols: list[str],

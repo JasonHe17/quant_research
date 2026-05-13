@@ -4,7 +4,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
+from quant_research.backtest import (
+    TargetWeightExecutionConfig,
+    TargetWeightExecutionSimulator,
+    simulate_target_weight_execution_batches,
+)
 from examples.build_baseline_a_alpha_dataset import (
     _add_entry_execution_columns,
     _entry_execution_filter_counts,
@@ -86,9 +92,13 @@ def test_execution_constraint_columns_flag_st_and_limit_states() -> None:
     st_row = constrained.loc[constrained["instrument_id"] == "inst-st"].iloc[0]
 
     assert bool(limit_up_row["limit_up_open"])
+    assert not bool(limit_up_row["buyable_bar"])
     assert bool(limit_down_row["limit_down_open"])
+    assert not bool(limit_down_row["sellable_bar"])
     assert bool(st_row["is_st"])
     assert not bool(st_row["tradable_bar"])
+    assert bool(limit_up_row["sellable_bar"])
+    assert bool(limit_down_row["buyable_bar"])
 
 
 def test_simulation_blocks_limit_up_buys_and_limit_down_sells() -> None:
@@ -154,11 +164,171 @@ def test_simulation_caps_trade_size_by_bar_turnover_participation() -> None:
 
     trades, _, _, next_state = _simulate(
         executions,
-        _params(initial_cash=100_000.0, max_bar_turnover_participation=0.05),
+        _params(
+            initial_cash=100_000.0,
+            max_bar_turnover_participation=0.05,
+            allow_same_bar_capacity=True,
+        ),
     )
 
     assert list(trades["shares"]) == [500]
     assert next_state.cash == 95_000.0
+
+
+def test_open_execution_rejects_same_bar_capacity_without_explicit_policy() -> None:
+    with pytest.raises(ValueError, match="same-bar capacity"):
+        TargetWeightExecutionConfig(
+            initial_cash=100_000.0,
+            max_bar_turnover_participation=0.05,
+        )
+
+
+def test_simulation_sizes_open_execution_without_same_bar_close() -> None:
+    executions = pd.DataFrame(
+        [
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "held",
+                "canonical_code": "600000.SH",
+                "open_price": 10.0,
+                "close_price": 100.0,
+                "turnover": 1_000_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 0.5,
+            },
+        ]
+    )
+    state = SimulationState(
+        cash=0.0,
+        lots={"held": [{"shares": 100, "date": "2025-01-02", "sellable": True}]},
+        previous_date="2025-01-02",
+        last_prices={"held": 10.0},
+    )
+
+    trades, _, final_positions, _ = _simulate(
+        executions,
+        _params(initial_cash=1_000.0, lot_size=1),
+        state=state,
+    )
+
+    assert trades.loc[0, "side"] == "sell"
+    assert trades.loc[0, "shares"] == 50
+    assert final_positions.loc[0, "shares"] == 50
+
+
+def test_target_weight_execution_simulator_keeps_state_between_batches() -> None:
+    simulator = TargetWeightExecutionSimulator(
+        TargetWeightExecutionConfig(initial_cash=20_000.0, lot_size=100)
+    )
+    first_batch = pd.DataFrame(
+        [
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "buy",
+                "canonical_code": "600001.SH",
+                "open_price": 10.0,
+                "close_price": 10.0,
+                "turnover": 1_000_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 0.5,
+            }
+        ]
+    )
+    second_batch = first_batch.assign(
+        exec_time="2025-01-06T09:35:00+08:00",
+        target_weight=0.0,
+    )
+
+    first_trades, _, _ = simulator.run(first_batch)
+    second_trades, _, positions = simulator.run(second_batch)
+
+    assert first_trades.loc[0, "side"] == "buy"
+    assert second_trades.loc[0, "side"] == "sell"
+    assert positions.empty
+
+
+def test_target_weight_batch_execution_api_keeps_continuous_state() -> None:
+    config = TargetWeightExecutionConfig(initial_cash=20_000.0, lot_size=100)
+    first_batch = pd.DataFrame(
+        [
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "buy",
+                "canonical_code": "600001.SH",
+                "open_price": 10.0,
+                "close_price": 10.0,
+                "turnover": 1_000_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 0.5,
+            }
+        ]
+    )
+    second_batch = first_batch.assign(
+        exec_time="2025-01-06T09:35:00+08:00",
+        target_weight=0.0,
+    )
+
+    trades, equity, positions, diagnostics, state = (
+        simulate_target_weight_execution_batches(
+            [first_batch, second_batch],
+            config,
+        )
+    )
+
+    assert trades["side"].tolist() == ["buy", "sell"]
+    assert len(equity) == 2
+    assert positions.empty
+    assert state.cash == 20_000.0
+    assert diagnostics["batch_index"].tolist() == [0, 1]
+
+
+def test_target_weight_execution_simulator_reports_diagnostics() -> None:
+    simulator = TargetWeightExecutionSimulator(
+        TargetWeightExecutionConfig(initial_cash=20_000.0, lot_size=100)
+    )
+    executions = pd.DataFrame(
+        [
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "buy",
+                "canonical_code": "600001.SH",
+                "open_price": 10.0,
+                "close_price": 10.0,
+                "turnover": 1_000_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 0.5,
+            },
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "blocked",
+                "canonical_code": "600002.SH",
+                "open_price": 10.0,
+                "close_price": 10.0,
+                "turnover": 1_000_000.0,
+                "tradable_bar": False,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 0.5,
+            },
+        ]
+    )
+
+    trades, _, _, diagnostics = simulator.run_with_diagnostics(executions)
+
+    assert len(trades) == 1
+    assert diagnostics.loc[0, "trade_count"] == 1
+    assert diagnostics.loc[0, "positive_target_non_tradable_row_count"] == 1
+    assert diagnostics.loc[0, "non_tradable_event_count"] == 1
+    assert diagnostics.loc[0, "gross_traded_notional"] == 10_000.0
+    assert simulator.last_execution_events["reason"].tolist() == ["non_tradable"]
 
 
 def test_execution_constraint_counts_include_targeted_limit_rows() -> None:

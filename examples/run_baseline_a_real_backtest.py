@@ -18,6 +18,19 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from quant_research.metrics.performance import total_return
 from quant_research.metrics.risk import max_drawdown
+from quant_research.backtest import (
+    CnEquityExecutionConstraintsConfig,
+    TargetWeightExecutionConfig,
+    TargetWeightSimulationState,
+    add_cn_equity_execution_columns,
+    empty_execution_constraint_counts as framework_empty_execution_constraint_counts,
+    execution_constraint_counts as framework_execution_constraint_counts,
+    final_positions as framework_final_positions,
+    merge_execution_constraint_counts as framework_merge_execution_constraint_counts,
+    simulate_target_weight_executions,
+)
+from quant_research.data import DataPortal
+from quant_research.universe import is_cn_main_board_symbol
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,14 +55,11 @@ class BacktestParams:
     limit_up_bps: float | None = None
     limit_down_bps: float | None = None
     max_bar_turnover_participation: float | None = None
+    allow_same_bar_capacity: bool = False
+    data_access_mode: str = "data_portal"
 
 
-@dataclass(slots=True)
-class SimulationState:
-    cash: float
-    lots: dict[str, list[dict[str, object]]]
-    previous_date: str | None
-    last_prices: dict[str, float]
+SimulationState = TargetWeightSimulationState
 
 
 def main() -> None:
@@ -63,6 +73,9 @@ def main() -> None:
 
 
 def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
+    if params.data_access_mode == "data_portal":
+        bars = _load_bars(params)
+        return run_backtest(bars, params)
     files = _minute_bar_files(params)
     if not files:
         raise FileNotFoundError("no 5-minute CN equity parquet files found")
@@ -182,10 +195,87 @@ def run_backtest(bars: pd.DataFrame, params: BacktestParams) -> dict[str, object
 
 
 def _load_bars(params: BacktestParams) -> pd.DataFrame:
+    if params.data_access_mode == "data_portal":
+        return _load_bars_via_data_portal(params)
     files = _minute_bar_files(params)
     if not files:
         raise FileNotFoundError("no 5-minute CN equity parquet files found")
     return _load_bars_from_files(params, files)
+
+
+def _load_bars_via_data_portal(params: BacktestParams) -> pd.DataFrame:
+    canonical_root = params.catalog_path.parent.parent
+    data = DataPortal(
+        canonical_root=canonical_root,
+        catalog_path=params.catalog_path,
+    )
+    symbols = _main_board_symbols_from_data_portal(data, params)
+    if not symbols:
+        raise ValueError("no CN main-board equity symbols resolved from DataPortal")
+    frame = data.get_bars(
+        symbols,
+        start=params.start,
+        end=params.end,
+        frequency="5m",
+        adjustment="raw",
+        market="CN",
+        asset_type="equity",
+        cache=False,
+    )
+    if frame.empty:
+        return frame
+    if "canonical_code" not in frame.columns and "query_symbol" in frame.columns:
+        frame["canonical_code"] = frame["query_symbol"]
+    if "raw_name" not in frame.columns:
+        frame["raw_name"] = None
+    columns = [
+        "instrument_id",
+        "canonical_code",
+        "bar_end_time",
+        "open_price",
+        "close_price",
+        "volume",
+        "turnover",
+        "raw_name",
+    ]
+    missing = [column for column in columns if column not in frame.columns]
+    if missing:
+        raise ValueError(f"DataPortal bars missing required columns: {missing}")
+    frame = frame.loc[:, columns].sort_values(
+        ["instrument_id", "bar_end_time"]
+    ).reset_index(drop=True)
+    return _add_execution_constraint_columns(frame, params)
+
+
+def _main_board_symbols_from_data_portal(
+    data: DataPortal,
+    params: BacktestParams,
+) -> list[str]:
+    instruments = data.list_instruments(
+        market="CN",
+        asset_type="equity",
+        as_of=params.end[:10],
+        cache=False,
+    )
+    if instruments.empty:
+        return []
+    code_column = "canonical_code" if "canonical_code" in instruments.columns else "symbol"
+    if code_column not in instruments.columns:
+        raise ValueError("DataPortal instruments missing canonical_code/symbol column")
+    mask = instruments.apply(
+        lambda row: is_cn_main_board_symbol(
+            str(row[code_column]),
+            market=str(row["market"]) if "market" in instruments.columns else "CN",
+            asset_type=str(row["asset_type"])
+            if "asset_type" in instruments.columns
+            else "equity",
+        ),
+        axis=1,
+    )
+    symbols = sorted(instruments.loc[mask, code_column].astype(str).unique().tolist())
+    if params.max_symbols is not None:
+        symbols = symbols[: params.max_symbols]
+    return symbols
 
 
 def _load_bars_from_files(params: BacktestParams, files: list[Path]) -> pd.DataFrame:
@@ -260,51 +350,14 @@ def _add_execution_constraint_columns(
     frame: pd.DataFrame,
     params: BacktestParams,
 ) -> pd.DataFrame:
-    frame = frame.copy()
-    frame["trade_date"] = frame["bar_end_time"].astype(str).str.slice(0, 10)
-    daily_close = (
-        frame.groupby(["instrument_id", "trade_date"], sort=False)["close_price"]
-        .last()
-        .rename("daily_close")
-        .reset_index()
+    return add_cn_equity_execution_columns(
+        frame,
+        CnEquityExecutionConstraintsConfig(
+            exclude_st=params.exclude_st,
+            limit_up_bps=params.limit_up_bps,
+            limit_down_bps=params.limit_down_bps,
+        ),
     )
-    daily_close["previous_close"] = daily_close.groupby("instrument_id", sort=False)[
-        "daily_close"
-    ].shift(1)
-    frame = frame.merge(
-        daily_close.loc[:, ["instrument_id", "trade_date", "previous_close"]],
-        on=["instrument_id", "trade_date"],
-        how="left",
-    )
-    if params.exclude_st and "raw_name" in frame.columns:
-        raw_name = frame["raw_name"].fillna("").astype(str).str.upper()
-        frame["is_st"] = raw_name.str.contains("ST", regex=False)
-    else:
-        frame["is_st"] = False
-    frame["tradable_bar"] = (
-        frame["open_price"].astype(float).gt(0)
-        & frame["close_price"].astype(float).gt(0)
-        & frame["volume"].astype(float).gt(0)
-        & frame["turnover"].astype(float).gt(0)
-        & ~frame["is_st"].astype(bool)
-    )
-    previous_close = frame["previous_close"].astype(float)
-    has_previous = previous_close.gt(0)
-    if params.limit_up_bps is None:
-        frame["limit_up_open"] = False
-    else:
-        limit_up_price = previous_close * (1.0 + params.limit_up_bps / 10_000.0)
-        frame["limit_up_open"] = has_previous & (
-            frame["open_price"].astype(float) >= limit_up_price
-        )
-    if params.limit_down_bps is None:
-        frame["limit_down_open"] = False
-    else:
-        limit_down_price = previous_close * (1.0 - params.limit_down_bps / 10_000.0)
-        frame["limit_down_open"] = has_previous & (
-            frame["open_price"].astype(float) <= limit_down_price
-        )
-    return frame
 
 
 def _minute_bar_files(params: BacktestParams) -> list[Path]:
@@ -409,174 +462,24 @@ def _simulate(
     *,
     state: SimulationState | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, SimulationState]:
-    if state is None:
-        state = SimulationState(
-            cash=float(params.initial_cash),
-            lots={},
-            previous_date=None,
-            last_prices={},
-        )
-    trades: list[dict[str, object]] = []
-    equity_rows: list[dict[str, object]] = []
-    for exec_time, group in executions.groupby("exec_time", sort=True):
-        trade_date = str(exec_time)[:10]
-        if state.previous_date is not None and trade_date != state.previous_date:
-            for instrument_lots in state.lots.values():
-                for lot in instrument_lots:
-                    lot["sellable"] = True
-        state.previous_date = trade_date
-        price_by_instrument = {
-            str(row.instrument_id): float(row.open_price)
-            for row in group.itertuples(index=False)
-        }
-        close_by_instrument = {
-            str(row.instrument_id): float(row.close_price)
-            for row in group.itertuples(index=False)
-        }
-        tradable_by_instrument = (
-            {
-                str(row.instrument_id): bool(row.tradable_bar)
-                for row in group.itertuples(index=False)
-            }
-            if "tradable_bar" in group.columns
-            else {}
-        )
-        limit_up_by_instrument = (
-            {
-                str(row.instrument_id): bool(row.limit_up_open)
-                for row in group.itertuples(index=False)
-            }
-            if "limit_up_open" in group.columns
-            else {}
-        )
-        limit_down_by_instrument = (
-            {
-                str(row.instrument_id): bool(row.limit_down_open)
-                for row in group.itertuples(index=False)
-            }
-            if "limit_down_open" in group.columns
-            else {}
-        )
-        turnover_by_instrument = (
-            {
-                str(row.instrument_id): float(row.turnover)
-                for row in group.itertuples(index=False)
-            }
-            if "turnover" in group.columns
-            else {}
-        )
-        state.last_prices.update(close_by_instrument)
-        equity = state.cash + _positions_value(state.lots, state.last_prices)
-        target_rows = group.loc[group["target_weight"].notna()]
-        if not target_rows.empty:
-            targets = {
-                str(row.instrument_id): float(row.target_weight)
-                for row in target_rows.itertuples(index=False)
-            }
-            instruments = sorted(set(state.lots) | set(targets))
-            for instrument_id in instruments:
-                if instrument_id not in price_by_instrument:
-                    continue
-                if not tradable_by_instrument.get(instrument_id, True):
-                    continue
-                price = price_by_instrument[instrument_id]
-                target_value = equity * targets.get(instrument_id, 0.0)
-                current_value = _instrument_shares(state.lots, instrument_id) * price
-                delta_value = target_value - current_value
-                if (
-                    params.min_trade_weight > 0
-                    and equity > 0
-                    and abs(delta_value) / equity < params.min_trade_weight
-                ):
-                    continue
-                if delta_value > price * params.lot_size:
-                    if limit_up_by_instrument.get(instrument_id, False):
-                        continue
-                    shares = int(delta_value / price / params.lot_size) * params.lot_size
-                    shares = _cap_trade_shares_by_turnover(
-                        shares,
-                        price=price,
-                        turnover=turnover_by_instrument.get(instrument_id),
-                        params=params,
-                    )
-                    if shares <= 0:
-                        continue
-                    cost_price = price * (1.0 + params.slippage_bps / 10_000.0)
-                    notional = shares * cost_price
-                    commission = _commission(notional, params)
-                    slippage_cost = shares * (cost_price - price)
-                    if notional + commission <= state.cash:
-                        state.cash -= notional + commission
-                        state.lots.setdefault(instrument_id, []).append(
-                            {"shares": shares, "date": trade_date, "sellable": False}
-                        )
-                        trades.append(
-                            _trade_row(
-                                exec_time,
-                                instrument_id,
-                                "buy",
-                                shares,
-                                cost_price,
-                                commission,
-                                stamp_tax=0.0,
-                                slippage_cost=slippage_cost,
-                                reference_price=price,
-                            )
-                        )
-                elif delta_value < 0:
-                    if limit_down_by_instrument.get(instrument_id, False):
-                        continue
-                    shares_to_sell = int(
-                        min(
-                            -delta_value / price,
-                            _sellable_shares(state.lots, instrument_id),
-                        )
-                    )
-                    shares_to_sell = _cap_trade_shares_by_turnover(
-                        shares_to_sell,
-                        price=price,
-                        turnover=turnover_by_instrument.get(instrument_id),
-                        params=params,
-                    )
-                    if shares_to_sell <= 0:
-                        continue
-                    sell_price = price * (1.0 - params.slippage_bps / 10_000.0)
-                    sold = _remove_sellable_shares(
-                        state.lots,
-                        instrument_id,
-                        shares_to_sell,
-                    )
-                    notional = sold * sell_price
-                    commission = _commission(notional, params)
-                    stamp_tax = notional * params.sell_stamp_tax_bps / 10_000.0
-                    slippage_cost = sold * (price - sell_price)
-                    state.cash += notional - commission - stamp_tax
-                    trades.append(
-                        _trade_row(
-                            exec_time,
-                            instrument_id,
-                            "sell",
-                            sold,
-                            sell_price,
-                            commission,
-                            stamp_tax=stamp_tax,
-                            slippage_cost=slippage_cost,
-                            reference_price=price,
-                        )
-                    )
-        equity_rows.append(
-            {
-                "timestamp": exec_time,
-                "cash": state.cash,
-                "positions_value": _positions_value(state.lots, state.last_prices),
-                "equity": state.cash + _positions_value(state.lots, state.last_prices),
-            }
-        )
-    return (
-        pd.DataFrame(trades),
-        pd.DataFrame(equity_rows),
-        _final_positions(state.lots),
-        state,
+    return simulate_target_weight_executions(
+        executions,
+        _execution_config_from_params(params),
+        state=state,
+    )
+
+
+def _execution_config_from_params(params: BacktestParams) -> TargetWeightExecutionConfig:
+    return TargetWeightExecutionConfig(
+        initial_cash=params.initial_cash,
+        commission_bps=params.commission_bps,
+        slippage_bps=params.slippage_bps,
+        sell_stamp_tax_bps=params.sell_stamp_tax_bps,
+        min_commission=params.min_commission,
+        min_trade_weight=params.min_trade_weight,
+        lot_size=params.lot_size,
+        max_bar_turnover_participation=params.max_bar_turnover_participation,
+        allow_same_bar_capacity=params.allow_same_bar_capacity,
     )
 
 
@@ -668,59 +571,18 @@ def _cap_trade_shares_by_turnover(
 
 
 def _execution_constraint_counts(frame: pd.DataFrame) -> dict[str, int]:
-    counts = _empty_execution_constraint_counts()
-    counts["execution_row_count"] = int(len(frame))
-    if frame.empty:
-        return counts
-    tradable = (
-        frame["tradable_bar"].fillna(False).astype(bool)
-        if "tradable_bar" in frame.columns
-        else pd.Series(True, index=frame.index)
-    )
-    limit_up = (
-        frame["limit_up_open"].fillna(False).astype(bool)
-        if "limit_up_open" in frame.columns
-        else pd.Series(False, index=frame.index)
-    )
-    limit_down = (
-        frame["limit_down_open"].fillna(False).astype(bool)
-        if "limit_down_open" in frame.columns
-        else pd.Series(False, index=frame.index)
-    )
-    target = (
-        pd.to_numeric(frame["target_weight"], errors="coerce").fillna(0.0).gt(0)
-        if "target_weight" in frame.columns
-        else pd.Series(False, index=frame.index)
-    )
-    counts["non_tradable_row_count"] = int((~tradable).sum())
-    counts["limit_up_open_row_count"] = int(limit_up.sum())
-    counts["limit_down_open_row_count"] = int(limit_down.sum())
-    counts["positive_target_row_count"] = int(target.sum())
-    counts["positive_target_non_tradable_row_count"] = int((target & ~tradable).sum())
-    counts["positive_target_limit_up_open_row_count"] = int((target & limit_up).sum())
-    counts["positive_target_limit_down_open_row_count"] = int((target & limit_down).sum())
-    return counts
+    return framework_execution_constraint_counts(frame)
 
 
 def _empty_execution_constraint_counts() -> dict[str, int]:
-    return {
-        "execution_row_count": 0,
-        "non_tradable_row_count": 0,
-        "limit_up_open_row_count": 0,
-        "limit_down_open_row_count": 0,
-        "positive_target_row_count": 0,
-        "positive_target_non_tradable_row_count": 0,
-        "positive_target_limit_up_open_row_count": 0,
-        "positive_target_limit_down_open_row_count": 0,
-    }
+    return framework_empty_execution_constraint_counts()
 
 
 def _merge_execution_constraint_counts(
     totals: dict[str, int],
     other: dict[str, int],
 ) -> None:
-    for key, value in other.items():
-        totals[key] += value
+    framework_merge_execution_constraint_counts(totals, other)
 
 
 def _trade_metrics(trades: pd.DataFrame, equity_values: list[float]) -> dict[str, float]:
@@ -781,17 +643,7 @@ def _trade_metrics_from_totals(
 
 
 def _final_positions(lots: dict[str, list[dict[str, object]]]) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "instrument_id": instrument_id,
-                "shares": _instrument_shares(lots, instrument_id),
-                "sellable_shares": _sellable_shares(lots, instrument_id),
-            }
-            for instrument_id in sorted(lots)
-            if _instrument_shares(lots, instrument_id) > 0
-        ]
-    )
+    return framework_final_positions(lots)
 
 
 def _print_result(result: dict[str, object]) -> None:
@@ -839,6 +691,8 @@ def _write_summary(result: dict[str, object], params: BacktestParams) -> None:
             "limit_up_bps": params.limit_up_bps,
             "limit_down_bps": params.limit_down_bps,
             "max_bar_turnover_participation": params.max_bar_turnover_participation,
+            "allow_same_bar_capacity": params.allow_same_bar_capacity,
+            "data_access_mode": params.data_access_mode,
             "lot_size": params.lot_size,
             "max_symbols": params.max_symbols,
         },
@@ -882,8 +736,27 @@ def _parse_args() -> BacktestParams:
     parser.add_argument("--limit-up-bps", type=float)
     parser.add_argument("--limit-down-bps", type=float)
     parser.add_argument("--max-bar-turnover-participation", type=float)
+    parser.add_argument(
+        "--allow-same-bar-capacity",
+        action="store_true",
+        help=(
+            "Explicitly allow turnover/volume from the execution bar to cap "
+            "open-price fills. Without this flag, open execution refuses "
+            "same-bar capacity assumptions."
+        ),
+    )
     parser.add_argument("--lot-size", type=int, default=100)
     parser.add_argument("--max-symbols", type=int)
+    parser.add_argument(
+        "--data-access-mode",
+        choices=("data_portal", "fast_parquet"),
+        default="data_portal",
+        help=(
+            "Use DataPortal by default. fast_parquet keeps the legacy optimized "
+            "local scan path and should be treated as an explicit performance "
+            "shortcut until quantdb exposes a batch bar SDK."
+        ),
+    )
     parser.add_argument("--output-dir")
     args = parser.parse_args()
     if args.top_n <= 0:
@@ -928,6 +801,8 @@ def _parse_args() -> BacktestParams:
         limit_up_bps=args.limit_up_bps,
         limit_down_bps=args.limit_down_bps,
         max_bar_turnover_participation=args.max_bar_turnover_participation,
+        allow_same_bar_capacity=args.allow_same_bar_capacity,
+        data_access_mode=args.data_access_mode,
     )
 
 

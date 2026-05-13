@@ -9,6 +9,7 @@ from examples.evaluate_alpha_dataset import (
     _evaluate_dataset_path,
     SingleFactorEvaluationConfig,
 )
+from quant_research.artifacts import ArtifactStore
 from quant_research.factors import (
     evaluate_single_factors,
 )
@@ -22,24 +23,36 @@ def test_evaluate_single_factors_reports_summary_and_quantiles() -> None:
                 "instrument_id": "a",
                 "alpha": 0.9,
                 "forward_return": 0.03,
+                "forward_return_2": 0.05,
+                "sector": "bank",
+                "turnover": 1000.0,
             },
             {
                 "timestamp": "t0",
                 "instrument_id": "b",
                 "alpha": 0.1,
                 "forward_return": -0.01,
+                "forward_return_2": -0.02,
+                "sector": "bank",
+                "turnover": 100.0,
             },
             {
                 "timestamp": "t1",
                 "instrument_id": "a",
                 "alpha": 0.8,
                 "forward_return": 0.02,
+                "forward_return_2": 0.04,
+                "sector": "bank",
+                "turnover": 900.0,
             },
             {
                 "timestamp": "t1",
                 "instrument_id": "b",
                 "alpha": 0.2,
                 "forward_return": 0.00,
+                "forward_return_2": -0.01,
+                "sector": "bank",
+                "turnover": 200.0,
             },
         ]
     )
@@ -48,8 +61,11 @@ def test_evaluate_single_factors_reports_summary_and_quantiles() -> None:
         frame,
         SingleFactorEvaluationConfig(
             feature_columns=("alpha",),
+            horizon_label_columns=("forward_return_2",),
+            group_columns=("sector",),
             top_n=1,
             quantiles=2,
+            cost_bps=10.0,
         ),
     )
 
@@ -57,9 +73,18 @@ def test_evaluate_single_factors_reports_summary_and_quantiles() -> None:
     assert summary["feature"] == "alpha"
     assert summary["coverage"] == pytest.approx(1.0)
     assert summary["spearman_rank_ic_mean"] == pytest.approx(1.0)
+    assert summary["spearman_rank_ic_positive_rate"] == pytest.approx(1.0)
+    assert summary["rank_autocorrelation"] == pytest.approx(1.0)
     assert summary["top_minus_bottom_label"] == pytest.approx(0.03)
-    assert result.quantile_returns["quantile"].tolist() == [1, 2]
+    assert pd.notna(summary["cost_adjusted_top_minus_bottom_label"])
+    assert result.quantile_returns["quantile"].tolist() == ["1", "2", "long_short"]
     assert result.quantile_returns.loc[1, "mean_label"] == pytest.approx(0.025)
+    assert result.decay_by_label["label_column"].tolist() == [
+        "forward_return",
+        "forward_return_2",
+    ]
+    assert not result.group_summary.empty
+    assert result.multiple_testing.loc[0, "feature"] == "alpha"
 
 
 def test_evaluate_single_factors_infers_feature_columns() -> None:
@@ -122,3 +147,27 @@ def test_partition_evaluation_writes_artifacts_without_returning_frames(
     assert partition.by_timestamp_path.exists()
     assert partition.quantile_by_timestamp_path.exists()
     assert not hasattr(partition, "result")
+
+
+def test_factor_evaluation_persists_artifacts(tmp_path: Path) -> None:
+    frame = pd.DataFrame(
+        [
+            {"timestamp": "t0", "instrument_id": "a", "alpha": 0.9, "forward_return": 0.03},
+            {"timestamp": "t0", "instrument_id": "b", "alpha": 0.1, "forward_return": -0.01},
+        ]
+    )
+    result = evaluate_single_factors(
+        frame,
+        SingleFactorEvaluationConfig(feature_columns=("alpha",), top_n=1),
+    )
+    store = ArtifactStore.from_path(tmp_path)
+
+    artifacts = store.write_factor_evaluation("alpha_eval", result)
+    manifest = store.read_artifact_manifest(artifacts["summary"])
+
+    assert "summary" in artifacts
+    assert artifacts["summary"].endswith(".parquet")
+    assert manifest["artifact_type"] == "factor_evaluation"
+    assert store.read_factor_evaluation_artifact("alpha_eval", "summary").equals(
+        result.summary
+    )
