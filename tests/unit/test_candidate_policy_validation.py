@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from examples.run_candidate_policy_validation import (
+    _collect_factor_contribution_summary_rows,
+    _collect_factor_health_summary_rows,
     _infer_full_years,
     _monthly_summary_rows_for_backtest,
     _scenario_command,
@@ -35,6 +37,10 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
         output_dir=str(tmp_path),
         methods=["decorrelated", "equal"],
         backtest_memory_budget_gb=12.0,
+        factor_max_weight=0.4,
+        factor_max_contribution_share=0.5,
+        factor_health_mode="shrink",
+        factor_health_lookback_windows=10,
     )
     scenario = _validation_scenarios(args, years=[2023])[0]
 
@@ -46,7 +52,13 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
         "equal",
     ]
     assert command[command.index("--partition-start") + 1] == "2023_01"
+    assert command[command.index("--policy-gross-exposure-scale") + 1] == "1.0"
     assert command[command.index("--backtest-memory-budget-gb") + 1] == "12.0"
+    assert command[command.index("--factor-max-weight") + 1] == "0.4"
+    assert command[command.index("--factor-max-contribution-share") + 1] == "0.5"
+    assert command[command.index("--factor-health-mode") + 1] == "shrink"
+    assert command[command.index("--factor-health-lookback-windows") + 1] == "10"
+    assert command[command.index("--score-diagnostics-top-n") + 1] == "50"
     assert "--resume-existing" in command
 
 
@@ -146,6 +158,64 @@ def test_candidate_policy_validation_builds_monthly_summary(tmp_path: Path) -> N
     assert rows[1]["total_transaction_cost"] == 7.0
 
 
+def test_candidate_policy_validation_collects_factor_summaries(tmp_path: Path) -> None:
+    args = _validation_args(output_dir=str(tmp_path))
+    scenario = _validation_scenarios(args, years=[2024])[0]
+    scenario_dir = tmp_path / scenario.name
+    scenario_dir.mkdir(parents=True)
+    health_path = scenario_dir / "factor_health.csv"
+    health_path.write_text(
+        "\n".join(
+            [
+                "timestamp,feature,weight_scale,shrink_reason",
+                "t0,alpha_a,1.0,warmup",
+                "t1,alpha_a,0.5,lagged_health_shrink",
+                "t0,alpha_b,0.75,healthy",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    diagnostics_dir = scenario_dir / "scores" / "decorrelated" / "diagnostics"
+    diagnostics_dir.mkdir(parents=True)
+    diagnostics_path = diagnostics_dir / "factor_contribution_2024_01.csv"
+    diagnostics_path.write_text(
+        "\n".join(
+            [
+                "timestamp,largest_abs_contribution_share,top_two_abs_contribution_share",
+                "t0,0.6,0.9",
+                "t1,0.4,0.8",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (scenario_dir / "summary.json").write_text(
+        (
+            "{"
+            f"\"factor_health_schedule\": \"{health_path}\","
+            "\"methods\": {"
+            "\"decorrelated\": {"
+            "\"factor_contribution_diagnostics\": ["
+            f"\"{diagnostics_path}\""
+            "]"
+            "}"
+            "}"
+            "}"
+        ),
+        encoding="utf-8",
+    )
+
+    health_rows = _collect_factor_health_summary_rows(args, [scenario])
+    contribution_rows = _collect_factor_contribution_summary_rows(args, [scenario])
+
+    assert health_rows[0]["feature"] == "alpha_a"
+    assert health_rows[0]["lagged_health_shrink_count"] == 1
+    assert contribution_rows[0]["average_largest_abs_contribution_share"] == pytest.approx(
+        0.5
+    )
+
+
 def _validation_args(**overrides: object) -> object:
     defaults = {
         "dataset_dir": "dataset",
@@ -158,6 +228,19 @@ def _validation_args(**overrides: object) -> object:
         "primary_method": "decorrelated",
         "policy": "partial_rebalance_daily",
         "top_n": 50,
+        "score_diagnostics_top_n": 50,
+        "factor_max_weight": None,
+        "factor_max_contribution_share": None,
+        "factor_health_mode": "off",
+        "factor_health_lookback_windows": 20,
+        "factor_health_min_periods": 5,
+        "factor_health_label_lag_windows": 48,
+        "factor_health_min_scale": 0.25,
+        "factor_health_max_scale": 1.0,
+        "factor_health_rank_ic_floor": -0.05,
+        "factor_health_rank_ic_ceiling": 0.05,
+        "factor_health_spread_floor": -0.001,
+        "factor_health_spread_ceiling": 0.001,
         "initial_cash": 1_000_000.0,
         "commission_bps": 3.0,
         "slippage_bps": 1.0,
@@ -174,6 +257,15 @@ def _validation_args(**overrides: object) -> object:
         "policy_set_exit_rank": 150,
         "policy_set_rebalance_every_n_bars": 48,
         "policy_set_partial_rebalance_rate": 0.5,
+        "policy_gross_exposure_scale": 1.0,
+        "policy_gross_exposure_scale_path": None,
+        "optimizer_candidate_rank": None,
+        "optimizer_score_to_edge_bps": 100.0,
+        "optimizer_min_net_edge_bps": 0.0,
+        "optimizer_risk_penalty_multiplier": 1.0,
+        "optimizer_weighting": "utility",
+        "optimizer_max_name_weight": None,
+        "optimizer_max_gross_exposure_increase_per_rebalance": None,
         "data_access_mode": "fast_parquet",
         "streaming_chunk": "month",
         "streaming_chunk_padding_days": 10,

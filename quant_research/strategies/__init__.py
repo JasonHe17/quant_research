@@ -6,6 +6,8 @@ from quant_research.strategies.five_minute_cross_sectional import (
     FiveMinuteCrossSectionalStrategy,
 )
 from quant_research.strategies.policy import (
+    CostAwareOptimizerConfig,
+    CostAwareOptimizerPolicy,
     RankBufferDropConfig,
     RankBufferDropPolicy,
     StrategyPolicyResult,
@@ -19,6 +21,8 @@ __all__ = [
     "FiveMinuteCrossSectionalConfig",
     "FiveMinuteCrossSectionalResult",
     "FiveMinuteCrossSectionalStrategy",
+    "CostAwareOptimizerConfig",
+    "CostAwareOptimizerPolicy",
     "RankBufferDropConfig",
     "RankBufferDropPolicy",
     "StrategyPolicyResult",

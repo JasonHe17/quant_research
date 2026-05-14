@@ -18,6 +18,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from quant_research.metrics.performance import total_return
 from quant_research.metrics.risk import max_drawdown
 from quant_research.strategies import (
+    CostAwareOptimizerConfig,
+    CostAwareOptimizerPolicy,
     RankBufferDropConfig,
     RankBufferDropPolicy,
     empty_portfolio_state,
@@ -69,6 +71,15 @@ class TreeScoreBacktestParams:
     policy_no_trade_weight_band: float
     policy_partial_rebalance_rate: float
     policy_max_gross_turnover_per_rebalance: float | None
+    policy_gross_exposure_scale: float
+    policy_gross_exposure_scale_path: Path | None
+    optimizer_candidate_rank: int | None
+    optimizer_score_to_edge_bps: float
+    optimizer_min_net_edge_bps: float
+    optimizer_risk_penalty_multiplier: float
+    optimizer_weighting: str
+    optimizer_max_name_weight: float | None
+    optimizer_max_gross_exposure_increase_per_rebalance: float | None
     min_trade_weight: float
     exclude_st: bool
     limit_up_bps: float | None
@@ -183,6 +194,21 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "policy_no_trade_weight_band": params.policy_no_trade_weight_band,
             "policy_partial_rebalance_rate": params.policy_partial_rebalance_rate,
             "policy_max_gross_turnover_per_rebalance": params.policy_max_gross_turnover_per_rebalance,
+            "policy_gross_exposure_scale": params.policy_gross_exposure_scale,
+            "policy_gross_exposure_scale_path": (
+                str(params.policy_gross_exposure_scale_path)
+                if params.policy_gross_exposure_scale_path is not None
+                else None
+            ),
+            "optimizer_candidate_rank": params.optimizer_candidate_rank,
+            "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
+            "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
+            "optimizer_risk_penalty_multiplier": params.optimizer_risk_penalty_multiplier,
+            "optimizer_weighting": params.optimizer_weighting,
+            "optimizer_max_name_weight": params.optimizer_max_name_weight,
+            "optimizer_max_gross_exposure_increase_per_rebalance": (
+                params.optimizer_max_gross_exposure_increase_per_rebalance
+            ),
             "min_trade_weight": params.min_trade_weight,
             "exclude_st": params.exclude_st,
             "limit_up_bps": params.limit_up_bps,
@@ -424,16 +450,38 @@ def _build_target_weights(
             else empty_portfolio_state(),
             diagnostics=pd.DataFrame(),
         )
-    if params.trade_policy != "rank_buffer_drop":
+    if params.trade_policy not in {"rank_buffer_drop", "cost_aware_optimizer"}:
         raise ValueError(f"unsupported trade policy: {params.trade_policy}")
-    policy = RankBufferDropPolicy(_rank_buffer_drop_config(params))
+    scale_by_timestamp = _load_policy_gross_exposure_schedule(params)
+    default_policy = _policy_for_params(params)
     diagnostics: list[pd.DataFrame] = []
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
     for signal_time, group in ranked_signals.groupby("signal_time", sort=True):
-        forecasts = group.rename(columns={"signal_time": "timestamp"}).loc[
-            :, ["timestamp", "instrument_id", "score", "rank"]
+        policy = default_policy
+        if scale_by_timestamp:
+            scale = scale_by_timestamp.get(
+                _timestamp_key(signal_time),
+                params.policy_gross_exposure_scale,
+            )
+            policy = _policy_for_params(params, gross_exposure_scale=scale)
+        forecast_frame = group.rename(columns={"signal_time": "timestamp"})
+        forecast_columns = [
+            column
+            for column in (
+                "timestamp",
+                "instrument_id",
+                "score",
+                "rank",
+                "expected_edge_bps",
+                "expected_return_bps",
+                "risk_penalty_bps",
+                "health_risk_bps",
+                "optimizer_risk_penalty_bps",
+            )
+            if column in forecast_frame.columns
         ]
+        forecasts = forecast_frame.loc[:, forecast_columns]
         result = policy.decide(forecasts, state)
         state = result.policy_state
         diagnostics.append(result.diagnostics)
@@ -480,7 +528,30 @@ def _build_target_weights(
     )
 
 
-def _rank_buffer_drop_config(params: TreeScoreBacktestParams) -> RankBufferDropConfig:
+def _policy_for_params(
+    params: TreeScoreBacktestParams,
+    *,
+    gross_exposure_scale: float | None = None,
+) -> RankBufferDropPolicy | CostAwareOptimizerPolicy:
+    if params.trade_policy == "rank_buffer_drop":
+        return RankBufferDropPolicy(
+            _rank_buffer_drop_config(params, gross_exposure_scale=gross_exposure_scale)
+        )
+    if params.trade_policy == "cost_aware_optimizer":
+        return CostAwareOptimizerPolicy(
+            _cost_aware_optimizer_config(
+                params,
+                gross_exposure_scale=gross_exposure_scale,
+            )
+        )
+    raise ValueError(f"unsupported trade policy: {params.trade_policy}")
+
+
+def _rank_buffer_drop_config(
+    params: TreeScoreBacktestParams,
+    *,
+    gross_exposure_scale: float | None = None,
+) -> RankBufferDropConfig:
     return RankBufferDropConfig(
         target_count=params.top_n,
         entry_rank=params.policy_entry_rank or params.top_n,
@@ -493,7 +564,86 @@ def _rank_buffer_drop_config(params: TreeScoreBacktestParams) -> RankBufferDropC
         no_trade_weight_band=params.policy_no_trade_weight_band,
         partial_rebalance_rate=params.policy_partial_rebalance_rate,
         max_gross_turnover_per_rebalance=params.policy_max_gross_turnover_per_rebalance,
+        gross_exposure_scale=(
+            params.policy_gross_exposure_scale
+            if gross_exposure_scale is None
+            else gross_exposure_scale
+        ),
     )
+
+
+def _cost_aware_optimizer_config(
+    params: TreeScoreBacktestParams,
+    *,
+    gross_exposure_scale: float | None = None,
+) -> CostAwareOptimizerConfig:
+    return CostAwareOptimizerConfig(
+        target_count=params.top_n,
+        candidate_rank=params.optimizer_candidate_rank or params.policy_exit_rank or params.top_n * 3,
+        min_hold_bars=params.policy_min_hold_bars,
+        max_entries_per_rebalance=params.policy_max_entries_per_rebalance,
+        max_exits_per_rebalance=params.policy_max_exits_per_rebalance,
+        weighting=params.optimizer_weighting,  # type: ignore[arg-type]
+        max_name_weight=params.optimizer_max_name_weight,
+        score_to_edge_bps=params.optimizer_score_to_edge_bps,
+        min_net_edge_bps=params.optimizer_min_net_edge_bps,
+        estimated_cost_bps=params.policy_estimated_cost_bps,
+        risk_penalty_multiplier=params.optimizer_risk_penalty_multiplier,
+        no_trade_weight_band=params.policy_no_trade_weight_band,
+        partial_rebalance_rate=params.policy_partial_rebalance_rate,
+        max_gross_turnover_per_rebalance=params.policy_max_gross_turnover_per_rebalance,
+        max_gross_exposure_increase_per_rebalance=(
+            params.optimizer_max_gross_exposure_increase_per_rebalance
+        ),
+        gross_exposure_scale=(
+            params.policy_gross_exposure_scale
+            if gross_exposure_scale is None
+            else gross_exposure_scale
+        ),
+    )
+
+
+def _load_policy_gross_exposure_schedule(
+    params: TreeScoreBacktestParams,
+) -> dict[str, float]:
+    path = params.policy_gross_exposure_scale_path
+    if path is None:
+        return {}
+    if not path.exists():
+        raise FileNotFoundError(f"policy gross exposure scale path not found: {path}")
+    if path.suffix == ".parquet":
+        schedule = pd.read_parquet(path)
+    else:
+        schedule = pd.read_csv(path)
+    if "gross_exposure_scale" not in schedule.columns:
+        if "policy_gross_exposure_scale" in schedule.columns:
+            schedule = schedule.rename(
+                columns={"policy_gross_exposure_scale": "gross_exposure_scale"}
+            )
+        else:
+            raise ValueError("gross exposure schedule must contain gross_exposure_scale")
+    if "timestamp" not in schedule.columns:
+        raise ValueError("gross exposure schedule must contain timestamp")
+    output: dict[str, float] = {}
+    for row in schedule.itertuples(index=False):
+        scale = float(getattr(row, "gross_exposure_scale"))
+        if not 0 <= scale <= 1:
+            raise ValueError("gross exposure schedule values must be in [0, 1]")
+        key = _timestamp_key(getattr(row, "timestamp"))
+        if key in output:
+            raise ValueError(f"duplicate gross exposure schedule timestamp: {key}")
+        output[key] = scale
+    return output
+
+
+def _timestamp_key(value: object) -> str:
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if pd.isna(timestamp):
+        return str(value)
+    return timestamp.isoformat()
 
 
 def _concat_policy_diagnostics(frames: list[pd.DataFrame]) -> pd.DataFrame:
@@ -518,7 +668,17 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             "below_weight_band_count": 0,
             "t1_sell_blocked_count": 0,
             "turnover_scaled_count": 0,
+            "turnover_budget_limited_count": 0,
+            "turnover_budget_limited_flag_count": 0,
+            "risk_reduction_count": 0,
+            "gross_exposure_scaled_count": 0,
+            "average_target_gross_exposure": 0.0,
         }
+    target_gross = (
+        diagnostics["target_gross_exposure"]
+        if "target_gross_exposure" in diagnostics.columns
+        else pd.Series(dtype=float)
+    )
     return {
         "decision_timestamp_count": int(len(diagnostics)),
         "planned_gross_turnover": float(diagnostics["planned_gross_turnover"].sum()),
@@ -531,7 +691,24 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
         "below_edge_count": int(diagnostics["below_edge_count"].sum()),
         "below_weight_band_count": int(diagnostics["below_weight_band_count"].sum()),
         "t1_sell_blocked_count": int(diagnostics["t1_sell_blocked_count"].sum()),
+        "risk_reduction_count": int(
+            diagnostics.get("risk_reduction_count", pd.Series(dtype=float)).sum()
+        ),
+        "gross_exposure_scaled_count": int(
+            diagnostics.get("gross_exposure_scaled_count", pd.Series(dtype=float)).sum()
+        ),
         "turnover_scaled_count": int(diagnostics["turnover_scaled_count"].sum()),
+        "turnover_budget_limited_count": int(
+            diagnostics.get("turnover_budget_limited_count", pd.Series(dtype=float)).sum()
+        ),
+        "turnover_budget_limited_flag_count": int(
+            diagnostics.get(
+                "turnover_budget_limited_flag_count", pd.Series(dtype=float)
+            ).sum()
+        ),
+        "average_target_gross_exposure": (
+            float(target_gross.mean()) if not target_gross.empty else 0.0
+        ),
     }
 
 
@@ -572,6 +749,21 @@ def _summary_payload(
             "policy_no_trade_weight_band": params.policy_no_trade_weight_band,
             "policy_partial_rebalance_rate": params.policy_partial_rebalance_rate,
             "policy_max_gross_turnover_per_rebalance": params.policy_max_gross_turnover_per_rebalance,
+            "policy_gross_exposure_scale": params.policy_gross_exposure_scale,
+            "policy_gross_exposure_scale_path": (
+                str(params.policy_gross_exposure_scale_path)
+                if params.policy_gross_exposure_scale_path is not None
+                else None
+            ),
+            "optimizer_candidate_rank": params.optimizer_candidate_rank,
+            "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
+            "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
+            "optimizer_risk_penalty_multiplier": params.optimizer_risk_penalty_multiplier,
+            "optimizer_weighting": params.optimizer_weighting,
+            "optimizer_max_name_weight": params.optimizer_max_name_weight,
+            "optimizer_max_gross_exposure_increase_per_rebalance": (
+                params.optimizer_max_gross_exposure_increase_per_rebalance
+            ),
             "min_trade_weight": params.min_trade_weight,
             "exclude_st": params.exclude_st,
             "limit_up_bps": params.limit_up_bps,
@@ -737,7 +929,7 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--lot-size", type=int, default=100)
     parser.add_argument(
         "--trade-policy",
-        choices=("naive_top_n", "rank_buffer_drop"),
+        choices=("naive_top_n", "rank_buffer_drop", "cost_aware_optimizer"),
         default="naive_top_n",
     )
     parser.add_argument("--rebalance-every-n-bars", type=int, default=1)
@@ -752,6 +944,19 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--policy-no-trade-weight-band", type=float, default=0.0)
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
+    parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
+    parser.add_argument("--policy-gross-exposure-scale-path")
+    parser.add_argument("--optimizer-candidate-rank", type=int)
+    parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
+    parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
+    parser.add_argument("--optimizer-risk-penalty-multiplier", type=float, default=1.0)
+    parser.add_argument(
+        "--optimizer-weighting",
+        choices=("equal", "utility"),
+        default="utility",
+    )
+    parser.add_argument("--optimizer-max-name-weight", type=float)
+    parser.add_argument("--optimizer-max-gross-exposure-increase-per-rebalance", type=float)
     parser.add_argument("--min-trade-weight", type=float, default=0.0)
     parser.add_argument("--exclude-st", action="store_true")
     parser.add_argument("--limit-up-bps", type=float)
@@ -812,6 +1017,25 @@ def _parse_args() -> TreeScoreBacktestParams:
         and args.policy_max_gross_turnover_per_rebalance < 0
     ):
         raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
+    if not 0 <= args.policy_gross_exposure_scale <= 1:
+        raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
+    if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:
+        raise ValueError("--optimizer-candidate-rank must be positive")
+    if args.optimizer_score_to_edge_bps < 0:
+        raise ValueError("--optimizer-score-to-edge-bps must be non-negative")
+    if args.optimizer_min_net_edge_bps < 0:
+        raise ValueError("--optimizer-min-net-edge-bps must be non-negative")
+    if args.optimizer_risk_penalty_multiplier < 0:
+        raise ValueError("--optimizer-risk-penalty-multiplier must be non-negative")
+    if args.optimizer_max_name_weight is not None and not 0 < args.optimizer_max_name_weight <= 1:
+        raise ValueError("--optimizer-max-name-weight must be in (0, 1]")
+    if (
+        args.optimizer_max_gross_exposure_increase_per_rebalance is not None
+        and args.optimizer_max_gross_exposure_increase_per_rebalance < 0
+    ):
+        raise ValueError(
+            "--optimizer-max-gross-exposure-increase-per-rebalance must be non-negative"
+        )
     if args.commission_bps < 0:
         raise ValueError("--commission-bps must be non-negative")
     if args.slippage_bps < 0:
@@ -858,6 +1082,21 @@ def _parse_args() -> TreeScoreBacktestParams:
         policy_no_trade_weight_band=args.policy_no_trade_weight_band,
         policy_partial_rebalance_rate=args.policy_partial_rebalance_rate,
         policy_max_gross_turnover_per_rebalance=args.policy_max_gross_turnover_per_rebalance,
+        policy_gross_exposure_scale=args.policy_gross_exposure_scale,
+        policy_gross_exposure_scale_path=(
+            Path(args.policy_gross_exposure_scale_path)
+            if args.policy_gross_exposure_scale_path
+            else None
+        ),
+        optimizer_candidate_rank=args.optimizer_candidate_rank,
+        optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,
+        optimizer_min_net_edge_bps=args.optimizer_min_net_edge_bps,
+        optimizer_risk_penalty_multiplier=args.optimizer_risk_penalty_multiplier,
+        optimizer_weighting=args.optimizer_weighting,
+        optimizer_max_name_weight=args.optimizer_max_name_weight,
+        optimizer_max_gross_exposure_increase_per_rebalance=(
+            args.optimizer_max_gross_exposure_increase_per_rebalance
+        ),
         min_trade_weight=args.min_trade_weight,
         exclude_st=args.exclude_st,
         limit_up_bps=args.limit_up_bps,

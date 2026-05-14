@@ -26,6 +26,37 @@ class CandidateFactor:
             raise ValueError("direction must be -1 or 1")
 
 
+@dataclass(frozen=True, slots=True)
+class FactorHealthConfig:
+    """Lagged rolling factor-leg health shrinkage configuration."""
+
+    lookback_windows: int = 20
+    min_periods: int = 5
+    label_lag_windows: int = 48
+    min_scale: float = 0.25
+    max_scale: float = 1.0
+    rank_ic_floor: float = -0.05
+    rank_ic_ceiling: float = 0.05
+    spread_floor: float = -0.001
+    spread_ceiling: float = 0.001
+
+    def __post_init__(self) -> None:
+        if self.lookback_windows <= 0:
+            raise ValueError("lookback_windows must be positive")
+        if self.min_periods <= 0:
+            raise ValueError("min_periods must be positive")
+        if self.min_periods > self.lookback_windows:
+            raise ValueError("min_periods must be <= lookback_windows")
+        if self.label_lag_windows <= 0:
+            raise ValueError("label_lag_windows must be positive")
+        if not 0 <= self.min_scale <= self.max_scale <= 1:
+            raise ValueError("health scales must satisfy 0 <= min_scale <= max_scale <= 1")
+        if self.rank_ic_floor >= self.rank_ic_ceiling:
+            raise ValueError("rank_ic_floor must be below rank_ic_ceiling")
+        if self.spread_floor >= self.spread_ceiling:
+            raise ValueError("spread_floor must be below spread_ceiling")
+
+
 def load_candidate_factors(
     admission_report_path: Path,
     *,
@@ -90,31 +121,176 @@ def factor_combination_weights(
     return _normalize(dict(zip(features, raw.tolist(), strict=True)))
 
 
+def cap_factor_weights(
+    weights: dict[str, float],
+    *,
+    max_weight: float | None,
+) -> dict[str, float]:
+    """Cap static factor weights and redistribute excess conservatively."""
+
+    if max_weight is None:
+        return _normalize(weights)
+    if not 0 < max_weight <= 1:
+        raise ValueError("max_weight must be in (0, 1]")
+    capped = {key: max(float(value), 0.0) for key, value in weights.items()}
+    if not capped:
+        raise ValueError("weights must be non-empty")
+    if max_weight * len(capped) < 1.0:
+        raise ValueError("max_weight is too low for the number of factors")
+    for _ in range(len(capped) + 1):
+        over = {key: value for key, value in capped.items() if value > max_weight}
+        if not over:
+            return _normalize(capped)
+        excess = sum(value - max_weight for value in over.values())
+        for key in over:
+            capped[key] = max_weight
+        under_keys = [key for key, value in capped.items() if value < max_weight]
+        if not under_keys:
+            return _normalize(capped)
+        under_total = sum(capped[key] for key in under_keys)
+        if under_total <= 0:
+            increment = excess / len(under_keys)
+            for key in under_keys:
+                capped[key] += increment
+        else:
+            for key in under_keys:
+                capped[key] += excess * capped[key] / under_total
+    return _normalize({key: min(value, max_weight) for key, value in capped.items()})
+
+
+def build_factor_health_schedule(
+    dataset_paths: list[Path],
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    config: FactorHealthConfig,
+    top_n: int,
+) -> pd.DataFrame:
+    """Build lagged rolling per-factor health scales from matured labels."""
+
+    if top_n <= 0:
+        raise ValueError("top_n must be positive")
+    rows: list[dict[str, Any]] = []
+    features = [factor.feature for factor in candidates]
+    for dataset_path in dataset_paths:
+        frame = pd.read_parquet(
+            dataset_path,
+            columns=["timestamp", "instrument_id", "forward_return", *features],
+        )
+        rows.extend(
+            _factor_health_observations(
+                frame,
+                candidates=candidates,
+                top_n=top_n,
+            )
+        )
+        del frame
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "feature",
+                "factor_rank_ic",
+                "factor_top_minus_bottom_label",
+                "rolling_rank_ic",
+                "rolling_top_minus_bottom_label",
+                "health_score",
+                "weight_scale",
+                "shrink_reason",
+            ]
+        )
+    observations = pd.DataFrame(rows).sort_values(["feature", "timestamp"])
+    schedules: list[pd.DataFrame] = []
+    for feature, group in observations.groupby("feature", sort=True):
+        current = group.sort_values("timestamp").reset_index(drop=True).copy()
+        current["rolling_rank_ic"] = (
+            current["factor_rank_ic"]
+            .shift(config.label_lag_windows)
+            .rolling(config.lookback_windows, min_periods=config.min_periods)
+            .mean()
+        )
+        current["rolling_top_minus_bottom_label"] = (
+            current["factor_top_minus_bottom_label"]
+            .shift(config.label_lag_windows)
+            .rolling(config.lookback_windows, min_periods=config.min_periods)
+            .mean()
+        )
+        rank_score = _linear_score(
+            current["rolling_rank_ic"],
+            floor=config.rank_ic_floor,
+            ceiling=config.rank_ic_ceiling,
+        )
+        spread_score = _linear_score(
+            current["rolling_top_minus_bottom_label"],
+            floor=config.spread_floor,
+            ceiling=config.spread_ceiling,
+        )
+        health_score = pd.concat([rank_score, spread_score], axis=1).min(axis=1)
+        current["health_score"] = health_score
+        current["weight_scale"] = (
+            config.min_scale
+            + (config.max_scale - config.min_scale) * health_score.fillna(1.0)
+        )
+        current.loc[health_score.isna(), "shrink_reason"] = "warmup"
+        current.loc[health_score.notna() & (health_score >= 0.999), "shrink_reason"] = (
+            "healthy"
+        )
+        current.loc[health_score.notna() & (health_score < 0.999), "shrink_reason"] = (
+            "lagged_health_shrink"
+        )
+        current["feature"] = feature
+        schedules.append(current)
+    return (
+        pd.concat(schedules, ignore_index=True)
+        .sort_values(["timestamp", "feature"])
+        .reset_index(drop=True)
+    )
+
+
 def build_composite_scores(
     frame: pd.DataFrame,
     *,
     candidates: tuple[CandidateFactor, ...],
     weights: dict[str, float],
+    factor_health: pd.DataFrame | None = None,
+    max_factor_contribution_share: float | None = None,
 ) -> pd.DataFrame:
     """Build timestamp-level composite scores from candidate factor columns."""
 
     features = tuple(factor.feature for factor in candidates)
     _require_columns(frame, ("timestamp", "instrument_id", *features))
     output = frame.loc[:, ["timestamp", "instrument_id"]].copy()
-    weighted = pd.Series(0.0, index=frame.index)
+    contributions: dict[str, pd.Series] = {}
     available_weight = pd.Series(0.0, index=frame.index)
+    health_scales = _factor_health_scale_lookup(factor_health)
     for factor in candidates:
         weight = float(weights.get(factor.feature, 0.0))
         if weight <= 0:
             continue
+        effective_weight = _effective_factor_weight(
+            frame["timestamp"],
+            feature=factor.feature,
+            base_weight=weight,
+            health_scales=health_scales,
+        )
         ranks = frame.groupby("timestamp", sort=False)[factor.feature].rank(
             method="average",
             pct=True,
         )
         oriented = (ranks - 0.5) * factor.direction
         valid = oriented.notna()
-        weighted.loc[valid] += oriented.loc[valid] * weight
-        available_weight.loc[valid] += weight
+        contribution = pd.Series(0.0, index=frame.index)
+        contribution.loc[valid] = oriented.loc[valid] * effective_weight.loc[valid]
+        contributions[factor.feature] = contribution
+        available_weight.loc[valid] += effective_weight.loc[valid]
+    if contributions:
+        contribution_frame = pd.DataFrame(contributions, index=frame.index)
+        contribution_frame = _cap_factor_contributions(
+            contribution_frame,
+            max_share=max_factor_contribution_share,
+        )
+        weighted = contribution_frame.sum(axis=1)
+    else:
+        weighted = pd.Series(0.0, index=frame.index)
     output["score"] = weighted.where(available_weight <= 0, weighted / available_weight)
     output = output.loc[available_weight > 0].copy()
     return output.sort_values(["timestamp", "score", "instrument_id"], ascending=[True, False, True]).reset_index(drop=True)
@@ -126,6 +302,10 @@ def write_score_partitions(
     output_dir: Path,
     candidates: tuple[CandidateFactor, ...],
     weights_by_method: dict[str, dict[str, float]],
+    max_factor_weight: float | None = None,
+    max_factor_contribution_share: float | None = None,
+    factor_health_schedule: pd.DataFrame | None = None,
+    diagnostics_top_n: int | None = None,
 ) -> dict[str, Any]:
     """Write composite score parquet partitions for each method."""
 
@@ -133,37 +313,292 @@ def write_score_partitions(
     features = [factor.feature for factor in candidates]
     methods: dict[str, dict[str, Any]] = {}
     for method, weights in weights_by_method.items():
+        effective_weights = cap_factor_weights(weights, max_weight=max_factor_weight)
         method_dir = output_dir / method
         method_dir.mkdir(parents=True, exist_ok=True)
         for old_path in method_dir.glob("score_*.parquet"):
             old_path.unlink()
+        diagnostics_dir = method_dir / "diagnostics"
+        if diagnostics_top_n is not None:
+            diagnostics_dir.mkdir(parents=True, exist_ok=True)
+            for old_path in diagnostics_dir.glob("factor_contribution_*.csv"):
+                old_path.unlink()
         row_count = 0
         partition_count = 0
+        diagnostics_paths: list[str] = []
         for dataset_path in dataset_paths:
+            columns = ["timestamp", "instrument_id", *features]
+            if diagnostics_top_n is not None:
+                columns.append("forward_return")
             frame = pd.read_parquet(
                 dataset_path,
-                columns=["timestamp", "instrument_id", *features],
+                columns=columns,
+            )
+            partition = dataset_path.stem.removeprefix("dataset_")
+            health = _factor_health_for_partition(
+                factor_health_schedule,
+                timestamps=frame["timestamp"],
             )
             scores = build_composite_scores(
                 frame,
                 candidates=candidates,
-                weights=weights,
+                weights=effective_weights,
+                factor_health=health,
+                max_factor_contribution_share=max_factor_contribution_share,
             )
-            score_path = method_dir / f"score_{dataset_path.stem.removeprefix('dataset_')}.parquet"
+            score_path = method_dir / f"score_{partition}.parquet"
             scores.to_parquet(score_path, index=False)
+            if diagnostics_top_n is not None:
+                diagnostics = factor_contribution_diagnostics(
+                    frame,
+                    scores=scores,
+                    candidates=candidates,
+                    weights=effective_weights,
+                    factor_health=health,
+                    max_factor_contribution_share=max_factor_contribution_share,
+                    top_n=diagnostics_top_n,
+                )
+                diagnostics_path = diagnostics_dir / f"factor_contribution_{partition}.csv"
+                diagnostics.to_csv(diagnostics_path, index=False)
+                diagnostics_paths.append(str(diagnostics_path))
             row_count += len(scores)
             partition_count += 1
             del frame, scores
         methods[method] = {
             "path": str(method_dir / "*.parquet"),
-            "weights": weights,
+            "weights": effective_weights,
+            "raw_weights": weights,
             "row_count": row_count,
             "partition_count": partition_count,
+            "factor_contribution_diagnostics": diagnostics_paths,
         }
     return {
         "candidate_features": [factor.feature for factor in candidates],
         "methods": methods,
     }
+
+
+def factor_contribution_diagnostics(
+    frame: pd.DataFrame,
+    *,
+    scores: pd.DataFrame,
+    candidates: tuple[CandidateFactor, ...],
+    weights: dict[str, float],
+    factor_health: pd.DataFrame | None,
+    max_factor_contribution_share: float | None = None,
+    top_n: int,
+) -> pd.DataFrame:
+    """Summarize factor contribution concentration in top-score baskets."""
+
+    if top_n <= 0:
+        raise ValueError("top_n must be positive")
+    _require_columns(frame, ("timestamp", "instrument_id", "forward_return"))
+    contribution_frame = _factor_contribution_frame(
+        frame,
+        candidates=candidates,
+        weights=weights,
+        factor_health=factor_health,
+        max_factor_contribution_share=max_factor_contribution_share,
+    )
+    joined = scores.loc[:, ["timestamp", "instrument_id", "score"]].merge(
+        contribution_frame,
+        on=["timestamp", "instrument_id"],
+        how="left",
+    )
+    joined = joined.merge(
+        frame.loc[:, ["timestamp", "instrument_id", "forward_return"]],
+        on=["timestamp", "instrument_id"],
+        how="left",
+    )
+    rows: list[dict[str, Any]] = []
+    contribution_columns = [
+        f"contribution_{factor.feature}" for factor in candidates if f"contribution_{factor.feature}" in joined.columns
+    ]
+    for timestamp, group in joined.groupby("timestamp", sort=True):
+        top = group.nlargest(min(top_n, len(group)), "score")
+        abs_by_factor = {
+            column.removeprefix("contribution_"): float(top[column].abs().sum())
+            for column in contribution_columns
+        }
+        total_abs = sum(abs_by_factor.values())
+        ordered = sorted(abs_by_factor.items(), key=lambda item: item[1], reverse=True)
+        largest_feature = ordered[0][0] if ordered else None
+        largest_share = ordered[0][1] / total_abs if total_abs > 0 and ordered else 0.0
+        top_two_share = (
+            sum(value for _, value in ordered[:2]) / total_abs if total_abs > 0 else 0.0
+        )
+        rows.append(
+            {
+                "timestamp": timestamp,
+                "top_n": int(len(top)),
+                "top_score_mean_label": _mean(top["forward_return"]),
+                "largest_contribution_feature": largest_feature,
+                "largest_abs_contribution_share": largest_share,
+                "top_two_abs_contribution_share": top_two_share,
+                "total_abs_contribution": total_abs,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _factor_health_observations(
+    frame: pd.DataFrame,
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    top_n: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for timestamp, group in frame.groupby("timestamp", sort=True):
+        for factor in candidates:
+            valid = group.dropna(subset=[factor.feature, "forward_return"]).copy()
+            if valid.empty:
+                rank_ic = None
+                spread = None
+            else:
+                ranks = valid[factor.feature].rank(method="average", pct=True)
+                oriented = (ranks - 0.5) * factor.direction
+                rank_ic = _correlation(oriented, valid["forward_return"])
+                n = min(top_n, len(valid))
+                top = valid.loc[oriented.nlargest(n).index] if n else valid
+                bottom = valid.loc[oriented.nsmallest(n).index] if n else valid
+                spread = _mean(top["forward_return"]) - _mean(bottom["forward_return"])
+            rows.append(
+                {
+                    "timestamp": timestamp,
+                    "feature": factor.feature,
+                    "factor_rank_ic": rank_ic,
+                    "factor_top_minus_bottom_label": spread,
+                }
+            )
+    return rows
+
+
+def _factor_health_scale_lookup(
+    factor_health: pd.DataFrame | None,
+) -> dict[str, pd.Series]:
+    if factor_health is None or factor_health.empty:
+        return {}
+    _require_columns(factor_health, ("timestamp", "feature", "weight_scale"))
+    lookup: dict[str, pd.Series] = {}
+    for feature, group in factor_health.groupby("feature", sort=False):
+        series = group.drop_duplicates("timestamp", keep="last").set_index("timestamp")[
+            "weight_scale"
+        ]
+        lookup[str(feature)] = series.astype(float)
+    return lookup
+
+
+def _effective_factor_weight(
+    timestamps: pd.Series,
+    *,
+    feature: str,
+    base_weight: float,
+    health_scales: dict[str, pd.Series],
+) -> pd.Series:
+    if feature not in health_scales:
+        return pd.Series(float(base_weight), index=timestamps.index)
+    scale = timestamps.map(health_scales[feature]).fillna(1.0).astype(float)
+    return scale * float(base_weight)
+
+
+def _factor_health_for_partition(
+    factor_health_schedule: pd.DataFrame | None,
+    *,
+    timestamps: pd.Series,
+) -> pd.DataFrame | None:
+    if factor_health_schedule is None or factor_health_schedule.empty:
+        return None
+    timestamp_values = pd.Index(timestamps.drop_duplicates())
+    return factor_health_schedule[
+        factor_health_schedule["timestamp"].isin(timestamp_values)
+    ].copy()
+
+
+def _factor_contribution_frame(
+    frame: pd.DataFrame,
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    weights: dict[str, float],
+    factor_health: pd.DataFrame | None,
+    max_factor_contribution_share: float | None = None,
+) -> pd.DataFrame:
+    output = frame.loc[:, ["timestamp", "instrument_id"]].copy()
+    health_scales = _factor_health_scale_lookup(factor_health)
+    contributions: dict[str, pd.Series] = {}
+    for factor in candidates:
+        weight = float(weights.get(factor.feature, 0.0))
+        effective_weight = _effective_factor_weight(
+            frame["timestamp"],
+            feature=factor.feature,
+            base_weight=weight,
+            health_scales=health_scales,
+        )
+        ranks = frame.groupby("timestamp", sort=False)[factor.feature].rank(
+            method="average",
+            pct=True,
+        )
+        contributions[factor.feature] = (ranks - 0.5) * factor.direction * effective_weight
+    if contributions:
+        contribution_frame = _cap_factor_contributions(
+            pd.DataFrame(contributions, index=frame.index),
+            max_share=max_factor_contribution_share,
+        )
+        for feature in contribution_frame.columns:
+            output[f"contribution_{feature}"] = contribution_frame[feature]
+    return output
+
+
+def _cap_factor_contributions(
+    contributions: pd.DataFrame,
+    *,
+    max_share: float | None,
+) -> pd.DataFrame:
+    if max_share is None:
+        return contributions
+    if not 0 < max_share <= 1:
+        raise ValueError("max_share must be in (0, 1]")
+    if max_share * contributions.shape[1] < 1.0:
+        raise ValueError("max_share is too low for the number of contribution columns")
+    capped = contributions.fillna(0.0).copy()
+    for _ in range(capped.shape[1]):
+        changed = False
+        abs_values = capped.abs()
+        total_abs = abs_values.sum(axis=1)
+        for column in capped.columns:
+            column_abs = abs_values[column]
+            rest_abs = total_abs - column_abs
+            limit = max_share * rest_abs / (1.0 - max_share)
+            limit = limit.where(rest_abs > 0.0, 0.0)
+            over = column_abs > limit
+            if bool(over.any()):
+                capped.loc[over, column] = (
+                    capped.loc[over, column].clip(lower=-limit.loc[over], upper=limit.loc[over])
+                )
+                changed = True
+        if not changed:
+            break
+    return capped
+
+
+def _linear_score(series: pd.Series, *, floor: float, ceiling: float) -> pd.Series:
+    return ((series - floor) / (ceiling - floor)).clip(lower=0.0, upper=1.0)
+
+
+def _correlation(left: pd.Series, right: pd.Series) -> float | None:
+    valid = pd.DataFrame({"left": left, "right": right}).dropna()
+    if len(valid) < 2:
+        return None
+    value = valid["left"].corr(valid["right"], method="spearman")
+    if pd.isna(value):
+        return None
+    return float(value)
+
+
+def _mean(series: pd.Series) -> float | None:
+    value = series.dropna().mean()
+    if pd.isna(value):
+        return None
+    return float(value)
 
 
 def _normalize(values: dict[str, float]) -> dict[str, float]:

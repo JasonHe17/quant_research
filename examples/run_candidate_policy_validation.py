@@ -65,6 +65,8 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
             status="dry_run",
             rows=[],
             monthly_rows=[],
+            factor_health_rows=[],
+            factor_contribution_rows=[],
         )
         _write_summary(output_dir, summary)
         return summary
@@ -79,8 +81,15 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
         _run_scenario(commands[scenario.name], logs_dir / f"{scenario.name}.log")
     rows = _collect_summary_rows(args, scenarios)
     monthly_rows = _collect_monthly_summary_rows(args, scenarios)
+    factor_health_rows = _collect_factor_health_summary_rows(args, scenarios)
+    factor_contribution_rows = _collect_factor_contribution_summary_rows(args, scenarios)
     _write_summary_csv(output_dir / "validation_summary.csv", rows)
     _write_summary_csv(output_dir / "validation_monthly_summary.csv", monthly_rows)
+    _write_summary_csv(output_dir / "validation_factor_health_summary.csv", factor_health_rows)
+    _write_summary_csv(
+        output_dir / "validation_factor_contribution_summary.csv",
+        factor_contribution_rows,
+    )
     summary = _validation_summary(
         args,
         years=years,
@@ -89,6 +98,8 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
         status="completed",
         rows=rows,
         monthly_rows=monthly_rows,
+        factor_health_rows=factor_health_rows,
+        factor_contribution_rows=factor_contribution_rows,
     )
     _write_summary(output_dir, summary)
     if args.enforce_gates and summary["validation"]["overall_status"] == "fail":
@@ -202,6 +213,8 @@ def _scenario_command(
         scenario.end,
         "--top-n",
         str(args.top_n),
+        "--score-diagnostics-top-n",
+        str(args.score_diagnostics_top_n),
         "--initial-cash",
         str(args.initial_cash),
         "--commission-bps",
@@ -228,6 +241,16 @@ def _scenario_command(
         str(args.policy_set_rebalance_every_n_bars),
         "--policy-set-partial-rebalance-rate",
         str(args.policy_set_partial_rebalance_rate),
+        "--policy-gross-exposure-scale",
+        str(args.policy_gross_exposure_scale),
+        "--optimizer-score-to-edge-bps",
+        str(args.optimizer_score_to_edge_bps),
+        "--optimizer-min-net-edge-bps",
+        str(args.optimizer_min_net_edge_bps),
+        "--optimizer-risk-penalty-multiplier",
+        str(args.optimizer_risk_penalty_multiplier),
+        "--optimizer-weighting",
+        args.optimizer_weighting,
         "--min-trade-weight",
         str(args.min_trade_weight),
         "--limit-up-bps",
@@ -247,10 +270,62 @@ def _scenario_command(
         "--backtest-memory-estimate-gb",
         str(scenario.memory_estimate_gb),
     ]
+    if args.factor_max_weight is not None:
+        command.extend(["--factor-max-weight", str(args.factor_max_weight)])
+    if args.factor_max_contribution_share is not None:
+        command.extend(
+            [
+                "--factor-max-contribution-share",
+                str(args.factor_max_contribution_share),
+            ]
+        )
+    if args.factor_health_mode != "off":
+        command.extend(
+            [
+                "--factor-health-mode",
+                args.factor_health_mode,
+                "--factor-health-lookback-windows",
+                str(args.factor_health_lookback_windows),
+                "--factor-health-min-periods",
+                str(args.factor_health_min_periods),
+                "--factor-health-label-lag-windows",
+                str(args.factor_health_label_lag_windows),
+                "--factor-health-min-scale",
+                str(args.factor_health_min_scale),
+                "--factor-health-max-scale",
+                str(args.factor_health_max_scale),
+                "--factor-health-rank-ic-floor",
+                str(args.factor_health_rank_ic_floor),
+                "--factor-health-rank-ic-ceiling",
+                str(args.factor_health_rank_ic_ceiling),
+                "--factor-health-spread-floor",
+                str(args.factor_health_spread_floor),
+                "--factor-health-spread-ceiling",
+                str(args.factor_health_spread_ceiling),
+            ]
+        )
+    if args.optimizer_candidate_rank is not None:
+        command.extend(["--optimizer-candidate-rank", str(args.optimizer_candidate_rank)])
+    if args.optimizer_max_name_weight is not None:
+        command.extend(["--optimizer-max-name-weight", str(args.optimizer_max_name_weight)])
+    if args.optimizer_max_gross_exposure_increase_per_rebalance is not None:
+        command.extend(
+            [
+                "--optimizer-max-gross-exposure-increase-per-rebalance",
+                str(args.optimizer_max_gross_exposure_increase_per_rebalance),
+            ]
+        )
     if args.exclude_st:
         command.append("--exclude-st")
     else:
         command.append("--no-exclude-st")
+    if args.policy_gross_exposure_scale_path:
+        command.extend(
+            [
+                "--policy-gross-exposure-scale-path",
+                args.policy_gross_exposure_scale_path,
+            ]
+        )
     if args.resume_existing:
         command.append("--resume-existing")
     return command
@@ -329,6 +404,90 @@ def _collect_monthly_summary_rows(
                     policy=args.policy,
                     initial_cash=args.initial_cash,
                 )
+            )
+    return rows
+
+
+def _collect_factor_health_summary_rows(
+    args: argparse.Namespace,
+    scenarios: list[ValidationScenario],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for scenario in scenarios:
+        summary_path = _scenario_output_dir(args, scenario) / "summary.json"
+        if not summary_path.exists():
+            continue
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        schedule_path = payload.get("factor_health_schedule")
+        if not schedule_path:
+            continue
+        path = Path(str(schedule_path))
+        if not path.exists():
+            continue
+        frame = pd.read_csv(path)
+        if frame.empty:
+            continue
+        for feature, group in frame.groupby("feature", sort=True):
+            rows.append(
+                {
+                    "scenario": scenario.name,
+                    "feature": feature,
+                    "observation_count": int(len(group)),
+                    "average_weight_scale": float(group["weight_scale"].mean()),
+                    "min_weight_scale": float(group["weight_scale"].min()),
+                    "lagged_health_shrink_count": int(
+                        (group["shrink_reason"] == "lagged_health_shrink").sum()
+                    ),
+                    "warmup_count": int((group["shrink_reason"] == "warmup").sum()),
+                }
+            )
+    return rows
+
+
+def _collect_factor_contribution_summary_rows(
+    args: argparse.Namespace,
+    scenarios: list[ValidationScenario],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for scenario in scenarios:
+        summary_path = _scenario_output_dir(args, scenario) / "summary.json"
+        if not summary_path.exists():
+            continue
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        methods = payload.get("methods", {})
+        if not isinstance(methods, dict):
+            continue
+        for method, method_payload in methods.items():
+            if not isinstance(method_payload, dict):
+                continue
+            paths = method_payload.get("factor_contribution_diagnostics", [])
+            if not isinstance(paths, list) or not paths:
+                continue
+            frames = [
+                pd.read_csv(path)
+                for path in paths
+                if isinstance(path, str) and Path(path).exists()
+            ]
+            if not frames:
+                continue
+            frame = pd.concat(frames, ignore_index=True)
+            if frame.empty:
+                continue
+            rows.append(
+                {
+                    "scenario": scenario.name,
+                    "method": method,
+                    "observation_count": int(len(frame)),
+                    "average_largest_abs_contribution_share": float(
+                        frame["largest_abs_contribution_share"].mean()
+                    ),
+                    "max_largest_abs_contribution_share": float(
+                        frame["largest_abs_contribution_share"].max()
+                    ),
+                    "average_top_two_abs_contribution_share": float(
+                        frame["top_two_abs_contribution_share"].mean()
+                    ),
+                }
             )
     return rows
 
@@ -416,6 +575,8 @@ def _validation_summary(
     status: str,
     rows: list[dict[str, Any]],
     monthly_rows: list[dict[str, Any]],
+    factor_health_rows: list[dict[str, Any]],
+    factor_contribution_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "status": status,
@@ -443,6 +604,30 @@ def _validation_summary(
             "policy_set_partial_rebalance_rate": (
                 args.policy_set_partial_rebalance_rate
             ),
+            "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
+            "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
+            "optimizer_candidate_rank": args.optimizer_candidate_rank,
+            "optimizer_score_to_edge_bps": args.optimizer_score_to_edge_bps,
+            "optimizer_min_net_edge_bps": args.optimizer_min_net_edge_bps,
+            "optimizer_risk_penalty_multiplier": args.optimizer_risk_penalty_multiplier,
+            "optimizer_weighting": args.optimizer_weighting,
+            "optimizer_max_name_weight": args.optimizer_max_name_weight,
+            "optimizer_max_gross_exposure_increase_per_rebalance": (
+                args.optimizer_max_gross_exposure_increase_per_rebalance
+            ),
+            "factor_max_weight": args.factor_max_weight,
+            "factor_max_contribution_share": args.factor_max_contribution_share,
+            "factor_health_mode": args.factor_health_mode,
+            "factor_health_lookback_windows": args.factor_health_lookback_windows,
+            "factor_health_min_periods": args.factor_health_min_periods,
+            "factor_health_label_lag_windows": args.factor_health_label_lag_windows,
+            "factor_health_min_scale": args.factor_health_min_scale,
+            "factor_health_max_scale": args.factor_health_max_scale,
+            "factor_health_rank_ic_floor": args.factor_health_rank_ic_floor,
+            "factor_health_rank_ic_ceiling": args.factor_health_rank_ic_ceiling,
+            "factor_health_spread_floor": args.factor_health_spread_floor,
+            "factor_health_spread_ceiling": args.factor_health_spread_ceiling,
+            "score_diagnostics_top_n": args.score_diagnostics_top_n,
         },
         "scenarios": {
             scenario.name: {
@@ -461,6 +646,8 @@ def _validation_summary(
         "commands": commands,
         "results": rows,
         "monthly_results": monthly_rows,
+        "factor_health_summary": factor_health_rows,
+        "factor_contribution_summary": factor_contribution_rows,
         "validation": _validation_checks(args, rows),
     }
 
@@ -684,6 +871,28 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--primary-method", default="decorrelated")
     parser.add_argument("--policy", default="partial_rebalance_daily")
     parser.add_argument("--top-n", type=int, default=50)
+    parser.add_argument(
+        "--score-diagnostics-top-n",
+        type=int,
+        default=50,
+        help="write and summarize top-N factor contribution diagnostics",
+    )
+    parser.add_argument("--factor-max-weight", type=float)
+    parser.add_argument("--factor-max-contribution-share", type=float)
+    parser.add_argument(
+        "--factor-health-mode",
+        choices=("off", "shrink"),
+        default="off",
+    )
+    parser.add_argument("--factor-health-lookback-windows", type=int, default=20)
+    parser.add_argument("--factor-health-min-periods", type=int, default=5)
+    parser.add_argument("--factor-health-label-lag-windows", type=int, default=48)
+    parser.add_argument("--factor-health-min-scale", type=float, default=0.25)
+    parser.add_argument("--factor-health-max-scale", type=float, default=1.0)
+    parser.add_argument("--factor-health-rank-ic-floor", type=float, default=-0.05)
+    parser.add_argument("--factor-health-rank-ic-ceiling", type=float, default=0.05)
+    parser.add_argument("--factor-health-spread-floor", type=float, default=-0.001)
+    parser.add_argument("--factor-health-spread-ceiling", type=float, default=0.001)
     parser.add_argument("--initial-cash", type=float, default=1_000_000.0)
     parser.add_argument("--commission-bps", type=float, default=3.0)
     parser.add_argument("--slippage-bps", type=float, default=1.0)
@@ -704,6 +913,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-set-exit-rank", type=int, default=150)
     parser.add_argument("--policy-set-rebalance-every-n-bars", type=int, default=48)
     parser.add_argument("--policy-set-partial-rebalance-rate", type=float, default=0.5)
+    parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
+    parser.add_argument("--policy-gross-exposure-scale-path")
+    parser.add_argument("--optimizer-candidate-rank", type=int)
+    parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
+    parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
+    parser.add_argument("--optimizer-risk-penalty-multiplier", type=float, default=1.0)
+    parser.add_argument(
+        "--optimizer-weighting",
+        choices=("equal", "utility"),
+        default="utility",
+    )
+    parser.add_argument("--optimizer-max-name-weight", type=float)
+    parser.add_argument("--optimizer-max-gross-exposure-increase-per-rebalance", type=float)
     parser.add_argument(
         "--data-access-mode",
         choices=("data_portal", "fast_parquet"),
@@ -728,12 +950,65 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--primary-method must be included in --methods")
     if args.top_n <= 0:
         raise ValueError("--top-n must be positive")
+    if args.score_diagnostics_top_n <= 0:
+        raise ValueError("--score-diagnostics-top-n must be positive")
+    if args.factor_max_weight is not None and not 0 < args.factor_max_weight <= 1:
+        raise ValueError("--factor-max-weight must be in (0, 1]")
+    if (
+        args.factor_max_contribution_share is not None
+        and not 0 < args.factor_max_contribution_share <= 1
+    ):
+        raise ValueError("--factor-max-contribution-share must be in (0, 1]")
+    if args.factor_health_lookback_windows <= 0:
+        raise ValueError("--factor-health-lookback-windows must be positive")
+    if args.factor_health_min_periods <= 0:
+        raise ValueError("--factor-health-min-periods must be positive")
+    if args.factor_health_min_periods > args.factor_health_lookback_windows:
+        raise ValueError(
+            "--factor-health-min-periods must be <= --factor-health-lookback-windows"
+        )
+    if args.factor_health_label_lag_windows <= 0:
+        raise ValueError("--factor-health-label-lag-windows must be positive")
+    if not 0 <= args.factor_health_min_scale <= args.factor_health_max_scale <= 1:
+        raise ValueError(
+            "--factor-health scales must satisfy 0 <= min_scale <= max_scale <= 1"
+        )
+    if args.factor_health_rank_ic_floor >= args.factor_health_rank_ic_ceiling:
+        raise ValueError(
+            "--factor-health-rank-ic-floor must be below --factor-health-rank-ic-ceiling"
+        )
+    if args.factor_health_spread_floor >= args.factor_health_spread_ceiling:
+        raise ValueError(
+            "--factor-health-spread-floor must be below --factor-health-spread-ceiling"
+        )
     if args.cost_stress_multiplier <= 0:
         raise ValueError("--cost-stress-multiplier must be positive")
     if args.policy_set_exit_rank < args.top_n:
         raise ValueError("--policy-set-exit-rank must be greater than or equal to --top-n")
     if not 0 < args.policy_set_partial_rebalance_rate <= 1:
         raise ValueError("--policy-set-partial-rebalance-rate must be in (0, 1]")
+    if not 0 <= args.policy_gross_exposure_scale <= 1:
+        raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
+    if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:
+        raise ValueError("--optimizer-candidate-rank must be positive")
+    if args.optimizer_score_to_edge_bps < 0:
+        raise ValueError("--optimizer-score-to-edge-bps must be non-negative")
+    if args.optimizer_min_net_edge_bps < 0:
+        raise ValueError("--optimizer-min-net-edge-bps must be non-negative")
+    if args.optimizer_risk_penalty_multiplier < 0:
+        raise ValueError("--optimizer-risk-penalty-multiplier must be non-negative")
+    if (
+        args.optimizer_max_name_weight is not None
+        and not 0 < args.optimizer_max_name_weight <= 1
+    ):
+        raise ValueError("--optimizer-max-name-weight must be in (0, 1]")
+    if (
+        args.optimizer_max_gross_exposure_increase_per_rebalance is not None
+        and args.optimizer_max_gross_exposure_increase_per_rebalance < 0
+    ):
+        raise ValueError(
+            "--optimizer-max-gross-exposure-increase-per-rebalance must be non-negative"
+        )
     if args.backtest_workers <= 0:
         raise ValueError("--backtest-workers must be positive")
     if args.backtest_memory_budget_gb < 0:

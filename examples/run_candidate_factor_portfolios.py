@@ -17,6 +17,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from quant_research.portfolio import (
+    CandidateFactor,
+    FactorHealthConfig,
+    build_factor_health_schedule,
     factor_combination_weights,
     load_candidate_factors,
     write_score_partitions,
@@ -41,6 +44,15 @@ class BacktestPolicySpec:
     policy_no_trade_weight_band: float = 0.0
     policy_partial_rebalance_rate: float = 1.0
     policy_max_gross_turnover_per_rebalance: float | None = None
+    policy_gross_exposure_scale: float = 1.0
+    policy_gross_exposure_scale_path: str | None = None
+    optimizer_candidate_rank: int | None = None
+    optimizer_score_to_edge_bps: float = 100.0
+    optimizer_min_net_edge_bps: float = 0.0
+    optimizer_risk_penalty_multiplier: float = 1.0
+    optimizer_weighting: str = "utility"
+    optimizer_max_name_weight: float | None = None
+    optimizer_max_gross_exposure_increase_per_rebalance: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,16 +87,29 @@ def main() -> None:
         )
         for method in args.methods
     }
+    factor_health_schedule = _build_factor_health_schedule(args, dataset_paths, candidates)
+    factor_health_path: Path | None = None
+    if factor_health_schedule is not None:
+        health_dir = output_dir / "factor_health"
+        health_dir.mkdir(parents=True, exist_ok=True)
+        factor_health_path = health_dir / "factor_health_schedule.csv"
+        factor_health_schedule.to_csv(factor_health_path, index=False)
     scores_summary = write_score_partitions(
         dataset_paths,
         output_dir=output_dir / "scores",
         candidates=candidates,
         weights_by_method=weights_by_method,
+        max_factor_weight=args.factor_max_weight,
+        max_factor_contribution_share=args.factor_max_contribution_share,
+        factor_health_schedule=factor_health_schedule,
+        diagnostics_top_n=args.score_diagnostics_top_n,
     )
     summary = {
         "params": _summary_params(args),
         **scores_summary,
     }
+    if factor_health_path is not None:
+        summary["factor_health_schedule"] = str(factor_health_path)
     if args.run_backtests:
         backtests = _run_backtests(args, scores_summary=scores_summary)
         summary["backtests"] = backtests
@@ -135,6 +160,19 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
         "partition_start": args.partition_start,
         "partition_end": args.partition_end,
         "run_backtests": args.run_backtests,
+        "factor_max_weight": args.factor_max_weight,
+        "factor_max_contribution_share": args.factor_max_contribution_share,
+        "factor_health_mode": args.factor_health_mode,
+        "factor_health_lookback_windows": args.factor_health_lookback_windows,
+        "factor_health_min_periods": args.factor_health_min_periods,
+        "factor_health_label_lag_windows": args.factor_health_label_lag_windows,
+        "factor_health_min_scale": args.factor_health_min_scale,
+        "factor_health_max_scale": args.factor_health_max_scale,
+        "factor_health_rank_ic_floor": args.factor_health_rank_ic_floor,
+        "factor_health_rank_ic_ceiling": args.factor_health_rank_ic_ceiling,
+        "factor_health_spread_floor": args.factor_health_spread_floor,
+        "factor_health_spread_ceiling": args.factor_health_spread_ceiling,
+        "score_diagnostics_top_n": args.score_diagnostics_top_n,
     }
     if args.run_backtests:
         params["backtest"] = {
@@ -165,6 +203,17 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             "policy_max_gross_turnover_per_rebalance": (
                 args.policy_max_gross_turnover_per_rebalance
             ),
+            "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
+            "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
+            "optimizer_candidate_rank": args.optimizer_candidate_rank,
+            "optimizer_score_to_edge_bps": args.optimizer_score_to_edge_bps,
+            "optimizer_min_net_edge_bps": args.optimizer_min_net_edge_bps,
+            "optimizer_risk_penalty_multiplier": args.optimizer_risk_penalty_multiplier,
+            "optimizer_weighting": args.optimizer_weighting,
+            "optimizer_max_name_weight": args.optimizer_max_name_weight,
+            "optimizer_max_gross_exposure_increase_per_rebalance": (
+                args.optimizer_max_gross_exposure_increase_per_rebalance
+            ),
             "policy_set_drop_count": args.policy_set_drop_count,
             "policy_set_exit_rank": args.policy_set_exit_rank,
             "policy_set_rebalance_every_n_bars": args.policy_set_rebalance_every_n_bars,
@@ -183,6 +232,33 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             "resume_existing": args.resume_existing,
         }
     return params
+
+
+def _build_factor_health_schedule(
+    args: argparse.Namespace,
+    dataset_paths: list[Path],
+    candidates: tuple[CandidateFactor, ...],
+) -> pd.DataFrame | None:
+    if args.factor_health_mode == "off":
+        return None
+    if args.factor_health_mode != "shrink":
+        raise ValueError(f"unsupported factor health mode: {args.factor_health_mode}")
+    return build_factor_health_schedule(
+        dataset_paths,
+        candidates=candidates,
+        config=FactorHealthConfig(
+            lookback_windows=args.factor_health_lookback_windows,
+            min_periods=args.factor_health_min_periods,
+            label_lag_windows=args.factor_health_label_lag_windows,
+            min_scale=args.factor_health_min_scale,
+            max_scale=args.factor_health_max_scale,
+            rank_ic_floor=args.factor_health_rank_ic_floor,
+            rank_ic_ceiling=args.factor_health_rank_ic_ceiling,
+            spread_floor=args.factor_health_spread_floor,
+            spread_ceiling=args.factor_health_spread_ceiling,
+        ),
+        top_n=args.score_diagnostics_top_n or args.top_n,
+    )
 
 
 def _run_backtests(
@@ -400,6 +476,19 @@ def _backtest_summary_row(
         "policy_max_exits_per_rebalance": params.get("policy_max_exits_per_rebalance"),
         "policy_no_trade_weight_band": params.get("policy_no_trade_weight_band"),
         "policy_partial_rebalance_rate": params.get("policy_partial_rebalance_rate"),
+        "policy_gross_exposure_scale": params.get("policy_gross_exposure_scale"),
+        "policy_gross_exposure_scale_path": params.get("policy_gross_exposure_scale_path"),
+        "optimizer_candidate_rank": params.get("optimizer_candidate_rank"),
+        "optimizer_score_to_edge_bps": params.get("optimizer_score_to_edge_bps"),
+        "optimizer_min_net_edge_bps": params.get("optimizer_min_net_edge_bps"),
+        "optimizer_risk_penalty_multiplier": params.get(
+            "optimizer_risk_penalty_multiplier"
+        ),
+        "optimizer_weighting": params.get("optimizer_weighting"),
+        "optimizer_max_name_weight": params.get("optimizer_max_name_weight"),
+        "optimizer_max_gross_exposure_increase_per_rebalance": params.get(
+            "optimizer_max_gross_exposure_increase_per_rebalance"
+        ),
         "total_return": metrics.get("total_return"),
         "max_drawdown": metrics.get("max_drawdown"),
         "gross_turnover": metrics.get("gross_turnover"),
@@ -409,6 +498,9 @@ def _backtest_summary_row(
         "signal_count": payload.get("signal_count"),
         "execution_row_count": payload.get("execution_row_count"),
         "planned_gross_turnover": diagnostics.get("planned_gross_turnover"),
+        "average_target_gross_exposure": diagnostics.get("average_target_gross_exposure"),
+        "gross_exposure_scaled_count": diagnostics.get("gross_exposure_scaled_count"),
+        "risk_reduction_count": diagnostics.get("risk_reduction_count"),
         "order_intent_count": diagnostics.get("order_intent_count"),
         "entry_count": diagnostics.get("entry_count"),
         "exit_count": diagnostics.get("exit_count"),
@@ -446,6 +538,17 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
                 policy_max_gross_turnover_per_rebalance=(
                     args.policy_max_gross_turnover_per_rebalance
                 ),
+                policy_gross_exposure_scale=args.policy_gross_exposure_scale,
+                policy_gross_exposure_scale_path=args.policy_gross_exposure_scale_path,
+                optimizer_candidate_rank=args.optimizer_candidate_rank,
+                optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,
+                optimizer_min_net_edge_bps=args.optimizer_min_net_edge_bps,
+                optimizer_risk_penalty_multiplier=args.optimizer_risk_penalty_multiplier,
+                optimizer_weighting=args.optimizer_weighting,
+                optimizer_max_name_weight=args.optimizer_max_name_weight,
+                optimizer_max_gross_exposure_increase_per_rebalance=(
+                    args.optimizer_max_gross_exposure_increase_per_rebalance
+                ),
             )
         ]
         return _filter_backtest_policy_specs(specs, args.backtest_policies)
@@ -466,6 +569,17 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
         "policy_no_trade_weight_band": args.policy_no_trade_weight_band,
         "policy_max_gross_turnover_per_rebalance": (
             args.policy_max_gross_turnover_per_rebalance
+        ),
+        "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
+        "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
+        "optimizer_candidate_rank": args.optimizer_candidate_rank,
+        "optimizer_score_to_edge_bps": args.optimizer_score_to_edge_bps,
+        "optimizer_min_net_edge_bps": args.optimizer_min_net_edge_bps,
+        "optimizer_risk_penalty_multiplier": args.optimizer_risk_penalty_multiplier,
+        "optimizer_weighting": args.optimizer_weighting,
+        "optimizer_max_name_weight": args.optimizer_max_name_weight,
+        "optimizer_max_gross_exposure_increase_per_rebalance": (
+            args.optimizer_max_gross_exposure_increase_per_rebalance
         ),
     }
     specs = [
@@ -564,6 +678,8 @@ def _backtest_command(
         str(spec.policy_no_trade_weight_band),
         "--policy-partial-rebalance-rate",
         str(spec.policy_partial_rebalance_rate),
+        "--policy-gross-exposure-scale",
+        str(spec.policy_gross_exposure_scale),
         "--min-trade-weight",
         str(args.min_trade_weight),
         "--limit-up-bps",
@@ -599,6 +715,33 @@ def _backtest_command(
     for option, value in optional_floats.items():
         if value is not None:
             command.extend([option, str(value)])
+    if spec.policy_gross_exposure_scale_path is not None:
+        command.extend(
+            [
+                "--policy-gross-exposure-scale-path",
+                spec.policy_gross_exposure_scale_path,
+            ]
+        )
+    if spec.optimizer_candidate_rank is not None:
+        command.extend(["--optimizer-candidate-rank", str(spec.optimizer_candidate_rank)])
+    command.extend(["--optimizer-score-to-edge-bps", str(spec.optimizer_score_to_edge_bps)])
+    command.extend(["--optimizer-min-net-edge-bps", str(spec.optimizer_min_net_edge_bps)])
+    command.extend(
+        [
+            "--optimizer-risk-penalty-multiplier",
+            str(spec.optimizer_risk_penalty_multiplier),
+        ]
+    )
+    command.extend(["--optimizer-weighting", spec.optimizer_weighting])
+    if spec.optimizer_max_name_weight is not None:
+        command.extend(["--optimizer-max-name-weight", str(spec.optimizer_max_name_weight)])
+    if spec.optimizer_max_gross_exposure_increase_per_rebalance is not None:
+        command.extend(
+            [
+                "--optimizer-max-gross-exposure-increase-per-rebalance",
+                str(spec.optimizer_max_gross_exposure_increase_per_rebalance),
+            ]
+        )
     if args.exclude_st:
         command.append("--exclude-st")
     return command
@@ -642,6 +785,36 @@ def _parse_args() -> argparse.Namespace:
         help="last dataset partition to include, for example 2023_06",
     )
     parser.add_argument("--decorrelation-ridge", type=float, default=0.05)
+    parser.add_argument(
+        "--factor-max-weight",
+        type=float,
+        help="cap each normalized factor weight before composite score construction",
+    )
+    parser.add_argument(
+        "--factor-max-contribution-share",
+        type=float,
+        help="cap each row-level factor contribution as a share of absolute contribution",
+    )
+    parser.add_argument(
+        "--factor-health-mode",
+        choices=("off", "shrink"),
+        default="off",
+        help="optional lagged rolling factor-leg health shrinkage",
+    )
+    parser.add_argument("--factor-health-lookback-windows", type=int, default=20)
+    parser.add_argument("--factor-health-min-periods", type=int, default=5)
+    parser.add_argument("--factor-health-label-lag-windows", type=int, default=48)
+    parser.add_argument("--factor-health-min-scale", type=float, default=0.25)
+    parser.add_argument("--factor-health-max-scale", type=float, default=1.0)
+    parser.add_argument("--factor-health-rank-ic-floor", type=float, default=-0.05)
+    parser.add_argument("--factor-health-rank-ic-ceiling", type=float, default=0.05)
+    parser.add_argument("--factor-health-spread-floor", type=float, default=-0.001)
+    parser.add_argument("--factor-health-spread-ceiling", type=float, default=0.001)
+    parser.add_argument(
+        "--score-diagnostics-top-n",
+        type=int,
+        help="write per-partition top-N factor contribution diagnostics",
+    )
     parser.add_argument("--run-backtests", action="store_true")
     parser.add_argument(
         "--catalog-path",
@@ -658,7 +831,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--lot-size", type=int, default=100)
     parser.add_argument(
         "--trade-policy",
-        choices=("naive_top_n", "rank_buffer_drop"),
+        choices=("naive_top_n", "rank_buffer_drop", "cost_aware_optimizer"),
         default="naive_top_n",
     )
     parser.add_argument("--rebalance-every-n-bars", type=int, default=1)
@@ -673,6 +846,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-no-trade-weight-band", type=float, default=0.0)
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
+    parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
+    parser.add_argument("--policy-gross-exposure-scale-path")
+    parser.add_argument("--optimizer-candidate-rank", type=int)
+    parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
+    parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
+    parser.add_argument("--optimizer-risk-penalty-multiplier", type=float, default=1.0)
+    parser.add_argument(
+        "--optimizer-weighting",
+        choices=("equal", "utility"),
+        default="utility",
+    )
+    parser.add_argument("--optimizer-max-name-weight", type=float)
+    parser.add_argument("--optimizer-max-gross-exposure-increase-per-rebalance", type=float)
     parser.add_argument(
         "--backtest-policy-set",
         choices=("single", "comparison"),
@@ -741,6 +927,37 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--partition-start must not be after --partition-end")
     if args.decorrelation_ridge < 0:
         raise ValueError("--decorrelation-ridge must be non-negative")
+    if args.factor_max_weight is not None and not 0 < args.factor_max_weight <= 1:
+        raise ValueError("--factor-max-weight must be in (0, 1]")
+    if (
+        args.factor_max_contribution_share is not None
+        and not 0 < args.factor_max_contribution_share <= 1
+    ):
+        raise ValueError("--factor-max-contribution-share must be in (0, 1]")
+    if args.factor_health_lookback_windows <= 0:
+        raise ValueError("--factor-health-lookback-windows must be positive")
+    if args.factor_health_min_periods <= 0:
+        raise ValueError("--factor-health-min-periods must be positive")
+    if args.factor_health_min_periods > args.factor_health_lookback_windows:
+        raise ValueError(
+            "--factor-health-min-periods must be <= --factor-health-lookback-windows"
+        )
+    if args.factor_health_label_lag_windows <= 0:
+        raise ValueError("--factor-health-label-lag-windows must be positive")
+    if not 0 <= args.factor_health_min_scale <= args.factor_health_max_scale <= 1:
+        raise ValueError(
+            "--factor-health scales must satisfy 0 <= min_scale <= max_scale <= 1"
+        )
+    if args.factor_health_rank_ic_floor >= args.factor_health_rank_ic_ceiling:
+        raise ValueError(
+            "--factor-health-rank-ic-floor must be below --factor-health-rank-ic-ceiling"
+        )
+    if args.factor_health_spread_floor >= args.factor_health_spread_ceiling:
+        raise ValueError(
+            "--factor-health-spread-floor must be below --factor-health-spread-ceiling"
+        )
+    if args.score_diagnostics_top_n is not None and args.score_diagnostics_top_n <= 0:
+        raise ValueError("--score-diagnostics-top-n must be positive")
     if args.top_n <= 0:
         raise ValueError("--top-n must be positive")
     if args.rebalance_every_n_bars <= 0:
@@ -783,6 +1000,28 @@ def _parse_args() -> argparse.Namespace:
         and args.policy_max_gross_turnover_per_rebalance < 0
     ):
         raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
+    if not 0 <= args.policy_gross_exposure_scale <= 1:
+        raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
+    if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:
+        raise ValueError("--optimizer-candidate-rank must be positive")
+    if args.optimizer_score_to_edge_bps < 0:
+        raise ValueError("--optimizer-score-to-edge-bps must be non-negative")
+    if args.optimizer_min_net_edge_bps < 0:
+        raise ValueError("--optimizer-min-net-edge-bps must be non-negative")
+    if args.optimizer_risk_penalty_multiplier < 0:
+        raise ValueError("--optimizer-risk-penalty-multiplier must be non-negative")
+    if (
+        args.optimizer_max_name_weight is not None
+        and not 0 < args.optimizer_max_name_weight <= 1
+    ):
+        raise ValueError("--optimizer-max-name-weight must be in (0, 1]")
+    if (
+        args.optimizer_max_gross_exposure_increase_per_rebalance is not None
+        and args.optimizer_max_gross_exposure_increase_per_rebalance < 0
+    ):
+        raise ValueError(
+            "--optimizer-max-gross-exposure-increase-per-rebalance must be non-negative"
+        )
     if args.policy_set_drop_count <= 0:
         raise ValueError("--policy-set-drop-count must be positive")
     if args.policy_set_exit_rank is not None and args.policy_set_exit_rank < args.top_n:

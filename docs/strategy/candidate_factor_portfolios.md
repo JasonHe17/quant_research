@@ -364,13 +364,109 @@ roughly 58-59% of absolute top-score contribution in the main loss months, with
 Next framework work should therefore add a portfolio risk/regime layer before
 more factor-combination sweeps:
 
-- A market/regime gate that can reduce gross exposure or move to cash when the
-  expected top basket has negative absolute edge, even if cross-sectional IC is
-  positive.
+- A policy-level market/regime gate now has first plumbing through
+  `--policy-gross-exposure-scale` and
+  `--policy-gross-exposure-scale-path`. Build the time-varying schedule with
+  `examples/build_policy_regime_gate.py`; it shifts score-health diagnostics by
+  the label maturation horizon before rolling, so forward-return labels that
+  are not yet observable cannot control the current target book.
 - Factor exposure caps or shrinkage so one volatility horizon cannot dominate
   the selected basket.
 - A rolling leg-health diagnostic that downweights factors after recent
   directional IC inversion, especially short-horizon volatility legs.
+
+Example lagged regime-gate build and replay:
+
+```bash
+conda run -n quant python examples/build_policy_regime_gate.py \
+  --dataset-dir runs/framework_v1_acceptance/standard/alpha_dataset \
+  --scores-path runs/candidate_factor_portfolios/policy_set_q1_2023_decorrelated/scores/decorrelated \
+  --output-dir runs/candidate_factor_portfolios/policy_set_q1_2023_decorrelated/regime_gate/decorrelated \
+  --top-n 50 \
+  --lookback-windows 20 \
+  --min-periods 5 \
+  --label-lag-windows 48 \
+  --state-confirmation-windows 2 \
+  --max-scale-change-per-window 0.25
+
+conda run -n quant python examples/run_tree_score_backtest.py \
+  --predictions-path runs/candidate_factor_portfolios/policy_set_q1_2023_decorrelated/scores/decorrelated/*.parquet \
+  --start 2023-01-03T09:35:00+08:00 \
+  --end 2023-03-31T15:00:00+08:00 \
+  --top-n 50 \
+  --trade-policy rank_buffer_drop \
+  --rebalance-every-n-bars 48 \
+  --policy-entry-rank 50 \
+  --policy-exit-rank 150 \
+  --policy-max-entries-per-rebalance 10 \
+  --policy-max-exits-per-rebalance 10 \
+  --policy-no-trade-weight-band 0.002 \
+  --policy-partial-rebalance-rate 0.5 \
+  --policy-gross-exposure-scale-path runs/candidate_factor_portfolios/policy_set_q1_2023_decorrelated/regime_gate/decorrelated/gross_exposure_schedule.csv \
+  --data-access-mode fast_parquet \
+  --streaming-chunk month \
+  --output-dir runs/candidate_factor_portfolios/policy_set_q1_2023_decorrelated/regime_gated_backtest/decorrelated
+```
+
+Use `examples/compare_policy_backtests.py` when a gated replay needs overall
+and monthly attribution against the ungated policy:
+
+```bash
+conda run -n quant python examples/compare_policy_backtests.py \
+  --baseline-dir runs/candidate_factor_portfolios/partial_rebalance_validation_standard/regime_gated_backtest_2024_h1/decorrelated/partial_rebalance_daily_baseline \
+  --candidate-dir runs/candidate_factor_portfolios/partial_rebalance_validation_standard/regime_gated_backtest_2024_h1/decorrelated/partial_rebalance_daily_budget_deadband_gate \
+  --output-dir runs/candidate_factor_portfolios/partial_rebalance_validation_standard/regime_gated_backtest_2024_h1/decorrelated/comparison_budget_deadband_vs_baseline \
+  --baseline-name baseline_partial_rebalance_daily \
+  --candidate-name budget_deadband_gate \
+  --start 2024-01-02T09:35:00+08:00 \
+  --end 2024-06-28T15:00:00+08:00
+```
+
+Initial Q1 2023 lag-48 regime-gate replay:
+
+| Variant | Return | Max drawdown | Gross turnover | Trades | Avg target gross | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Baseline `partial_rebalance_daily` | 4.76% | -5.82% | 11.89 | 2,274 | - | Current default candidate policy |
+| Lag-48 rolling gate | 4.21% | -3.99% | 17.04 | 3,102 | 0.60 | Lower drawdown, but lower return and higher turnover |
+| Lag-48 gate + 2-signal confirmation + 0.25 scale step | 3.92% | -4.08% | 16.81 | 3,064 | 0.60 | Step limit slightly reduces turnover, but does not fix the trade-noise problem |
+| Lag-48 continuous budget gate + 0.10 scale step | 3.62% | -4.45% | 13.94 | 2,892 | 0.67 | Lower turnover than binary gates, still worse than baseline |
+| Budget gate + 0.03 deadband + asymmetric 0.20 down / 0.05 up steps | 3.63% | -4.43% | 13.37 | 2,789 | 0.64 | Further reduces trade noise, but still does not beat baseline |
+
+The first gated replay is useful as a framework check, not a promotion result.
+It confirms that a matured-label schedule can reduce drawdown, but the raw
+full/reduced/blocked scale changes add trading. The first smoothing pass reduces
+turnover only marginally and lowers return further. The continuous risk-budget
+gate reduces the trade-noise problem versus binary gates, but still loses too
+much return and remains above baseline turnover. Adding a deadband plus slower
+re-risking lowers turnover further, but does not solve the net-return problem.
+Do not enable any gate as a default until it shows positive net value in
+multi-year acceptance. The next work should compare these gates on 2024 loss
+months where the regime failure was originally observed; if they only help
+there, they should remain targeted risk overlays rather than default policy.
+
+H1 2024 targeted replay confirms that interpretation:
+
+| Variant | Return | Max drawdown | Gross turnover | Trades | Avg target gross |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baseline `partial_rebalance_daily` | -24.06% | -32.13% | 22.07 | 4,621 | 0.96 |
+| Budget + deadband gate | -16.09% | -18.10% | 17.45 | 4,262 | 0.44 |
+
+Monthly attribution:
+
+| Month | Baseline return | Gated return | Delta | Read |
+| --- | ---: | ---: | ---: | --- |
+| 2024-01 | -15.65% | -10.85% | +4.80% | Helps original negative-market loss month |
+| 2024-02 | -1.89% | -2.24% | -0.35% | Does not fix score/factor inversion |
+| 2024-03 | 3.95% | 3.73% | -0.22% | Slight drag |
+| 2024-04 | -0.00% | -3.21% | -3.20% | Clear false positive / opportunity cost |
+| 2024-05 | -0.29% | 0.70% | +0.99% | Helps modestly |
+| 2024-06 | -11.46% | -4.78% | +6.69% | Helps original negative top-leg month |
+
+The gate is therefore useful as a targeted risk overlay for negative top-leg or
+negative-market regimes, but it does not solve factor inversion months and it
+can create false positives. Promotion requires a second-stage guard such as
+market-state confirmation, factor-leg health, or an optimizer-level turnover
+budget.
 
 Initial Q1 2023 policy comparison:
 

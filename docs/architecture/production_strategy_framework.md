@@ -213,6 +213,7 @@ no_trade_weight_band
 partial_rebalance_rate
 max_gross_turnover_per_rebalance
 max_daily_gross_turnover
+gross_exposure_scale
 ```
 
 Decision rules:
@@ -227,7 +228,9 @@ Decision rules:
 5. Replacement count is capped by `max_exits_per_rebalance` and
    `max_entries_per_rebalance`.
 6. Target weights are computed for the retained plus new book, then clipped by
-   name, cash, and gross exposure limits.
+   name, cash, and gross exposure limits. `gross_exposure_scale` is applied
+   inside the policy layer so market/regime gates can reduce the live book
+   before execution and capacity checks.
 7. If `abs(target_weight - current_weight) < no_trade_weight_band`, do not
    resize.
 8. If resizing is required, move only partially toward the aim weight:
@@ -252,6 +255,7 @@ limit_up_buy_blocked
 limit_down_sell_blocked
 capacity_capped
 risk_reduction
+turnover_budget_limited
 cash_limited
 universe_removed
 ```
@@ -387,9 +391,30 @@ Live-readiness acceptance:
   entry/exit buffer, daily rebalance, and partial rebalance.
 - [x] Add controlled concurrent candidate policy sweeps with resumable
   backtests and flat comparison summaries.
+- [x] Add a policy-level gross exposure scale for market/regime gates, with
+  `risk_reduction` diagnostics and candidate-runner plumbing.
 - [ ] Define promotion gates for policy-level acceptance before any new factor
   research resumes.
-- [ ] Add a cost-aware optimizer policy behind the same strategy contracts.
+- [x] Add rolling market/regime signal generation that sets
+  `gross_exposure_scale` from lagged out-of-sample basket health, not from
+  current-period hindsight.
+- [x] Add gate hysteresis and per-window exposure-step limits so regime gates
+  can be tested without forcing instantaneous full-book changes.
+- [x] Add continuous risk-budget gate mode as a lower-jump alternative to
+  binary full/reduced/blocked regime gates.
+- [x] Add gate deadband and asymmetric de-risk/re-risk speed limits to reduce
+  small exposure oscillations.
+- [x] Add factor-leg exposure caps or shrinkage before composite score
+  materialization.
+- [x] Validate regime-gated policy schedules across the standard multi-year
+  acceptance suite; reject default promotion until return and cost resilience
+  improve.
+- [x] Add a cost-aware optimizer policy behind the same strategy contracts.
+- [x] Validate the cost-aware optimizer across the standard multi-year
+  acceptance suite; keep it as a research risk-control layer, not a default
+  policy.
+- [x] Add an optimizer re-risk budget control so replacement turnover and net
+  gross-exposure rebuilding can be tested separately.
 - [ ] Add paper-trading contracts for broker adapters, order IDs, fills, and
   reconciliation.
 

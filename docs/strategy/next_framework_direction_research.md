@@ -1,0 +1,344 @@
+# Next Framework Direction Research
+
+This note decides the next framework task after the first policy-level
+gross-exposure gate experiments.
+
+## Current Evidence
+
+The current production-oriented candidate is
+`decorrelated/partial_rebalance_daily`. It is operationally tractable and
+cost-resilient, but it is not production-promotable because the 2024 validation
+slice loses money across all score-combination methods.
+
+The 2024 failure is not one homogeneous problem:
+
+- 2024-01 and 2024-06: the composite score still has positive relative ranking
+  power, but the selected top basket has negative absolute forward returns.
+  A market or basket-health exposure gate helps these months.
+- 2024-02: the composite score/factor legs invert. The H1 2024 budget gate does
+  not fix this, because reducing gross exposure after composite-score health
+  deterioration is too late and too blunt.
+- 2024-04: the budget gate creates a clear false positive and opportunity cost.
+  More gate tuning risks overfitting this small sample.
+
+## External Research And Engineering Read
+
+Mature engineering systems separate prediction, portfolio construction, and
+execution. Qlib's portfolio strategy layer consumes forecast scores and supports
+custom strategies; its Topk-Drop implementation is a simple rank-driven
+portfolio strategy, not a complete risk model. Its own documentation also notes
+that rank-only strategies may ignore score scale, while optimization-based
+strategies need meaningful score calibration.
+
+Optimization-based portfolio construction is the right long-term architecture.
+The Boyd/Busseti/Diamond/Kahn/Koh/Nystrup/Speth framework trades off expected
+return, risk, transaction cost, and holding cost, and its multi-period version
+executes the first slice of a re-planned trajectory. Cvxportfolio implements
+that style with single-period and multi-period optimization policies,
+constraints, and transaction-cost models using volume, volatility, and spread
+terms. However, those methods assume the alpha forecasts and risk inputs are
+usable; they exploit predictions, but do not solve bad or inverted predictions.
+
+The factor-timing literature is mixed but useful here. Broad contrarian factor
+timing is difficult and should not be treated as an easy alpha source. At the
+same time, factor momentum research shows that recent factor performance can
+contain persistence, including evidence in the Chinese stock market. For our
+case, the relevant use is conservative factor-leg health and shrinkage, not
+aggressive all-in/all-out factor timing.
+
+Market-state exposure control is also legitimate, especially for long-only
+books. Long-only A-share trading faces T+1 sellability, board-lot, price-limit,
+and liquidity constraints, so gross exposure changes must be slow and
+auditable. Trend-following evidence supports defensive state awareness, but the
+current H1 2024 replay shows that a basket-health gate alone can add false
+positives.
+
+## Decision
+
+The next implementation should prioritize factor-leg health and shrinkage before
+more regime-gate tuning or a full optimizer.
+
+Reasons:
+
+- It directly addresses the 2024-02 inversion, which policy-level gross exposure
+  cannot explain or repair.
+- It reduces concentration risk already observed in the score construction:
+  short-horizon volatility and Amihud legs dominate top-score contribution in
+  the main failure months.
+- It is compatible with the existing score-partition pipeline and can be tested
+  with the current RankBufferDropPolicy without first building a full optimizer.
+- It is a prerequisite for optimizer work. A cost-aware optimizer will allocate
+  more cleanly if the input score is already leg-capped, health-shrunk, and
+  auditable.
+- It is less likely than more gate tuning to overfit a handful of 2024 months,
+  because the acceptance target is cross-sectional signal quality and exposure
+  concentration before trading.
+
+Do not promote this as "factor timing alpha" by default. The first version
+should be a risk-control transform:
+
+- cap any single factor's contribution to composite score;
+- shrink factors after lagged rolling IC or top-minus-bottom deterioration;
+- keep a minimum residual weight unless a hard health rule is breached;
+- record per-factor raw weight, health score, effective weight, and shrink
+  reason for every partition or decision date.
+
+## Comparison Experiment
+
+Run the comparison at score-construction level first, then policy replay.
+
+Candidate variants:
+
+1. Baseline: current `decorrelated` composite.
+2. Contribution cap only: cap per-factor absolute contribution to top-score
+   names before final score ranking.
+3. Lagged leg-health shrinkage: shrink each factor by lagged rolling IC and
+   top-minus-bottom health.
+4. Cap + leg-health shrinkage.
+5. Optional control: market/basket-health gate from the existing budget
+   deadband schedule.
+6. Optional combined: cap + leg-health shrinkage + existing gate.
+
+Primary diagnostics before backtest:
+
+- monthly composite rank IC;
+- monthly top-minus-bottom label;
+- top-score forward return;
+- factor contribution concentration: largest factor share and top-two share;
+- factor-leg inversion count;
+- score rank autocorrelation and top-N name turnover.
+
+Backtest acceptance diagnostics:
+
+- total return, max drawdown, monthly worst return;
+- gross turnover, trade count, transaction cost;
+- average target gross exposure if a gate is used;
+- month-level attribution for 2024-01, 2024-02, 2024-04, 2024-06, and 2024-12.
+
+Minimum acceptance bar for choosing the next implementation:
+
+- improve 2024-02 versus the baseline without materially worsening 2024-01 and
+  2024-06;
+- reduce top-score contribution concentration;
+- no higher full-window turnover than `partial_rebalance_daily` baseline by
+  more than 10%;
+- preserve 2023 and 2025 positive full-year behavior under base costs;
+- remain better than or equal to baseline under high-cost validation after
+  transaction costs.
+
+## Implementation Order
+
+- [x] Add a score-construction transform that emits factor contribution columns
+  or sidecar diagnostics before aggregation.
+- [x] Add contribution-cap mode to `run_candidate_factor_portfolios.py`.
+- [x] Add lagged rolling factor-leg health schedules using only matured labels.
+- [x] Add shrinkage mode that combines static decorrelated weights with
+  lagged health scores.
+- [x] Add factor-leg health summaries to validation outputs.
+- [x] Run the score-only diagnostics over selected 2024 failure windows.
+- [x] Run policy replays for baseline, static cap + health shrinkage, and row
+  contribution cap + health shrinkage.
+- [ ] Run broader split-variant replays for cap-only, health-only,
+  contribution-cap-only, and gate combinations if we continue this branch.
+- [x] Promote only if the acceptance bar above is met; otherwise keep the
+  current policy baseline and move to optimizer research with explicit input
+  limitations documented.
+
+## Initial Implementation Notes
+
+The first implementation adds explicit, opt-in score-construction controls:
+
+- `--factor-max-weight`: caps static normalized factor weights before composite
+  score construction.
+- `--factor-health-mode shrink`: builds a lagged rolling factor-health schedule
+  from matured labels and scales per-factor weights by timestamp.
+- `--factor-max-contribution-share`: caps row-level factor contribution share
+  after static weights and health shrinkage.
+- `--score-diagnostics-top-n`: writes top-score factor-contribution diagnostics
+  per partition.
+
+Validation now also writes factor-health and factor-contribution summary CSVs
+when those artifacts exist.
+
+Initial smoke checks:
+
+| Window | Variant | Return | Max drawdown | Gross turnover | Trade count | Read |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Q1 2023 | Baseline decorrelated | 4.76% | -5.82% | 11.89 | 2,274 | Existing partial-rebalance baseline |
+| Q1 2023 | Static cap + health shrink | 5.28% | -5.46% | 11.90 | 2,273 | Improves Q1 without turnover increase |
+| H1 2024 | Baseline decorrelated | -24.06% | -32.13% | 22.08 | 4,621 | Failure window |
+| H1 2024 | Static cap + health shrink | -23.72% | -32.46% | 22.19 | 4,608 | Improves 2024-02 but worsens drawdown |
+| H1 2024 | Static cap + row contribution cap + health shrink | -23.44% | -30.67% | 22.22 | 4,639 | Better drawdown and failure-month behavior, but higher cost and 2024-05 drag |
+
+The row-level contribution cap reduced H1 2024 average largest top-score
+factor-contribution share to roughly 47% in every month, with a hard observed
+maximum of 50%. It improved 2024-01, 2024-02, 2024-04, and 2024-06 versus the
+baseline, but materially worsened 2024-05. This is promising enough to enter
+selected-year validation, but not enough to promote as a default.
+
+Selected-year validation rejected promotion:
+
+| Scenario | Baseline return | Cap+health+contribution-cap return | Baseline max drawdown | New max drawdown | Read |
+| --- | ---: | ---: | ---: | ---: | --- |
+| full_base | 34.97% | 25.39% | -32.79% | -33.50% | Worse full-window return and drawdown |
+| year_2023_base | 8.39% | 5.54% | -13.88% | -14.46% | Loses too much good-regime return |
+| year_2024_base | -11.55% | -12.80% | -32.13% | -31.97% | H1 improvement is offset by H2 drag |
+| year_2025_base | 26.39% | 24.21% | -13.49% | -15.06% | Still positive, but weaker |
+| full_high_cost | 28.04% | 18.66% | -33.77% | -34.57% | High-cost resilience worsens |
+
+The implementation is useful as a research and diagnostic tool, but it should
+not become the default score construction. It confirms that factor-leg controls
+can address parts of the failure window, especially 2024-02 inversion and H1
+drawdown, but static contribution clipping is too blunt and creates opportunity
+cost in later 2024 months.
+
+Next decision point:
+
+- Continue within the signal layer only if we are willing to research smoother
+  factor-leg controls, such as shrink-only schedules, factor-family caps, or
+  regime-conditioned caps instead of hard row-level clipping.
+- Otherwise move to the cost-aware optimizer layer with the current baseline
+  score, while keeping factor-health diagnostics as risk inputs rather than
+  score modifiers.
+
+## Cost-Aware Optimizer MVP
+
+Implemented a `CostAwareOptimizerPolicy` behind the same strategy contracts as
+`RankBufferDropPolicy`. The MVP is deliberately conservative: it is not a
+full convex multi-period optimizer yet, but it moves the framework away from
+rank-only trade triggers and toward explicit forecast, cost, risk, and state
+inputs.
+
+Implemented behavior:
+
+- Converts score or optional expected-edge columns into expected edge bps.
+- Subtracts estimated trading cost and optional risk penalties before a name is
+  eligible.
+- Preserves existing holdings before admitting new entries when the existing
+  name remains in the candidate set and has positive net edge.
+- Supports max entries/exits, partial rebalance, no-trade band, T+1 sellability,
+  and gross exposure scale through the standard policy contract.
+- Supports an optimizer-specific turnover-budget allocator through
+  `max_gross_turnover_per_rebalance`: empty or under-invested portfolios may use
+  the exposure gap to build toward the target gross, while subsequent
+  replacement trades compete for a fixed turnover budget.
+- Applies a final incremental gross-budget clamp so T+1-blocked sells cannot be
+  offset by hidden extra buys.
+- Emits the same portfolio intent, trade decision, order intent, policy state,
+  and diagnostics artifacts as the rank-buffer policy.
+
+Initial comparable smoke checks use the same Q1 2023 and H1 2024 baseline score
+files and base-cost execution assumptions:
+
+| Window | Policy | Return | Max drawdown | Gross turnover | Trade count | Avg target gross | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Q1 2023 | Rank buffer partial rebalance | 4.76% | -5.82% | 11.89 | 2,274 | 0.96 | Existing baseline |
+| Q1 2023 | Cost-aware optimizer, equal full rebalance | 8.17% | -5.65% | 59.68 | 1,069 | 1.00 | Strong return, but spends too much turnover |
+| Q1 2023 | Cost-aware optimizer, turnover budget 0.25 | 6.57% | -5.85% | 14.33 | 1,014 | 1.00 | Better return with near-baseline turnover |
+| H1 2024 | Rank buffer partial rebalance | -24.06% | -32.13% | 22.08 | 4,621 | 0.96 | Failure window |
+| H1 2024 | Cost-aware optimizer, equal full rebalance | -23.88% | -26.83% | 114.25 | 2,281 | 1.00 | Better drawdown but too much turnover |
+| H1 2024 | Cost-aware optimizer, turnover budget 0.25 | -19.74% | -31.66% | 28.45 | 2,373 | 1.00 | Return and trade count improve; drawdown still needs regime gate |
+| Q1 2023 | Optimizer 0.25 + budget-deadband gate | 5.67% | -3.32% | 26.89 | 1,835 | 0.55 | Keeps Q1 alpha while materially reducing drawdown |
+| H1 2024 | Optimizer 0.25 + budget-deadband gate | -9.57% | -11.98% | 43.41 | 4,804 | 0.40 | Solves failure-window loss and drawdown, but trades too much |
+| Q1 2023 | Optimizer 0.15 + budget-deadband gate | 4.17% | -3.24% | 21.22 | 1,397 | 0.55 | Conservative turnover budget; gives up Q1 upside |
+| H1 2024 | Optimizer 0.15 + budget-deadband gate | -7.94% | -9.21% | 33.93 | 3,616 | 0.39 | Best H1 loss/drawdown tradeoff so far |
+
+Promotion read:
+
+- Do not promote as default yet. The optimizer plus budget-deadband gate is the
+  first variant that materially improves both Q1 2023 and H1 2024 drawdown. The
+  0.25 turnover-budget variant preserves more upside, while the 0.15 variant is
+  the best H1 failure-window risk control so far.
+- Slower re-risk schedules and wider gate deadbands did not reduce trading
+  enough and weakened Q1/H1 tradeoffs in smoke tests. The next validation step
+  should compare the 0.15 and 0.25 optimizer budgets across the standard
+  multi-year suite before adding more knobs.
+- Next research step is to pass calibrated expected-edge and risk-penalty
+  columns into the optimizer instead of deriving edge from raw score scale.
+
+Standard multi-year validation, using a full 2023-2025 budget-deadband gate
+schedule and parallel yearly backtests where memory allowed:
+
+| Scenario | Policy | Return | Max drawdown | Gross turnover | Trade count | Avg target gross | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| full_base | Baseline rank buffer | 34.97% | -32.79% | 128.79 | 29,052 | n/a | High absolute return, unacceptable drawdown |
+| full_base | Optimizer 0.15 + gate | 2.94% | -18.08% | 222.93 | 20,926 | 0.43 | Strong drawdown reduction, but return is mostly consumed |
+| full_base | Optimizer 0.25 + gate | -2.53% | -19.43% | 283.88 | 27,890 | 0.44 | Worse than 0.15 |
+| full_high_cost | Baseline rank buffer | 28.04% | -33.77% | 128.31 | 28,936 | n/a | Still high return, drawdown remains too high |
+| full_high_cost | Optimizer 0.15 + gate | -9.51% | -23.12% | 222.22 | 20,873 | 0.43 | Fails cost stress |
+| full_high_cost | Optimizer 0.25 + gate | -17.17% | -27.06% | 282.82 | 27,730 | 0.44 | Fails cost stress |
+| year_2023_base | Baseline rank buffer | 8.39% | -13.88% | 43.86 | 9,568 | n/a | Baseline good-regime reference |
+| year_2023_base | Optimizer 0.15 + gate | -0.38% | -9.10% | 79.88 | 6,524 | 0.46 | Low drawdown, gives up too much return |
+| year_2024_base | Baseline rank buffer | -11.55% | -32.13% | 43.92 | 9,561 | n/a | Failure year |
+| year_2024_base | Optimizer 0.15 + gate | -3.07% | -11.74% | 68.34 | 7,515 | 0.38 | Best failure-year improvement |
+| year_2025_base | Baseline rank buffer | 26.39% | -13.49% | 43.40 | 9,411 | n/a | Good-regime reference |
+| year_2025_base | Optimizer 0.15 + gate | 9.24% | -7.35% | 74.98 | 6,904 | 0.44 | Lower drawdown, too much upside loss |
+
+Validation read: the joint optimizer-gate framework is directionally useful as
+a risk-control layer, especially in 2024, but it should not replace the current
+baseline as the main policy. The main blocker is not trade count, which improves
+under the 0.15 budget, but gross turnover and low average exposure: the gate
+cuts risk, then optimizer re-risking spends too much turnover to rebuild a
+lower-gross book. Next implementation should add calibrated expected-edge/risk
+inputs and/or a re-risk-specific budget before another full-suite run.
+
+Implementation follow-up:
+
+- The optimizer turnover allocator now carries `net_edge_bps` into trade rows,
+  so budget-limited buys are prioritized by net edge rather than silently
+  falling back to rank/priority ordering.
+- Added optional
+  `max_gross_exposure_increase_per_rebalance` / CLI
+  `--optimizer-max-gross-exposure-increase-per-rebalance`. When unset, the
+  previous budget behavior is preserved for existing experiments. When set,
+  sells still use the configured replacement-turnover budget, while re-risking
+  from a lower gross book is capped by a separate net gross-exposure increase
+  budget.
+- This is an experiment control, not a promotion. The next validation should
+  compare calibrated-edge variants with and without this re-risk cap before any
+  full-suite run is repeated.
+
+Small-window re-risk cap smoke:
+
+| Window | Variant | Return | Max drawdown | Gross turnover | Trade count | Avg target gross | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Q1 2023 | Optimizer 0.15 + gate, no re-risk cap | 4.17% | -3.24% | 21.22 | 1,397 | 0.55 | Prior reference |
+| Q1 2023 | Re-risk cap 0.05 | 2.25% | -2.37% | 16.14 | 1,610 | 0.36 | Cuts turnover and drawdown, but gives up too much upside |
+| Q1 2023 | Re-risk cap 0.10 | 4.25% | -2.84% | 16.67 | 1,409 | 0.50 | Best Q1 tradeoff in this smoke |
+| H1 2024 | Optimizer 0.15 + gate, no re-risk cap | -7.94% | -9.21% | 33.93 | 3,616 | 0.39 | Prior reference |
+| H1 2024 | Re-risk cap 0.05 | -7.28% | -7.64% | 31.44 | 5,033 | 0.27 | Lower drawdown, but still high trade count |
+| H1 2024 | Re-risk cap 0.10 | -9.12% | -9.80% | 32.04 | 4,617 | 0.32 | Worse than no-cap on H1 loss and drawdown |
+
+Read: the re-risk cap is useful as a control surface and confirms that
+exposure rebuilding was part of the turnover problem, but it is not sufficient
+to promote the optimizer-gate stack. The 0.10 cap looks reasonable in Q1 2023
+but worsens H1 2024; the 0.05 cap helps H1 drawdown but suppresses good-regime
+exposure too much. Further optimizer work should prioritize calibrated
+expected-edge/risk inputs over additional gate-speed tuning.
+
+## References
+
+- Qlib: An AI-oriented Quantitative Investment Platform:
+  https://arxiv.org/abs/2009.11189
+- Qlib portfolio strategy documentation:
+  https://qlib.readthedocs.io/en/latest/component/strategy.html
+- Multi-Period Trading via Convex Optimization:
+  https://web.stanford.edu/~boyd/papers/cvx_portfolio.html
+- Cvxportfolio optimization policies:
+  https://www.cvxportfolio.com/en/stable/optimization_policies.html
+- Cvxportfolio cost models:
+  https://www.cvxportfolio.com/en/1.3.1/costs.html
+- Factor Timing is Hard:
+  https://www.aqr.com/Insights/Perspectives/Factor-Timing-is-Hard
+- Factor Momentum Everywhere:
+  https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3300728
+- Factor Momentum and the Momentum Factor:
+  https://ideas.repec.org/a/bla/jfinan/v77y2022i3p1877-1919.html
+- Factor Momentum in the Chinese Stock Market:
+  https://cirforum.org/cirf2022/forum_files/papers/CIRF-160.pdf
+- A Century of Evidence on Trend-Following Investing:
+  https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2993026
+- Shanghai Stock Exchange trading mechanism:
+  https://english.sse.com.cn/start/trading/mechanism/
+- HKEX Stock Connect product leaflet:
+  https://www.hkex.com.hk/-/media/HKEX-Market/Mutual-Market/Stock-Connect/Getting-Started/Information-Booklet-and-FAQ/HKEX_Stock-Connect_EN_Oct-2024.pdf

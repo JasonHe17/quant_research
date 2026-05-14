@@ -10,7 +10,9 @@ from quant_research.portfolio import (
     PortfolioConfig,
     PortfolioConstructor,
     RiskConstraint,
+    RollingRegimeGateConfig,
     apply_cn_t1_constraints,
+    build_rolling_regime_gate,
 )
 
 
@@ -170,6 +172,222 @@ def test_portfolio_config_and_risk_constraint_validate_inputs() -> None:
         RiskConstraint(name="turnover", limit=-1.0)
 
 
+def test_rolling_regime_gate_uses_only_lagged_observations() -> None:
+    diagnostics = pd.DataFrame(
+        [
+            _regime_row("t0", top=-0.02, spread=-0.03, ic=-0.4),
+            _regime_row("t1", top=0.03, spread=0.04, ic=0.5),
+            _regime_row("t2", top=0.04, spread=0.05, ic=0.6),
+        ]
+    )
+
+    schedule = build_rolling_regime_gate(
+        diagnostics,
+        RollingRegimeGateConfig(
+            lookback_windows=1,
+            min_periods=1,
+            label_lag_windows=1,
+            reduced_scale=0.5,
+            blocked_scale=0.0,
+            block_top_return=-0.01,
+            block_spread=-0.01,
+            block_rank_ic=-0.1,
+        ),
+    )
+
+    assert schedule["gate_reason"].tolist() == [
+        "warmup",
+        "blocked_exposure",
+        "full_exposure",
+    ]
+    assert schedule["gross_exposure_scale"].tolist() == [1.0, 0.0, 1.0]
+    assert schedule.loc[1, "rolling_score_top_n_mean_label"] == pytest.approx(-0.02)
+
+
+def test_rolling_regime_gate_reduces_before_blocking_thresholds() -> None:
+    diagnostics = pd.DataFrame(
+        [
+            _regime_row("t0", top=0.01, spread=0.01, ic=0.1),
+            _regime_row("t1", top=0.002, spread=-0.0005, ic=0.02),
+            _regime_row("t2", top=0.01, spread=0.01, ic=0.1),
+        ]
+    )
+
+    schedule = build_rolling_regime_gate(
+        diagnostics,
+        RollingRegimeGateConfig(
+            lookback_windows=1,
+            min_periods=1,
+            label_lag_windows=1,
+            reduced_scale=0.25,
+            blocked_scale=0.0,
+            min_spread=0.0,
+            block_spread=-0.01,
+            block_rank_ic=-0.1,
+        ),
+    )
+
+    assert schedule.loc[1, "gate_reason"] == "full_exposure"
+    assert schedule.loc[2, "gate_reason"] == "reduced_exposure"
+    assert schedule.loc[2, "gross_exposure_scale"] == pytest.approx(0.25)
+
+
+def test_rolling_regime_gate_confirms_states_and_limits_scale_steps() -> None:
+    diagnostics = pd.DataFrame(
+        [
+            _regime_row("t0", top=-0.02, spread=-0.03, ic=-0.4),
+            _regime_row("t1", top=-0.02, spread=-0.03, ic=-0.4),
+            _regime_row("t2", top=0.03, spread=0.04, ic=0.5),
+            _regime_row("t3", top=0.03, spread=0.04, ic=0.5),
+            _regime_row("t4", top=0.03, spread=0.04, ic=0.5),
+        ]
+    )
+
+    schedule = build_rolling_regime_gate(
+        diagnostics,
+        RollingRegimeGateConfig(
+            lookback_windows=1,
+            min_periods=1,
+            label_lag_windows=1,
+            state_confirmation_windows=2,
+            max_scale_change_per_window=0.5,
+            blocked_scale=0.0,
+            block_top_return=-0.01,
+            block_spread=-0.01,
+            block_rank_ic=-0.1,
+        ),
+    )
+
+    assert schedule["raw_gate_reason"].tolist() == [
+        "warmup",
+        "blocked_exposure",
+        "blocked_exposure",
+        "full_exposure",
+        "full_exposure",
+    ]
+    assert schedule["gate_reason"].tolist() == [
+        "warmup",
+        "warmup",
+        "blocked_exposure",
+        "blocked_exposure",
+        "full_exposure",
+    ]
+    assert schedule["gross_exposure_scale"].tolist() == [1.0, 1.0, 0.5, 0.0, 0.5]
+    assert schedule["scale_step_limited"].tolist() == [False, False, True, False, True]
+
+
+def test_rolling_regime_gate_budget_mode_uses_continuous_scale() -> None:
+    diagnostics = pd.DataFrame(
+        [
+            _regime_row("t0", top=0.02, spread=0.02, ic=0.2),
+            _regime_row("t1", top=-0.001, spread=-0.001, ic=-0.05),
+            _regime_row("t2", top=0.0, spread=0.0, ic=0.0),
+            _regime_row("t3", top=0.001, spread=0.001, ic=0.05),
+        ]
+    )
+
+    schedule = build_rolling_regime_gate(
+        diagnostics,
+        RollingRegimeGateConfig(
+            gate_mode="budget",
+            lookback_windows=1,
+            min_periods=1,
+            label_lag_windows=1,
+            budget_min_scale=0.25,
+            budget_max_scale=1.0,
+            budget_top_return_floor=-0.001,
+            budget_top_return_ceiling=0.001,
+            budget_spread_floor=-0.001,
+            budget_spread_ceiling=0.001,
+            budget_rank_ic_floor=-0.05,
+            budget_rank_ic_ceiling=0.05,
+            max_scale_change_per_window=0.5,
+        ),
+    )
+
+    assert schedule["raw_gate_reason"].tolist() == [
+        "warmup",
+        "budget_exposure",
+        "budget_exposure",
+        "budget_exposure",
+    ]
+    assert schedule["raw_gross_exposure_scale"].tolist() == [
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+        pytest.approx(0.25),
+        pytest.approx(0.625),
+    ]
+    assert schedule["gross_exposure_scale"].tolist() == [
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+        pytest.approx(0.5),
+        pytest.approx(0.625),
+    ]
+    assert schedule.loc[3, "budget_health_score"] == pytest.approx(0.5)
+
+
+def test_rolling_regime_gate_budget_mode_supports_deadband_and_asymmetric_steps() -> None:
+    diagnostics = pd.DataFrame(
+        [
+            _regime_row("t0", top=0.001, spread=0.001, ic=0.05),
+            _regime_row("t1", top=0.0009, spread=0.0009, ic=0.045),
+            _regime_row("t2", top=-0.001, spread=-0.001, ic=-0.05),
+            _regime_row("t3", top=0.001, spread=0.001, ic=0.05),
+            _regime_row("t4", top=0.001, spread=0.001, ic=0.05),
+        ]
+    )
+
+    schedule = build_rolling_regime_gate(
+        diagnostics,
+        RollingRegimeGateConfig(
+            gate_mode="budget",
+            lookback_windows=1,
+            min_periods=1,
+            label_lag_windows=1,
+            budget_min_scale=0.25,
+            budget_max_scale=1.0,
+            budget_top_return_floor=-0.001,
+            budget_top_return_ceiling=0.001,
+            budget_spread_floor=-0.001,
+            budget_spread_ceiling=0.001,
+            budget_rank_ic_floor=-0.05,
+            budget_rank_ic_ceiling=0.05,
+            scale_change_deadband=0.05,
+            max_scale_decrease_per_window=0.3,
+            max_scale_increase_per_window=0.1,
+        ),
+    )
+
+    assert schedule["raw_gross_exposure_scale"].tolist() == [
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+        pytest.approx(0.9625),
+        pytest.approx(0.25),
+        pytest.approx(1.0),
+    ]
+    assert schedule["gross_exposure_scale"].tolist() == [
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+        pytest.approx(1.0),
+        pytest.approx(0.7),
+        pytest.approx(0.8),
+    ]
+    assert schedule["scale_deadband_held"].tolist() == [
+        False,
+        False,
+        True,
+        False,
+        False,
+    ]
+    assert schedule["scale_step_limited"].tolist() == [
+        False,
+        False,
+        False,
+        True,
+        True,
+    ]
+
+
 def _signals() -> pd.DataFrame:
     return pd.DataFrame(
         [
@@ -177,3 +395,12 @@ def _signals() -> pd.DataFrame:
             {"timestamp": "2024-01-01", "instrument_id": "inst-2", "signal": 2.0},
         ]
     )
+
+
+def _regime_row(timestamp: str, *, top: float, spread: float, ic: float) -> dict[str, object]:
+    return {
+        "timestamp": timestamp,
+        "score_top_n_mean_label": top,
+        "score_top_minus_bottom_label": spread,
+        "score_rank_ic": ic,
+    }
