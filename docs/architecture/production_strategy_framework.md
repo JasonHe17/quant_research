@@ -381,6 +381,8 @@ Live-readiness acceptance:
 - [x] Add reason-code and planned-turnover diagnostics to backtest outputs.
 - [x] Add unit tests for rank buffer, replacement caps, no-trade bands, partial
   rebalance, and T+1 sellability interaction.
+- [x] Use sparse streaming execution frames for score backtests so larger
+  policy grids do not materialize inactive full-market rows.
 - [ ] Add candidate-factor policy comparison runs: naive top-N, top-k-drop,
   entry/exit buffer, daily rebalance, and partial rebalance.
 - [ ] Define promotion gates for policy-level acceptance before any new factor

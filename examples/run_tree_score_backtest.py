@@ -264,7 +264,12 @@ def _run_tree_score_backtest_streaming(
         if not target_build.diagnostics.empty:
             policy_diagnostics.append(target_build.diagnostics)
         total_signals += len(signals)
-        executions = _build_tree_score_executions(bars, signals)
+        executions = _build_tree_score_executions(
+            bars,
+            signals,
+            tracked_instruments=set(state.lots),
+            sparse=True,
+        )
         if executions.empty:
             continue
         total_executions += len(executions)
@@ -660,6 +665,9 @@ def _empty_target_weight_frame() -> pd.DataFrame:
 def _build_tree_score_executions(
     bars: pd.DataFrame,
     signals: pd.DataFrame,
+    *,
+    tracked_instruments: set[str] | None = None,
+    sparse: bool = False,
 ) -> pd.DataFrame:
     signal_times = sorted(signals["signal_time"].unique().tolist())
     all_times = sorted(bars["bar_end_time"].unique().tolist())
@@ -685,6 +693,15 @@ def _build_tree_score_executions(
             "limit_down_open",
         ],
     ].rename(columns={"bar_end_time": "exec_time"})
+    if sparse:
+        relevant_instruments = {str(value) for value in tracked_instruments or set()}
+        if not shifted.empty:
+            relevant_instruments.update(shifted["instrument_id"].astype(str).unique())
+        if not relevant_instruments:
+            return pd.DataFrame(columns=[*prices.columns, "target_weight"])
+        prices = prices.loc[
+            prices["instrument_id"].astype(str).isin(relevant_instruments)
+        ].copy()
     if shifted.empty:
         return prices.assign(target_weight=pd.NA)
     target_weights = shifted.loc[

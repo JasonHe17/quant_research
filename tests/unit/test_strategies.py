@@ -17,6 +17,7 @@ from quant_research.strategies import (
 )
 from examples.run_tree_score_backtest import (
     TreeScoreBacktestParams,
+    _build_tree_score_executions,
     _build_target_weights,
     _score_rank_limit,
 )
@@ -273,6 +274,53 @@ def test_tree_score_rank_limit_includes_policy_exit_rank(tmp_path) -> None:
     assert _score_rank_limit(params) == 2
 
 
+def test_tree_score_sparse_executions_keep_only_targets_and_tracked_holdings() -> None:
+    bars = pd.DataFrame(
+        [
+            _bar("t0", "inst-a"),
+            _bar("t0", "inst-held"),
+            _bar("t0", "inst-unused"),
+            _bar("t1", "inst-a"),
+            _bar("t1", "inst-held"),
+            _bar("t1", "inst-unused"),
+            _bar("t2", "inst-a"),
+            _bar("t2", "inst-held"),
+            _bar("t2", "inst-unused"),
+        ]
+    )
+    signals = pd.DataFrame(
+        [
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-a",
+                "target_weight": 1.0,
+            }
+        ]
+    )
+
+    dense = _build_tree_score_executions(bars, signals)
+    sparse = _build_tree_score_executions(
+        bars,
+        signals,
+        tracked_instruments={"inst-held"},
+        sparse=True,
+    )
+
+    assert set(dense["instrument_id"]) == {"inst-a", "inst-held", "inst-unused"}
+    assert set(sparse["instrument_id"]) == {"inst-a", "inst-held"}
+    assert len(sparse) == 6
+    target = sparse.loc[
+        (sparse["exec_time"] == "t1") & (sparse["instrument_id"] == "inst-a"),
+        "target_weight",
+    ]
+    held = sparse.loc[
+        (sparse["exec_time"] == "t1") & (sparse["instrument_id"] == "inst-held"),
+        "target_weight",
+    ]
+    assert target.iloc[0] == pytest.approx(1.0)
+    assert pd.isna(held.iloc[0])
+
+
 def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
     return TreeScoreBacktestParams(
         predictions_path=tmp_path,
@@ -309,3 +357,17 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         streaming_chunk_padding_days=0,
         output_dir=tmp_path,
     )
+
+
+def _bar(timestamp: str, instrument_id: str) -> dict[str, object]:
+    return {
+        "bar_end_time": timestamp,
+        "instrument_id": instrument_id,
+        "canonical_code": instrument_id,
+        "open_price": 10.0,
+        "close_price": 10.0,
+        "turnover": 1_000_000.0,
+        "tradable_bar": True,
+        "limit_up_open": False,
+        "limit_down_open": False,
+    }

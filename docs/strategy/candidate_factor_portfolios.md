@@ -102,6 +102,24 @@ When a policy uses `policy_exit_rank` or `hold_rank_buffer` above `top_n`, the
 score loader must read through the larger rank so the policy can distinguish
 buffered holds from true exits.
 
+Streaming score backtests build sparse execution frames by default. Each chunk
+keeps only instruments that are either current holdings at the start of the
+chunk or appear in that chunk's shifted target weights. The simulator still
+sees every bar needed to maintain and exit live positions, but inactive
+non-target market rows are not materialized into execution rows. Summary
+`execution_constraint_counts` therefore describe the simulated relevant
+execution universe, while `bar_count` and `instrument_count` still describe the
+full signal-window market coverage.
+
+Sparse execution was regression-checked on the decorrelated daily
+`entry_rank=50 / exit_rank=150 / drop=10` policy with identical portfolio
+metrics to the dense frame:
+
+| Window | Dense execution rows | Sparse execution rows | Return | Max drawdown | Gross turnover | Trades | Cost | Sparse runtime |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Q1 2023 | 13,133,280 | 904,224 | 7.92% | -6.00% | 47.42 | 1,148 | 33,462 | 0:30 |
+| 2023 full year | 57,729,216 | 7,591,248 | 8.41% | -12.15% | 158.63 | 4,801 | 112,619 | 2:25 |
+
 Initial Q1 2023 policy comparison:
 
 | Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost |
