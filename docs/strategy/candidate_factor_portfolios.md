@@ -282,8 +282,9 @@ conda run -n quant python examples/run_candidate_policy_validation.py \
 The standard profile infers full years from
 `runs/framework_v1_acceptance/standard/alpha_dataset`, runs `full_base`,
 calendar-year base slices, and `full_high_cost`, then writes
-`validation_summary.csv` and `validation_summary.json`. Use `--profile robust`
-to add a full-window zero-cost diagnostic.
+`validation_summary.csv`, `validation_monthly_summary.csv`, and
+`validation_summary.json`. Use `--profile robust` to add a full-window
+zero-cost diagnostic.
 
 2023-2025 standard validation result:
 
@@ -312,6 +313,22 @@ yet. Keep `decorrelated/partial_rebalance_daily` as the current research
 baseline because it is cost-resilient and operationally tractable, but the next
 development task must explain the 2024 regime failure before expanding capital
 or adding more factor combinations.
+
+Primary 2024 monthly failure diagnostic:
+
+| Month | Return | Max drawdown | Trades | Cost | Gross traded notional |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2024-01 | -15.65% | -16.64% | 841 | 6,032 | 5,311,813 |
+| 2024-06 | -11.46% | -12.39% | 739 | 4,596 | 2,572,969 |
+| 2024-12 | -2.51% | -9.59% | 877 | 5,610 | 3,497,147 |
+| 2024-08 | -2.32% | -6.58% | 868 | 5,315 | 2,778,417 |
+| 2024-02 | -1.89% | -18.68% | 620 | 3,815 | 2,045,211 |
+
+The loss is concentrated in January and June, while monthly transaction costs
+are too small to explain those moves by themselves. Treat this as a signal or
+regime failure rather than a pure cost-control failure. The next diagnostic
+should compare 2024 candidate-factor legs, market regime labels, and exposure
+concentration before changing the trading policy again.
 
 Initial Q1 2023 policy comparison:
 

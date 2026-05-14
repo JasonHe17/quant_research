@@ -64,6 +64,7 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
             commands=commands,
             status="dry_run",
             rows=[],
+            monthly_rows=[],
         )
         _write_summary(output_dir, summary)
         return summary
@@ -77,7 +78,9 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
             continue
         _run_scenario(commands[scenario.name], logs_dir / f"{scenario.name}.log")
     rows = _collect_summary_rows(args, scenarios)
+    monthly_rows = _collect_monthly_summary_rows(args, scenarios)
     _write_summary_csv(output_dir / "validation_summary.csv", rows)
+    _write_summary_csv(output_dir / "validation_monthly_summary.csv", monthly_rows)
     summary = _validation_summary(
         args,
         years=years,
@@ -85,6 +88,7 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
         commands=commands,
         status="completed",
         rows=rows,
+        monthly_rows=monthly_rows,
     )
     _write_summary(output_dir, summary)
     if args.enforce_gates and summary["validation"]["overall_status"] == "fail":
@@ -304,6 +308,105 @@ def _write_summary_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         pd.DataFrame(rows).to_csv(path, index=False)
 
 
+def _collect_monthly_summary_rows(
+    args: argparse.Namespace,
+    scenarios: list[ValidationScenario],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for scenario in scenarios:
+        for method in args.methods:
+            backtest_dir = (
+                _scenario_output_dir(args, scenario)
+                / "backtests"
+                / method
+                / args.policy
+            )
+            rows.extend(
+                _monthly_summary_rows_for_backtest(
+                    backtest_dir,
+                    scenario=scenario,
+                    method=method,
+                    policy=args.policy,
+                    initial_cash=args.initial_cash,
+                )
+            )
+    return rows
+
+
+def _monthly_summary_rows_for_backtest(
+    backtest_dir: Path,
+    *,
+    scenario: ValidationScenario,
+    method: str,
+    policy: str,
+    initial_cash: float,
+) -> list[dict[str, Any]]:
+    equity_path = backtest_dir / "equity_curve.csv"
+    trades_path = backtest_dir / "trades.csv"
+    if not equity_path.exists():
+        raise FileNotFoundError(f"missing equity curve: {equity_path}")
+    if not trades_path.exists():
+        raise FileNotFoundError(f"missing trades file: {trades_path}")
+    equity = pd.read_csv(equity_path, parse_dates=["timestamp"])
+    trades = pd.read_csv(trades_path, parse_dates=["timestamp"])
+    start = pd.Timestamp(scenario.start)
+    end = pd.Timestamp(scenario.end)
+    equity = equity[
+        (equity["timestamp"] >= start)
+        & (equity["timestamp"] <= end)
+    ].copy()
+    if equity.empty:
+        return []
+    equity["month"] = equity["timestamp"].dt.strftime("%Y-%m")
+    if trades.empty:
+        trades["month"] = pd.Series(dtype="object")
+    else:
+        trades = trades[
+            (trades["timestamp"] >= start)
+            & (trades["timestamp"] <= end)
+        ].copy()
+        trades["month"] = trades["timestamp"].dt.strftime("%Y-%m")
+    month_end = equity.groupby("month").tail(1).set_index("month")
+    previous_equity = float(initial_cash)
+    rows: list[dict[str, Any]] = []
+    for month, month_end_row in month_end.iterrows():
+        month_equity = equity[equity["month"] == month]
+        end_equity = float(month_end_row["equity"])
+        curve = pd.concat(
+            [
+                pd.Series([previous_equity]),
+                month_equity["equity"].reset_index(drop=True),
+            ],
+            ignore_index=True,
+        )
+        drawdown = float((curve / curve.cummax() - 1.0).min())
+        month_trades = trades[trades["month"] == month]
+        rows.append(
+            {
+                "scenario": scenario.name,
+                "method": method,
+                "policy": policy,
+                "month": str(month),
+                "return": end_equity / previous_equity - 1.0,
+                "end_equity": end_equity,
+                "max_drawdown": drawdown,
+                "trade_count": int(len(month_trades)),
+                "total_transaction_cost": (
+                    float(month_trades["total_cost"].sum())
+                    if not month_trades.empty
+                    else 0.0
+                ),
+                "gross_traded_notional": (
+                    float(month_trades["notional"].abs().sum())
+                    if not month_trades.empty
+                    else 0.0
+                ),
+            }
+        )
+        previous_equity = end_equity
+    return rows
+
+
 def _validation_summary(
     args: argparse.Namespace,
     *,
@@ -312,6 +415,7 @@ def _validation_summary(
     commands: dict[str, list[str]],
     status: str,
     rows: list[dict[str, Any]],
+    monthly_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "status": status,
@@ -356,6 +460,7 @@ def _validation_summary(
         },
         "commands": commands,
         "results": rows,
+        "monthly_results": monthly_rows,
         "validation": _validation_checks(args, rows),
     }
 

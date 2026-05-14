@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from examples.run_candidate_policy_validation import (
     _infer_full_years,
+    _monthly_summary_rows_for_backtest,
     _scenario_command,
     _validation_checks,
     _validation_scenarios,
@@ -97,6 +100,50 @@ def test_candidate_policy_validation_checks_primary_policy() -> None:
     checks = _validation_checks(args, rows)
 
     assert checks["overall_status"] == "pass"
+
+
+def test_candidate_policy_validation_builds_monthly_summary(tmp_path: Path) -> None:
+    backtest_dir = tmp_path / "backtest"
+    backtest_dir.mkdir()
+    (backtest_dir / "equity_curve.csv").write_text(
+        "\n".join(
+            [
+                "timestamp,cash,positions_value,equity",
+                "2023-12-29T15:00:00+08:00,1000000,0,1000000",
+                "2024-01-02T09:35:00+08:00,900000,100000,1000000",
+                "2024-01-31T15:00:00+08:00,900000,120000,1020000",
+                "2024-02-01T09:35:00+08:00,900000,90000,990000",
+                "2024-02-29T15:00:00+08:00,900000,80000,980000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (backtest_dir / "trades.csv").write_text(
+        "\n".join(
+            [
+                "timestamp,instrument_id,side,shares,price,reference_price,commission,stamp_tax,slippage_cost,total_cost,notional,reference_notional",
+                "2024-01-02T09:40:00+08:00,a,buy,100,10,10,5,0,1,6,1000,1000",
+                "2024-02-01T09:40:00+08:00,a,sell,100,10,10,5,1,1,7,1000,1000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scenario = _validation_scenarios(_validation_args(), years=[2024])[0]
+
+    rows = _monthly_summary_rows_for_backtest(
+        backtest_dir,
+        scenario=scenario,
+        method="decorrelated",
+        policy="partial_rebalance_daily",
+        initial_cash=1_000_000.0,
+    )
+
+    assert [row["month"] for row in rows] == ["2024-01", "2024-02"]
+    assert rows[0]["return"] == pytest.approx(0.02)
+    assert rows[0]["trade_count"] == 1
+    assert rows[1]["total_transaction_cost"] == 7.0
 
 
 def _validation_args(**overrides: object) -> object:
