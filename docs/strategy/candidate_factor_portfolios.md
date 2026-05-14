@@ -330,6 +330,48 @@ regime failure rather than a pure cost-control failure. The next diagnostic
 should compare 2024 candidate-factor legs, market regime labels, and exposure
 concentration before changing the trading policy again.
 
+2024 regime diagnostic:
+
+```bash
+conda run -n quant python examples/analyze_candidate_policy_regime.py \
+  --validation-dir runs/candidate_factor_portfolios/partial_rebalance_validation_standard \
+  --output-dir runs/candidate_factor_portfolios/partial_rebalance_validation_standard/regime_diagnostics_2024 \
+  --scenario year_2024_base \
+  --method decorrelated \
+  --policy partial_rebalance_daily \
+  --year 2024
+```
+
+The diagnostic writes `composite_monthly.csv`, `factor_legs_monthly.csv`,
+`top_score_exposure_monthly.csv`, and `regime_failure_report.md`. The 2024
+failure is not primarily a transaction-cost or tradability problem:
+
+| Month | Portfolio return | Score IC | Score top-minus-bottom | Top-score label | Market label | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 2024-01 | -15.65% | 0.0652 | 0.67% | -0.70% | -0.82% | Score ranks help, but selected basket is still negative |
+| 2024-06 | -11.46% | 0.0373 | 0.19% | -0.54% | -0.43% | Weak positive ranking inside a negative tape |
+| 2024-02 | -1.89% | -0.0536 | -0.18% | 0.05% | 0.47% | Direct score/factor inversion |
+
+Worst-month factor-leg diagnostics show two distinct issues. In January and
+June, the volatility legs still have positive top-minus-bottom spreads, but the
+top leg itself has negative forward returns, so the long-only portfolio loses
+despite positive relative ranking. In February, the volatility legs invert:
+`intraday_volatility_5m_w6`, `w12`, and `w24` all have negative directional IC.
+Top-score exposure is also concentrated: `intraday_volatility_5m_w24` explains
+roughly 58-59% of absolute top-score contribution in the main loss months, with
+`intraday_amihud_5m` contributing another 18-21%.
+
+Next framework work should therefore add a portfolio risk/regime layer before
+more factor-combination sweeps:
+
+- A market/regime gate that can reduce gross exposure or move to cash when the
+  expected top basket has negative absolute edge, even if cross-sectional IC is
+  positive.
+- Factor exposure caps or shrinkage so one volatility horizon cannot dominate
+  the selected basket.
+- A rolling leg-health diagnostic that downweights factors after recent
+  directional IC inversion, especially short-horizon volatility legs.
+
 Initial Q1 2023 policy comparison:
 
 | Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost |
