@@ -285,6 +285,34 @@ calendar-year base slices, and `full_high_cost`, then writes
 `validation_summary.csv` and `validation_summary.json`. Use `--profile robust`
 to add a full-window zero-cost diagnostic.
 
+2023-2025 standard validation result:
+
+| Scenario | Method | Return | Max drawdown | Gross turnover | Trades | Cost | Execution rows |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| full_base | decorrelated | 34.97% | -32.79% | 128.79 | 29,052 | 193,134 | 3,414,336 |
+| full_base | equal | 21.88% | -34.47% | 128.59 | 29,007 | 190,769 | 3,414,432 |
+| full_base | ic_weighted | 25.40% | -32.44% | 127.66 | 28,620 | 189,347 | 3,414,864 |
+| year_2023_base | decorrelated | 8.39% | -13.88% | 43.86 | 9,568 | 63,934 | 1,123,104 |
+| year_2023_base | equal | 6.13% | -13.11% | 43.92 | 9,573 | 63,949 | 1,123,104 |
+| year_2023_base | ic_weighted | 7.04% | -12.30% | 43.60 | 9,445 | 63,311 | 1,123,104 |
+| year_2024_base | decorrelated | -11.55% | -32.13% | 43.92 | 9,561 | 60,526 | 1,131,744 |
+| year_2024_base | equal | -10.49% | -31.04% | 43.85 | 9,493 | 60,441 | 1,131,744 |
+| year_2024_base | ic_weighted | -10.26% | -28.83% | 43.84 | 9,593 | 61,204 | 1,131,744 |
+| year_2025_base | decorrelated | 26.39% | -13.49% | 43.40 | 9,411 | 64,394 | 1,120,272 |
+| year_2025_base | equal | 30.24% | -16.88% | 43.97 | 9,751 | 66,460 | 1,119,024 |
+| year_2025_base | ic_weighted | 16.05% | -12.56% | 43.44 | 9,310 | 62,858 | 1,119,504 |
+| full_high_cost | decorrelated | 28.04% | -33.77% | 128.31 | 28,936 | 241,880 | 3,414,336 |
+| full_high_cost | equal | 15.55% | -35.51% | 128.12 | 28,821 | 235,878 | 3,414,432 |
+| full_high_cost | ic_weighted | 19.09% | -33.38% | 127.38 | 28,521 | 235,979 | 3,414,864 |
+
+Validation status is `warn`: full-window base and high-cost checks pass, and
+turnover remains below the 160 full-window gate, but every method loses money
+in the 2024 annual slice. The policy is therefore not production-promotable
+yet. Keep `decorrelated/partial_rebalance_daily` as the current research
+baseline because it is cost-resilient and operationally tractable, but the next
+development task must explain the 2024 regime failure before expanding capital
+or adding more factor combinations.
+
 Initial Q1 2023 policy comparison:
 
 | Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost |
