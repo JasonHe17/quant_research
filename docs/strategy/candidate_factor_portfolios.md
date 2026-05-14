@@ -97,6 +97,36 @@ conda run -n quant python examples/run_tree_score_backtest.py \
   --output-dir runs/candidate_factor_portfolios/policy_q1_2023/decorrelated
 ```
 
+For systematic policy comparison, prefer the portfolio orchestration entrypoint:
+
+```bash
+conda run -n quant python examples/run_candidate_factor_portfolios.py \
+  --output-dir runs/candidate_factor_portfolios/policy_set_q1_2023_decorrelated \
+  --methods decorrelated \
+  --partition-start 2023_01 \
+  --partition-end 2023_03 \
+  --run-backtests \
+  --start 2023-01-03T09:35:00+08:00 \
+  --end 2023-03-31T15:00:00+08:00 \
+  --top-n 50 \
+  --backtest-policy-set comparison \
+  --policy-no-trade-weight-band 0.002 \
+  --policy-set-drop-count 10 \
+  --policy-set-exit-rank 150 \
+  --policy-set-rebalance-every-n-bars 48 \
+  --policy-set-partial-rebalance-rate 0.5
+```
+
+The `comparison` set writes nested results under
+`backtests/<method>/<policy_name>/` and currently covers:
+
+- `naive_top_n_every_bar`: research baseline.
+- `top_k_drop_daily`: daily rank-buffer policy with `exit_rank=top_n`.
+- `entry_exit_buffer_every_bar`: entry/exit rank buffer without slower rebalance.
+- `entry_exit_buffer_daily`: entry/exit rank buffer with daily rebalance.
+- `partial_rebalance_daily`: daily entry/exit buffer with partial movement toward
+  target weights.
+
 The old `naive_top_n` path remains available only as a baseline comparison.
 When a policy uses `policy_exit_rank` or `hold_rank_buffer` above `top_n`, the
 score loader must read through the larger rank so the policy can distinguish
@@ -119,6 +149,22 @@ metrics to the dense frame:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Q1 2023 | 13,133,280 | 904,224 | 7.92% | -6.00% | 47.42 | 1,148 | 33,462 | 0:30 |
 | 2023 full year | 57,729,216 | 7,591,248 | 8.41% | -12.15% | 158.63 | 4,801 | 112,619 | 2:25 |
+
+Q1 2023 decorrelated policy-set smoke result:
+
+| Policy | Rebalance bars | Exit rank | Partial rate | Return | Max drawdown | Gross turnover | Trades | Cost | Execution rows |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| naive_top_n_every_bar | 1 | - | 1.0 | 2.49% | -7.16% | 118.49 | 6,348 | 81,779 | 5,788,896 |
+| top_k_drop_daily | 48 | 50 | 1.0 | 8.17% | -5.65% | 59.68 | 1,069 | 41,754 | 861,072 |
+| entry_exit_buffer_every_bar | 1 | 150 | 1.0 | 4.19% | -7.10% | 109.87 | 5,735 | 76,532 | 4,124,448 |
+| entry_exit_buffer_daily | 48 | 150 | 1.0 | 7.92% | -6.00% | 47.42 | 1,148 | 33,462 | 904,224 |
+| partial_rebalance_daily | 48 | 150 | 0.5 | 4.76% | -5.82% | 11.89 | 2,274 | 15,809 | 256,320 |
+
+This smoke run confirms that the policy-set runner can compare the main policy
+families from one command. It does not promote a policy by itself. The next
+promotion-grade run must cover all combination methods and at least one full
+year, then repeat the leading policies under zero/base/stressed transaction
+costs.
 
 Initial Q1 2023 policy comparison:
 
