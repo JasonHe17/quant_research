@@ -171,6 +171,30 @@ def test_candidate_factor_policy_set_builds_standard_comparison_specs() -> None:
     assert specs[4].policy_partial_rebalance_rate == pytest.approx(0.5)
 
 
+def test_candidate_factor_policy_set_filters_named_specs() -> None:
+    args = _portfolio_args(
+        backtest_policy_set="comparison",
+        backtest_policies=["top_k_drop_daily", "partial_rebalance_daily"],
+    )
+
+    specs = _backtest_policy_specs(args)
+
+    assert [spec.name for spec in specs] == [
+        "top_k_drop_daily",
+        "partial_rebalance_daily",
+    ]
+
+
+def test_candidate_factor_policy_set_rejects_unknown_filter() -> None:
+    args = _portfolio_args(
+        backtest_policy_set="comparison",
+        backtest_policies=["missing_policy"],
+    )
+
+    with pytest.raises(ValueError, match="unknown backtest policies"):
+        _backtest_policy_specs(args)
+
+
 def test_candidate_factor_backtest_command_includes_policy_args(tmp_path: Path) -> None:
     args = _portfolio_args(max_bar_turnover_participation=0.05)
     spec = BacktestPolicySpec(
@@ -200,6 +224,7 @@ def test_candidate_factor_backtest_jobs_use_nested_policy_paths(tmp_path: Path) 
     args = _portfolio_args(
         output_dir=str(tmp_path),
         backtest_policy_set="comparison",
+        backtest_policies=["top_k_drop_daily", "partial_rebalance_daily"],
         backtest_memory_estimate_gb=4.5,
     )
     scores_summary = {
@@ -210,16 +235,16 @@ def test_candidate_factor_backtest_jobs_use_nested_policy_paths(tmp_path: Path) 
 
     jobs = _backtest_jobs(args, scores_summary=scores_summary)
 
-    assert len(jobs) == 5
+    assert len(jobs) == 2
     assert jobs[0].summary_path == (
         tmp_path
         / "backtests"
         / "decorrelated"
-        / "naive_top_n_every_bar"
+        / "top_k_drop_daily"
         / "summary.json"
     )
     assert jobs[0].log_path == (
-        tmp_path / "logs" / "backtest_decorrelated_naive_top_n_every_bar.log"
+        tmp_path / "logs" / "backtest_decorrelated_top_k_drop_daily.log"
     )
     assert jobs[0].memory_estimate_gb == pytest.approx(4.5)
 
@@ -305,6 +330,7 @@ def test_candidate_factor_summary_params_record_backtest_policy_set() -> None:
     args = _portfolio_args(
         run_backtests=True,
         backtest_policy_set="comparison",
+        backtest_policies=["partial_rebalance_daily"],
         policy_set_exit_rank=150,
         backtest_workers=2,
     )
@@ -313,6 +339,7 @@ def test_candidate_factor_summary_params_record_backtest_policy_set() -> None:
 
     assert params["run_backtests"] is True
     assert params["backtest"]["backtest_policy_set"] == "comparison"  # type: ignore[index]
+    assert params["backtest"]["backtest_policies"] == ["partial_rebalance_daily"]  # type: ignore[index]
     assert params["backtest"]["policy_set_exit_rank"] == 150  # type: ignore[index]
     assert params["backtest"]["backtest_workers"] == 2  # type: ignore[index]
 
@@ -330,6 +357,7 @@ def _portfolio_args(**overrides: object) -> object:
         "run_backtests": False,
         "output_dir": "runs",
         "backtest_policy_set": "single",
+        "backtest_policies": None,
         "trade_policy": "naive_top_n",
         "rebalance_every_n_bars": 1,
         "hold_rank_buffer": None,

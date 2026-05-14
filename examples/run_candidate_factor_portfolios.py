@@ -149,6 +149,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             "min_commission": args.min_commission,
             "lot_size": args.lot_size,
             "backtest_policy_set": args.backtest_policy_set,
+            "backtest_policies": args.backtest_policies,
             "trade_policy": args.trade_policy,
             "rebalance_every_n_bars": args.rebalance_every_n_bars,
             "hold_rank_buffer": args.hold_rank_buffer,
@@ -427,7 +428,7 @@ def _write_backtest_summary_csv(
 
 def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]:
     if args.backtest_policy_set == "single":
-        return [
+        specs = [
             BacktestPolicySpec(
                 name="single",
                 trade_policy=args.trade_policy,
@@ -447,6 +448,7 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
                 ),
             )
         ]
+        return _filter_backtest_policy_specs(specs, args.backtest_policies)
     if args.backtest_policy_set != "comparison":
         raise ValueError(f"unsupported backtest policy set: {args.backtest_policy_set}")
     exit_rank = args.policy_set_exit_rank or args.top_n * 3
@@ -466,7 +468,7 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
             args.policy_max_gross_turnover_per_rebalance
         ),
     }
-    return [
+    specs = [
         BacktestPolicySpec(
             name="naive_top_n_every_bar",
             trade_policy="naive_top_n",
@@ -498,6 +500,25 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
             **base,
         ),
     ]
+    return _filter_backtest_policy_specs(specs, args.backtest_policies)
+
+
+def _filter_backtest_policy_specs(
+    specs: list[BacktestPolicySpec],
+    selected: list[str] | None,
+) -> list[BacktestPolicySpec]:
+    if not selected:
+        return specs
+    known = {spec.name for spec in specs}
+    unknown = sorted(set(selected) - known)
+    if unknown:
+        raise ValueError(
+            "unknown backtest policies: "
+            + ", ".join(unknown)
+            + f"; available policies: {', '.join(sorted(known))}"
+        )
+    selected_names = set(selected)
+    return [spec for spec in specs if spec.name in selected_names]
 
 
 def _backtest_command(
@@ -660,6 +681,14 @@ def _parse_args() -> argparse.Namespace:
             "Backtest one configured policy or a fixed comparison set covering "
             "naive top-N, top-k-drop, entry/exit buffer, daily rebalance, and "
             "partial rebalance."
+        ),
+    )
+    parser.add_argument(
+        "--backtest-policies",
+        nargs="+",
+        help=(
+            "optional subset of generated policy names to backtest, for example "
+            "top_k_drop_daily partial_rebalance_daily"
         ),
     )
     parser.add_argument("--policy-set-drop-count", type=int, default=10)

@@ -204,6 +204,11 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --resume-existing
 ```
 
+For follow-up stress runs, use `--backtest-policies` to restrict the fixed
+comparison set to named candidates, for example
+`--backtest-policies top_k_drop_daily partial_rebalance_daily`. The filter is
+recorded in `summary.json` so partial sweeps remain auditable.
+
 2023 base-cost policy-set result:
 
 | Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost | Execution rows |
