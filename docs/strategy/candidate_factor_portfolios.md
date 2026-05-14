@@ -204,6 +204,39 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --resume-existing
 ```
 
+2023 base-cost policy-set result:
+
+| Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost | Execution rows |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| decorrelated | top_k_drop_daily | 9.42% | -13.39% | 218.71 | 4,584 | 151,785 | 7,318,512 |
+| decorrelated | entry_exit_buffer_daily | 8.41% | -12.15% | 158.63 | 4,801 | 112,619 | 7,591,248 |
+| decorrelated | partial_rebalance_daily | 8.39% | -13.88% | 43.85 | 9,568 | 63,934 | 1,117,344 |
+| ic_weighted | partial_rebalance_daily | 7.04% | -12.30% | 43.59 | 9,445 | 63,311 | 1,117,344 |
+| equal | partial_rebalance_daily | 6.13% | -13.11% | 43.91 | 9,573 | 63,949 | 1,117,344 |
+| ic_weighted | entry_exit_buffer_daily | -2.17% | -17.75% | 202.63 | 4,534 | 134,450 | 8,598,336 |
+| equal | entry_exit_buffer_daily | -2.29% | -17.41% | 198.35 | 4,619 | 133,317 | 8,674,080 |
+| equal | top_k_drop_daily | -3.35% | -20.77% | 251.51 | 4,432 | 166,584 | 8,442,096 |
+| ic_weighted | top_k_drop_daily | -4.94% | -17.32% | 245.11 | 4,398 | 161,933 | 8,331,264 |
+| decorrelated | entry_exit_buffer_every_bar | -12.66% | -24.99% | 465.36 | 25,230 | 297,546 | 23,812,560 |
+| decorrelated | naive_top_n_every_bar | -15.12% | -26.55% | 495.76 | 26,754 | 310,553 | 30,256,656 |
+| equal | entry_exit_buffer_every_bar | -19.50% | -29.23% | 442.05 | 19,532 | 273,821 | 26,926,512 |
+| ic_weighted | naive_top_n_every_bar | -20.75% | -29.20% | 496.39 | 26,908 | 304,434 | 38,960,784 |
+| equal | naive_top_n_every_bar | -25.09% | -34.10% | 495.89 | 26,768 | 299,109 | 40,299,216 |
+| ic_weighted | entry_exit_buffer_every_bar | -25.26% | -32.98% | 493.01 | 26,728 | 296,200 | 32,329,584 |
+
+The 2023 sweep narrows the next cost-stress candidates. Decorrelated remains
+the strongest score combination, but the policy choice changes the cost and
+capacity profile materially. `top_k_drop_daily` has the highest 2023 base-cost
+return but also the highest turnover among the daily policies. The
+`entry_exit_buffer_daily` variant gives similar decorrelated return with lower
+turnover and shallower drawdown. `partial_rebalance_daily` has lower return for
+decorrelated, but it is the only policy family that stays positive across all
+three score-combination methods while cutting gross turnover to roughly 44.
+Every-bar policies remain research-only because costs and turnover dominate.
+Next, run zero/base/stressed cost variants for `decorrelated/top_k_drop_daily`,
+`decorrelated/entry_exit_buffer_daily`, and the three `partial_rebalance_daily`
+method variants before setting promotion gates.
+
 Initial Q1 2023 policy comparison:
 
 | Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost |
