@@ -114,11 +114,22 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --policy-set-drop-count 10 \
   --policy-set-exit-rank 150 \
   --policy-set-rebalance-every-n-bars 48 \
-  --policy-set-partial-rebalance-rate 0.5
+  --policy-set-partial-rebalance-rate 0.5 \
+  --backtest-workers 2 \
+  --backtest-memory-estimate-gb 5 \
+  --resume-existing
 ```
 
 The `comparison` set writes nested results under
-`backtests/<method>/<policy_name>/` and currently covers:
+`backtests/<method>/<policy_name>/`, writes subprocess logs under `logs/`, and
+writes a flat `backtest_summary.csv` for ranking and review. Use
+`--backtest-workers` together with `--backtest-memory-budget-gb` and
+`--backtest-memory-estimate-gb` to run independent score backtests concurrently
+without exceeding local memory. `--resume-existing` skips policy runs whose
+`summary.json` already exists and is the default operational mode for long
+promotion-grade sweeps.
+
+The standard comparison set currently covers:
 
 - `naive_top_n_every_bar`: research baseline.
 - `top_k_drop_daily`: daily rank-buffer policy with `exit_rank=top_n`.
@@ -165,6 +176,33 @@ families from one command. It does not promote a policy by itself. The next
 promotion-grade run must cover all combination methods and at least one full
 year, then repeat the leading policies under zero/base/stressed transaction
 costs.
+
+Promotion-grade 2023 base-cost sweep:
+
+```bash
+conda run -n quant python examples/run_candidate_factor_portfolios.py \
+  --output-dir runs/candidate_factor_portfolios/policy_set_year_2023_base \
+  --methods equal ic_weighted decorrelated \
+  --partition-start 2023_01 \
+  --partition-end 2023_12 \
+  --run-backtests \
+  --start 2023-01-03T09:35:00+08:00 \
+  --end 2023-12-29T15:00:00+08:00 \
+  --top-n 50 \
+  --commission-bps 3 \
+  --slippage-bps 1 \
+  --sell-stamp-tax-bps 5 \
+  --min-commission 5 \
+  --backtest-policy-set comparison \
+  --policy-no-trade-weight-band 0.002 \
+  --policy-set-drop-count 10 \
+  --policy-set-exit-rank 150 \
+  --policy-set-rebalance-every-n-bars 48 \
+  --policy-set-partial-rebalance-rate 0.5 \
+  --backtest-workers 2 \
+  --backtest-memory-estimate-gb 5 \
+  --resume-existing
+```
 
 Initial Q1 2023 policy comparison:
 

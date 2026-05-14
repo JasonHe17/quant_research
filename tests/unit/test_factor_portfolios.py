@@ -9,8 +9,11 @@ import pytest
 from examples.run_candidate_factor_portfolios import (
     BacktestPolicySpec,
     _backtest_command,
+    _backtest_jobs,
     _backtest_policy_specs,
+    _backtest_summary_rows,
     _dataset_paths,
+    _effective_backtest_memory_budget_gb,
     _summary_params,
 )
 from quant_research.portfolio import (
@@ -193,11 +196,117 @@ def test_candidate_factor_backtest_command_includes_policy_args(tmp_path: Path) 
     assert command[command.index("--max-bar-turnover-participation") + 1] == "0.05"
 
 
+def test_candidate_factor_backtest_jobs_use_nested_policy_paths(tmp_path: Path) -> None:
+    args = _portfolio_args(
+        output_dir=str(tmp_path),
+        backtest_policy_set="comparison",
+        backtest_memory_estimate_gb=4.5,
+    )
+    scores_summary = {
+        "methods": {
+            "decorrelated": {"path": "scores/decorrelated/*.parquet"},
+        }
+    }
+
+    jobs = _backtest_jobs(args, scores_summary=scores_summary)
+
+    assert len(jobs) == 5
+    assert jobs[0].summary_path == (
+        tmp_path
+        / "backtests"
+        / "decorrelated"
+        / "naive_top_n_every_bar"
+        / "summary.json"
+    )
+    assert jobs[0].log_path == (
+        tmp_path / "logs" / "backtest_decorrelated_naive_top_n_every_bar.log"
+    )
+    assert jobs[0].memory_estimate_gb == pytest.approx(4.5)
+
+
+def test_candidate_factor_backtest_summary_rows_flatten_nested_results() -> None:
+    rows = _backtest_summary_rows(
+        {
+            "decorrelated": {
+                "entry_exit_buffer_daily": {
+                    "params": {
+                        "trade_policy": "rank_buffer_drop",
+                        "rebalance_every_n_bars": 48,
+                        "policy_entry_rank": 50,
+                        "policy_exit_rank": 150,
+                        "policy_max_entries_per_rebalance": 10,
+                        "policy_max_exits_per_rebalance": 10,
+                        "policy_no_trade_weight_band": 0.002,
+                        "policy_partial_rebalance_rate": 1.0,
+                    },
+                    "metrics": {
+                        "total_return": 0.079,
+                        "max_drawdown": -0.06,
+                        "gross_turnover": 47.4,
+                        "trade_count": 1148,
+                        "total_transaction_cost": 33462,
+                        "final_equity": 1_079_000,
+                    },
+                    "signal_count": 1323,
+                    "execution_row_count": 904224,
+                    "policy_diagnostics": {
+                        "planned_gross_turnover": 54.4,
+                        "order_intent_count": 1232,
+                        "entry_count": 590,
+                        "exit_count": 564,
+                        "hold_count": 655,
+                        "no_trade_count": 0,
+                    },
+                }
+            }
+        }
+    )
+
+    assert rows == [
+        {
+            "method": "decorrelated",
+            "policy": "entry_exit_buffer_daily",
+            "trade_policy": "rank_buffer_drop",
+            "rebalance_every_n_bars": 48,
+            "policy_entry_rank": 50,
+            "policy_exit_rank": 150,
+            "policy_max_entries_per_rebalance": 10,
+            "policy_max_exits_per_rebalance": 10,
+            "policy_no_trade_weight_band": 0.002,
+            "policy_partial_rebalance_rate": 1.0,
+            "total_return": 0.079,
+            "max_drawdown": -0.06,
+            "gross_turnover": 47.4,
+            "trade_count": 1148,
+            "total_transaction_cost": 33462,
+            "final_equity": 1_079_000,
+            "signal_count": 1323,
+            "execution_row_count": 904224,
+            "planned_gross_turnover": 54.4,
+            "order_intent_count": 1232,
+            "entry_count": 590,
+            "exit_count": 564,
+            "hold_count": 655,
+            "no_trade_count": 0,
+        }
+    ]
+
+
+def test_candidate_factor_backtest_memory_budget_auto_detects_available() -> None:
+    args = _portfolio_args(
+        backtest_memory_budget_gb=0.0,
+        backtest_memory_estimate_gb=5.0,
+    )
+
+    assert _effective_backtest_memory_budget_gb(args) >= 5.0
+
+
 def test_candidate_factor_summary_params_record_backtest_policy_set() -> None:
     args = _portfolio_args(
         run_backtests=True,
         backtest_policy_set="comparison",
         policy_set_exit_rank=150,
+        backtest_workers=2,
     )
 
     params = _summary_params(args)
@@ -205,6 +314,7 @@ def test_candidate_factor_summary_params_record_backtest_policy_set() -> None:
     assert params["run_backtests"] is True
     assert params["backtest"]["backtest_policy_set"] == "comparison"  # type: ignore[index]
     assert params["backtest"]["policy_set_exit_rank"] == 150  # type: ignore[index]
+    assert params["backtest"]["backtest_workers"] == 2  # type: ignore[index]
 
 
 def _portfolio_args(**overrides: object) -> object:
@@ -218,6 +328,7 @@ def _portfolio_args(**overrides: object) -> object:
         "partition_start": None,
         "partition_end": None,
         "run_backtests": False,
+        "output_dir": "runs",
         "backtest_policy_set": "single",
         "trade_policy": "naive_top_n",
         "rebalance_every_n_bars": 1,
@@ -236,6 +347,10 @@ def _portfolio_args(**overrides: object) -> object:
         "policy_set_exit_rank": None,
         "policy_set_rebalance_every_n_bars": 48,
         "policy_set_partial_rebalance_rate": 0.5,
+        "backtest_workers": 1,
+        "backtest_memory_budget_gb": 0.0,
+        "backtest_memory_estimate_gb": 5.0,
+        "resume_existing": False,
         "catalog_path": "catalog.duckdb",
         "start": "2023-01-03T09:35:00+08:00",
         "end": "2023-03-31T15:00:00+08:00",

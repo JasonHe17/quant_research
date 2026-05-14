@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -42,6 +43,19 @@ class BacktestPolicySpec:
     policy_max_gross_turnover_per_rebalance: float | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class BacktestJob:
+    """One score-backtest subprocess scheduled by the portfolio runner."""
+
+    method: str
+    policy_name: str
+    command: list[str]
+    output_dir: Path
+    summary_path: Path
+    log_path: Path
+    memory_estimate_gb: float
+
+
 def main() -> None:
     args = _parse_args()
     output_dir = Path(args.output_dir)
@@ -72,7 +86,13 @@ def main() -> None:
         **scores_summary,
     }
     if args.run_backtests:
-        summary["backtests"] = _run_backtests(args, scores_summary=scores_summary)
+        backtests = _run_backtests(args, scores_summary=scores_summary)
+        summary["backtests"] = backtests
+        summary["backtest_summary"] = _backtest_summary_rows(backtests)
+        _write_backtest_summary_csv(
+            output_dir / "backtest_summary.csv",
+            summary["backtest_summary"],
+        )
     summary_path = output_dir / "summary.json"
     summary_path.write_text(
         json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
@@ -156,6 +176,10 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             "data_access_mode": args.data_access_mode,
             "streaming_chunk": args.streaming_chunk,
             "streaming_chunk_padding_days": args.streaming_chunk_padding_days,
+            "backtest_workers": args.backtest_workers,
+            "backtest_memory_budget_gb": args.backtest_memory_budget_gb,
+            "backtest_memory_estimate_gb": args.backtest_memory_estimate_gb,
+            "resume_existing": args.resume_existing,
         }
     return params
 
@@ -167,33 +191,238 @@ def _run_backtests(
 ) -> dict[str, object]:
     if not args.start or not args.end:
         raise ValueError("--start and --end are required with --run-backtests")
-    rows = {}
     methods = scores_summary["methods"]
     if not isinstance(methods, dict):
         raise ValueError("invalid score summary methods")
+    jobs = _backtest_jobs(args, scores_summary=scores_summary)
+    pending_jobs = [
+        job for job in jobs if not (args.resume_existing and job.summary_path.exists())
+    ]
+    _run_backtest_jobs(args, pending_jobs)
+    return _read_backtest_summaries(args, jobs)
+
+
+def _backtest_jobs(
+    args: argparse.Namespace,
+    *,
+    scores_summary: dict[str, object],
+) -> list[BacktestJob]:
+    methods = scores_summary["methods"]
+    if not isinstance(methods, dict):
+        raise ValueError("invalid score summary methods")
+    jobs: list[BacktestJob] = []
     policy_specs = _backtest_policy_specs(args)
+    logs_dir = Path(args.output_dir) / "logs"
     for method, payload in methods.items():
         if not isinstance(payload, dict):
             continue
         if args.backtest_policy_set == "single":
             spec = policy_specs[0]
             backtest_dir = Path(args.output_dir) / "backtests" / method
-            command = _backtest_command(args, str(payload["path"]), backtest_dir, spec)
-            subprocess.run(command, cwd=PROJECT_ROOT, check=True)
-            rows[method] = json.loads(
-                (backtest_dir / "summary.json").read_text(encoding="utf-8")
+            jobs.append(
+                BacktestJob(
+                    method=method,
+                    policy_name=spec.name,
+                    command=_backtest_command(args, str(payload["path"]), backtest_dir, spec),
+                    output_dir=backtest_dir,
+                    summary_path=backtest_dir / "summary.json",
+                    log_path=logs_dir / f"backtest_{method}.log",
+                    memory_estimate_gb=args.backtest_memory_estimate_gb,
+                )
             )
             continue
-        policy_rows = {}
         for spec in policy_specs:
             backtest_dir = Path(args.output_dir) / "backtests" / method / spec.name
-            command = _backtest_command(args, str(payload["path"]), backtest_dir, spec)
-            subprocess.run(command, cwd=PROJECT_ROOT, check=True)
-            policy_rows[spec.name] = json.loads(
-                (backtest_dir / "summary.json").read_text(encoding="utf-8")
+            jobs.append(
+                BacktestJob(
+                    method=method,
+                    policy_name=spec.name,
+                    command=_backtest_command(args, str(payload["path"]), backtest_dir, spec),
+                    output_dir=backtest_dir,
+                    summary_path=backtest_dir / "summary.json",
+                    log_path=logs_dir / f"backtest_{method}_{spec.name}.log",
+                    memory_estimate_gb=args.backtest_memory_estimate_gb,
+                )
             )
-        rows[method] = policy_rows
+    return jobs
+
+
+def _run_backtest_jobs(args: argparse.Namespace, jobs: list[BacktestJob]) -> None:
+    if not jobs:
+        return
+    if args.backtest_workers == 1 or len(jobs) == 1:
+        for job in jobs:
+            _run_backtest_job(job)
+        return
+    _run_backtest_jobs_with_budget(
+        jobs,
+        max_workers=args.backtest_workers,
+        memory_budget_gb=_effective_backtest_memory_budget_gb(args),
+    )
+
+
+def _run_backtest_job(job: BacktestJob) -> None:
+    job.log_path.parent.mkdir(parents=True, exist_ok=True)
+    with job.log_path.open("w", encoding="utf-8") as log:
+        log.write("$ " + " ".join(job.command) + "\n\n")
+        log.flush()
+        result = subprocess.run(
+            job.command,
+            cwd=PROJECT_ROOT,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+        )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"candidate portfolio backtest failed with code {result.returncode}: "
+            f"{job.method}/{job.policy_name} (see {job.log_path})"
+        )
+
+
+def _run_backtest_jobs_with_budget(
+    jobs: list[BacktestJob],
+    *,
+    max_workers: int,
+    memory_budget_gb: float,
+) -> None:
+    pending = list(jobs)
+    running: dict[Future[None], BacktestJob] = {}
+    running_memory_gb = 0.0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        while pending or running:
+            while pending and len(running) < max_workers:
+                job = pending[0]
+                if running_memory_gb + job.memory_estimate_gb > memory_budget_gb:
+                    break
+                pending.pop(0)
+                future = executor.submit(_run_backtest_job, job)
+                running[future] = job
+                running_memory_gb += job.memory_estimate_gb
+            if not running:
+                job = pending[0]
+                raise RuntimeError(
+                    f"backtest job {job.method}/{job.policy_name} requires an "
+                    f"estimated {job.memory_estimate_gb:.2f} GB, above the "
+                    f"configured budget of {memory_budget_gb:.2f} GB"
+                )
+            done, _ = wait(running, return_when=FIRST_COMPLETED)
+            for future in done:
+                job = running.pop(future)
+                running_memory_gb -= job.memory_estimate_gb
+                future.result()
+
+
+def _effective_backtest_memory_budget_gb(args: argparse.Namespace) -> float:
+    if args.backtest_memory_budget_gb > 0:
+        return args.backtest_memory_budget_gb
+    available = _available_memory_gb()
+    if available is None:
+        return args.backtest_memory_estimate_gb
+    return max(
+        min(available * 0.60, available - 2.0),
+        args.backtest_memory_estimate_gb,
+    )
+
+
+def _available_memory_gb() -> float | None:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return None
+    for line in meminfo.read_text(encoding="utf-8").splitlines():
+        if line.startswith("MemAvailable:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                return float(parts[1]) / 1024.0 / 1024.0
+    return None
+
+
+def _read_backtest_summaries(
+    args: argparse.Namespace,
+    jobs: list[BacktestJob],
+) -> dict[str, object]:
+    rows: dict[str, object] = {}
+    for job in jobs:
+        if not job.summary_path.exists():
+            raise FileNotFoundError(
+                f"missing backtest summary for {job.method}/{job.policy_name}: "
+                f"{job.summary_path}"
+            )
+        payload = json.loads(job.summary_path.read_text(encoding="utf-8"))
+        if args.backtest_policy_set == "single":
+            rows[job.method] = payload
+        else:
+            method_rows = rows.setdefault(job.method, {})
+            if not isinstance(method_rows, dict):
+                raise ValueError(f"invalid backtest rows for method: {job.method}")
+            method_rows[job.policy_name] = payload
     return rows
+
+
+def _backtest_summary_rows(backtests: dict[str, object]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for method, payload in backtests.items():
+        if not isinstance(payload, dict):
+            continue
+        if "metrics" in payload:
+            rows.append(_backtest_summary_row(method, "single", payload))
+            continue
+        for policy_name, policy_payload in payload.items():
+            if isinstance(policy_payload, dict):
+                rows.append(_backtest_summary_row(method, str(policy_name), policy_payload))
+    return rows
+
+
+def _backtest_summary_row(
+    method: str,
+    policy_name: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    metrics = payload.get("metrics", {})
+    params = payload.get("params", {})
+    diagnostics = payload.get("policy_diagnostics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    if not isinstance(params, dict):
+        params = {}
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+    return {
+        "method": method,
+        "policy": policy_name,
+        "trade_policy": params.get("trade_policy"),
+        "rebalance_every_n_bars": params.get("rebalance_every_n_bars"),
+        "policy_entry_rank": params.get("policy_entry_rank"),
+        "policy_exit_rank": params.get("policy_exit_rank"),
+        "policy_max_entries_per_rebalance": params.get("policy_max_entries_per_rebalance"),
+        "policy_max_exits_per_rebalance": params.get("policy_max_exits_per_rebalance"),
+        "policy_no_trade_weight_band": params.get("policy_no_trade_weight_band"),
+        "policy_partial_rebalance_rate": params.get("policy_partial_rebalance_rate"),
+        "total_return": metrics.get("total_return"),
+        "max_drawdown": metrics.get("max_drawdown"),
+        "gross_turnover": metrics.get("gross_turnover"),
+        "trade_count": metrics.get("trade_count"),
+        "total_transaction_cost": metrics.get("total_transaction_cost"),
+        "final_equity": metrics.get("final_equity"),
+        "signal_count": payload.get("signal_count"),
+        "execution_row_count": payload.get("execution_row_count"),
+        "planned_gross_turnover": diagnostics.get("planned_gross_turnover"),
+        "order_intent_count": diagnostics.get("order_intent_count"),
+        "entry_count": diagnostics.get("entry_count"),
+        "exit_count": diagnostics.get("exit_count"),
+        "hold_count": diagnostics.get("hold_count"),
+        "no_trade_count": diagnostics.get("no_trade_count"),
+    }
+
+
+def _write_backtest_summary_csv(
+    path: Path,
+    rows: list[dict[str, object]],
+) -> None:
+    if not rows:
+        return
+    pd.DataFrame(rows).to_csv(path, index=False)
 
 
 def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]:
@@ -437,6 +666,29 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-set-exit-rank", type=int)
     parser.add_argument("--policy-set-rebalance-every-n-bars", type=int, default=48)
     parser.add_argument("--policy-set-partial-rebalance-rate", type=float, default=0.5)
+    parser.add_argument(
+        "--backtest-workers",
+        type=int,
+        default=1,
+        help="maximum number of score-backtest subprocesses to run concurrently",
+    )
+    parser.add_argument(
+        "--backtest-memory-budget-gb",
+        type=float,
+        default=0.0,
+        help="memory budget for concurrent backtests; 0 auto-detects available memory",
+    )
+    parser.add_argument(
+        "--backtest-memory-estimate-gb",
+        type=float,
+        default=5.0,
+        help="estimated memory footprint for each score-backtest subprocess",
+    )
+    parser.add_argument(
+        "--resume-existing",
+        action="store_true",
+        help="skip backtests whose summary.json already exists",
+    )
     parser.add_argument("--min-trade-weight", type=float, default=0.0005)
     parser.add_argument("--exclude-st", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--limit-up-bps", type=float, default=980.0)
@@ -510,6 +762,12 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--policy-set-rebalance-every-n-bars must be positive")
     if not 0 < args.policy_set_partial_rebalance_rate <= 1:
         raise ValueError("--policy-set-partial-rebalance-rate must be in (0, 1]")
+    if args.backtest_workers <= 0:
+        raise ValueError("--backtest-workers must be positive")
+    if args.backtest_memory_budget_gb < 0:
+        raise ValueError("--backtest-memory-budget-gb must be non-negative")
+    if args.backtest_memory_estimate_gb <= 0:
+        raise ValueError("--backtest-memory-estimate-gb must be positive")
     if args.commission_bps < 0:
         raise ValueError("--commission-bps must be non-negative")
     if args.slippage_bps < 0:

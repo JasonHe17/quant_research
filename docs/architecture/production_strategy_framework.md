@@ -385,6 +385,8 @@ Live-readiness acceptance:
   policy grids do not materialize inactive full-market rows.
 - [x] Add candidate-factor policy comparison runs: naive top-N, top-k-drop,
   entry/exit buffer, daily rebalance, and partial rebalance.
+- [x] Add controlled concurrent candidate policy sweeps with resumable
+  backtests and flat comparison summaries.
 - [ ] Define promotion gates for policy-level acceptance before any new factor
   research resumes.
 - [ ] Add a cost-aware optimizer policy behind the same strategy contracts.
