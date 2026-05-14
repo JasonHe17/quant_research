@@ -12,6 +12,14 @@ from quant_research.portfolio.factor_portfolios import (
     load_candidate_factors,
     write_score_partitions,
 )
+from quant_research.portfolio.forecast_calibration import (
+    ScoreForecastCalibrationConfig,
+    apply_score_forecast_calibration,
+    build_score_forecast_calibration,
+    build_score_forecast_calibration_from_observations,
+    build_score_forecast_calibration_from_partitions,
+    score_forecast_calibration_observations,
+)
 from quant_research.portfolio.models import (
     PortfolioConfig,
     PortfolioConstructionResult,
@@ -31,13 +39,19 @@ __all__ = [
     "FactorHealthConfig",
     "RiskConstraint",
     "RollingRegimeGateConfig",
+    "ScoreForecastCalibrationConfig",
     "apply_cn_t1_constraints",
+    "apply_score_forecast_calibration",
     "build_composite_scores",
     "build_factor_health_schedule",
     "cap_factor_weights",
     "factor_contribution_diagnostics",
     "factor_combination_weights",
+    "build_score_forecast_calibration",
+    "build_score_forecast_calibration_from_observations",
+    "build_score_forecast_calibration_from_partitions",
     "build_rolling_regime_gate",
     "load_candidate_factors",
+    "score_forecast_calibration_observations",
     "write_score_partitions",
 ]

@@ -316,6 +316,60 @@ but worsens H1 2024; the 0.05 cap helps H1 drawdown but suppresses good-regime
 exposure too much. Further optimizer work should prioritize calibrated
 expected-edge/risk inputs over additional gate-speed tuning.
 
+## Forecast Calibration Layer
+
+The next framework step is now implemented as an opt-in score-bucket
+calibration layer. It converts raw composite scores into optimizer-ready
+forecast columns:
+
+- `expected_edge_bps`
+- `risk_penalty_bps`
+- `forecast_calibration_bucket`
+- `forecast_calibration_reason`
+
+The first version uses timestamp-level score buckets and lagged rolling
+`forward_return` observations. Current labels are never used for the current
+timestamp: bucket statistics are shifted by `label_lag_windows` before rolling
+means and risk estimates are assigned back to score rows.
+
+CLI entry point:
+
+```bash
+conda run -n quant python examples/run_candidate_factor_portfolios.py \
+  --forecast-calibration-mode score_bucket \
+  --forecast-calibration-lookback-windows 20 \
+  --forecast-calibration-min-periods 5 \
+  --forecast-calibration-label-lag-windows 48 \
+  --forecast-calibration-bucket-count 5
+```
+
+Q1 2023 smoke over the decorrelated score partitions wrote 8,284,467 calibrated
+score rows under
+`runs/candidate_factor_portfolios/calibration_smoke_q1_2023`. The first January
+windows are `warmup`; later January plus February/March are `calibrated`. This
+validates the I/O and no-lookahead mechanics, but it is not yet a promotion
+result. The next experiment should run optimizer validation with
+`optimizer-score-to-edge-bps=0` so the optimizer consumes only calibrated
+`expected_edge_bps` instead of raw score scaling.
+
+Initial optimizer smoke:
+
+| Window | Variant | Return | Max drawdown | Gross turnover | Trade count | Avg target gross | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Q1 2023 | Raw score edge, optimizer 0.15 + gate | 4.17% | -3.24% | 21.22 | 1,397 | 0.55 | Prior reference |
+| Q1 2023 | Calibrated edge + calibrated risk | 1.84% | -2.34% | 5.35 | 296 | 0.16 | Too conservative |
+| Q1 2023 | Calibrated edge only | 6.04% | -2.49% | 16.81 | 1,071 | 0.51 | Better return, drawdown, and turnover |
+| H1 2024 | Raw score edge, optimizer 0.15 + gate | -7.94% | -9.21% | 33.93 | 3,616 | 0.39 | Prior reference |
+| H1 2024 | Calibrated edge + calibrated risk | -6.37% | -10.92% | 1.91 | 127 | 0.03 | Risk penalty suppresses exposure too much |
+| H1 2024 | Calibrated edge only | -2.43% | -7.27% | 22.63 | 2,430 | 0.28 | Strong failure-window improvement |
+
+Read: calibrated expected edge is the first framework-side change that improves
+both the good-regime Q1 2023 and the 2024 failure window while lowering
+turnover. The current `risk_penalty_bps` estimate is too blunt because it uses
+raw bucket volatility as a direct bps deduction; keep it as an experimental
+field and use `optimizer-risk-penalty-multiplier=0` for the next validation
+until downside-specific risk calibration is implemented.
+
 ## References
 
 - Qlib: An AI-oriented Quantitative Investment Platform:

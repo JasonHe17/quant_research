@@ -22,6 +22,7 @@ from examples.run_tree_score_backtest import (
     TreeScoreBacktestParams,
     _build_tree_score_executions,
     _build_target_weights,
+    _load_ranked_score_signals,
     _score_rank_limit,
 )
 
@@ -732,6 +733,47 @@ def test_tree_score_rank_limit_includes_policy_exit_rank(tmp_path) -> None:
     params = _tree_score_params(tmp_path)
 
     assert _score_rank_limit(params) == 2
+
+
+def test_tree_score_rank_limit_includes_optimizer_candidate_rank(tmp_path) -> None:
+    params = replace(
+        _tree_score_params(tmp_path),
+        trade_policy="cost_aware_optimizer",
+        top_n=1,
+        optimizer_candidate_rank=5,
+    )
+
+    assert _score_rank_limit(params) == 5
+
+
+def test_tree_score_loader_preserves_optimizer_forecast_columns(tmp_path) -> None:
+    score_path = tmp_path / "scores.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "t0",
+                "instrument_id": f"inst-{index}",
+                "score": 1.0 - index * 0.1,
+                "expected_edge_bps": 100.0 - index,
+                "risk_penalty_bps": float(index),
+            }
+            for index in range(3)
+        ]
+    ).to_parquet(score_path, index=False)
+    params = replace(
+        _tree_score_params(tmp_path),
+        predictions_path=score_path,
+        trade_policy="cost_aware_optimizer",
+        top_n=1,
+        optimizer_candidate_rank=3,
+    )
+
+    ranked = _load_ranked_score_signals(params, start="t0", end="t0")
+
+    assert len(ranked) == 3
+    assert "expected_edge_bps" in ranked.columns
+    assert "risk_penalty_bps" in ranked.columns
+    assert ranked.loc[0, "expected_edge_bps"] == pytest.approx(100.0)
 
 
 def test_tree_score_sparse_executions_keep_only_targets_and_tracked_holdings() -> None:

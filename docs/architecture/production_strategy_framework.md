@@ -415,6 +415,12 @@ Live-readiness acceptance:
   policy.
 - [x] Add an optimizer re-risk budget control so replacement turnover and net
   gross-exposure rebuilding can be tested separately.
+- [x] Add an opt-in lagged score-bucket forecast calibration layer that writes
+  optimizer-ready expected-edge and risk-penalty columns.
+- [ ] Validate calibrated-edge optimizer inputs across the standard multi-year
+  acceptance suite before further factor/operator expansion.
+- [ ] Replace raw bucket-volatility risk penalties with downside or uncertainty
+  calibrated risk inputs before enabling optimizer risk penalties by default.
 - [ ] Add paper-trading contracts for broker adapters, order IDs, fills, and
   reconciliation.
 

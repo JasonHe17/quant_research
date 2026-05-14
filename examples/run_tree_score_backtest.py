@@ -361,6 +361,24 @@ def _load_ranked_score_signals(
     scan_target = _prediction_scan_target(params.predictions_path)
     connection = duckdb.connect()
     try:
+        available_columns = _prediction_columns(connection, scan_target)
+        forecast_columns = [
+            column
+            for column in (
+                "expected_edge_bps",
+                "expected_return_bps",
+                "risk_penalty_bps",
+                "health_risk_bps",
+                "optimizer_risk_penalty_bps",
+            )
+            if column in available_columns
+        ]
+        ranked_select_columns = "".join(
+            f",\n                    p.{column}" for column in forecast_columns
+        )
+        output_select_columns = "".join(
+            f",\n                {column}" for column in forecast_columns
+        )
         query = """
             WITH signal_times AS (
                 SELECT
@@ -379,7 +397,7 @@ def _load_ranked_score_signals(
                     p.timestamp AS signal_time,
                     p.instrument_id,
                     p.score,
-                    t.time_rank,
+                    t.time_rank{ranked_select_columns},
                     row_number() OVER (
                         PARTITION BY p.timestamp
                         ORDER BY p.score DESC, p.instrument_id ASC
@@ -396,11 +414,14 @@ def _load_ranked_score_signals(
                 signal_time,
                 instrument_id,
                 score,
-                rank
+                rank{output_select_columns}
             FROM ranked
             WHERE rank <= ?
             ORDER BY signal_time, rank
-        """
+        """.format(
+            ranked_select_columns=ranked_select_columns,
+            output_select_columns=output_select_columns,
+        )
         return connection.execute(
             query,
             [
@@ -427,7 +448,20 @@ def _score_rank_limit(params: TreeScoreBacktestParams) -> int:
             limits.append(params.policy_entry_rank)
         if params.policy_exit_rank is not None:
             limits.append(params.policy_exit_rank)
+    if params.trade_policy == "cost_aware_optimizer":
+        if params.optimizer_candidate_rank is not None:
+            limits.append(params.optimizer_candidate_rank)
+        if params.policy_exit_rank is not None:
+            limits.append(params.policy_exit_rank)
     return max(limits)
+
+
+def _prediction_columns(connection: duckdb.DuckDBPyConnection, scan_target: str) -> set[str]:
+    schema = connection.execute(
+        "DESCRIBE SELECT * FROM read_parquet(?) LIMIT 0",
+        [scan_target],
+    ).fetchdf()
+    return set(schema["column_name"].astype(str))
 
 
 def _prediction_scan_target(path: Path) -> str:

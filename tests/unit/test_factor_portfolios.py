@@ -20,6 +20,7 @@ from examples.run_candidate_factor_portfolios import (
 from quant_research.portfolio import (
     CandidateFactor,
     FactorHealthConfig,
+    ScoreForecastCalibrationConfig,
     build_composite_scores,
     build_factor_health_schedule,
     cap_factor_weights,
@@ -298,6 +299,44 @@ def test_write_score_partitions_writes_one_partition_per_method(tmp_path: Path) 
         / "diagnostics"
         / "factor_contribution_2024_01.csv"
     ).exists()
+
+
+def test_write_score_partitions_can_attach_calibrated_forecasts(tmp_path: Path) -> None:
+    for partition, rows in {
+        "2024_01": [
+            {"timestamp": "t0", "instrument_id": "a", "alpha_a": 3.0, "forward_return": 0.02},
+            {"timestamp": "t0", "instrument_id": "b", "alpha_a": 1.0, "forward_return": -0.01},
+            {"timestamp": "t1", "instrument_id": "a", "alpha_a": 3.0, "forward_return": -0.03},
+            {"timestamp": "t1", "instrument_id": "b", "alpha_a": 1.0, "forward_return": 0.01},
+        ],
+        "2024_02": [
+            {"timestamp": "t2", "instrument_id": "a", "alpha_a": 3.0, "forward_return": 0.04},
+            {"timestamp": "t2", "instrument_id": "b", "alpha_a": 1.0, "forward_return": -0.02},
+        ],
+    }.items():
+        pd.DataFrame(rows).to_parquet(tmp_path / f"dataset_{partition}.parquet", index=False)
+
+    summary = write_score_partitions(
+        [
+            tmp_path / "dataset_2024_01.parquet",
+            tmp_path / "dataset_2024_02.parquet",
+        ],
+        output_dir=tmp_path / "scores",
+        candidates=(CandidateFactor("alpha_a", 1, 0.02),),
+        weights_by_method={"equal": {"alpha_a": 1.0}},
+        forecast_calibration_config=ScoreForecastCalibrationConfig(
+            lookback_windows=1,
+            min_periods=1,
+            label_lag_windows=1,
+            bucket_count=2,
+        ),
+    )
+
+    scores = pd.read_parquet(tmp_path / "scores" / "equal" / "score_2024_02.parquet")
+    top = scores.sort_values("score", ascending=False).iloc[0]
+    assert "expected_edge_bps" in scores.columns
+    assert top["expected_edge_bps"] == pytest.approx(-300.0)
+    assert summary["methods"]["equal"]["score_forecast_calibration"]
 
 
 def test_candidate_factor_builds_factor_health_schedule_when_enabled(tmp_path: Path) -> None:
@@ -601,6 +640,13 @@ def _portfolio_args(**overrides: object) -> object:
         "factor_health_rank_ic_ceiling": 0.05,
         "factor_health_spread_floor": -0.001,
         "factor_health_spread_ceiling": 0.001,
+        "forecast_calibration_mode": "off",
+        "forecast_calibration_lookback_windows": 20,
+        "forecast_calibration_min_periods": 5,
+        "forecast_calibration_label_lag_windows": 48,
+        "forecast_calibration_bucket_count": 5,
+        "forecast_calibration_risk_multiplier": 1.0,
+        "forecast_calibration_max_abs_edge_bps": None,
         "score_diagnostics_top_n": None,
         "backtest_policy_set": "single",
         "backtest_policies": None,

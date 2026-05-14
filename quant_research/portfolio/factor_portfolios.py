@@ -10,6 +10,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from quant_research.portfolio.forecast_calibration import (
+    ScoreForecastCalibrationConfig,
+    apply_score_forecast_calibration,
+    build_score_forecast_calibration_from_observations,
+    score_forecast_calibration_observations,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class CandidateFactor:
@@ -306,6 +313,7 @@ def write_score_partitions(
     max_factor_contribution_share: float | None = None,
     factor_health_schedule: pd.DataFrame | None = None,
     diagnostics_top_n: int | None = None,
+    forecast_calibration_config: ScoreForecastCalibrationConfig | None = None,
 ) -> dict[str, Any]:
     """Write composite score parquet partitions for each method."""
 
@@ -326,10 +334,15 @@ def write_score_partitions(
         row_count = 0
         partition_count = 0
         diagnostics_paths: list[str] = []
+        calibration_observations: list[pd.DataFrame] = []
+        calibration_paths: list[str] = []
         for dataset_path in dataset_paths:
             columns = ["timestamp", "instrument_id", *features]
             if diagnostics_top_n is not None:
                 columns.append("forward_return")
+            if forecast_calibration_config is not None:
+                columns.append(forecast_calibration_config.label_column)
+            columns = list(dict.fromkeys(columns))
             frame = pd.read_parquet(
                 dataset_path,
                 columns=columns,
@@ -346,6 +359,43 @@ def write_score_partitions(
                 factor_health=health,
                 max_factor_contribution_share=max_factor_contribution_share,
             )
+            if forecast_calibration_config is not None:
+                joined = scores.loc[:, ["timestamp", "instrument_id", "score"]].merge(
+                    frame.loc[
+                        :,
+                        [
+                            "timestamp",
+                            "instrument_id",
+                            forecast_calibration_config.label_column,
+                        ],
+                    ],
+                    on=["timestamp", "instrument_id"],
+                    how="inner",
+                )
+                current_observations = score_forecast_calibration_observations(
+                    joined,
+                    forecast_calibration_config,
+                )
+                calibration_inputs = (
+                    [*calibration_observations, current_observations]
+                    if not current_observations.empty
+                    else calibration_observations
+                )
+                calibration = (
+                    build_score_forecast_calibration_from_observations(
+                        pd.concat(calibration_inputs, ignore_index=True),
+                        forecast_calibration_config,
+                    )
+                    if calibration_inputs
+                    else pd.DataFrame()
+                )
+                scores = apply_score_forecast_calibration(
+                    scores,
+                    calibration,
+                    forecast_calibration_config,
+                )
+                if not current_observations.empty:
+                    calibration_observations.append(current_observations)
             score_path = method_dir / f"score_{partition}.parquet"
             scores.to_parquet(score_path, index=False)
             if diagnostics_top_n is not None:
@@ -364,6 +414,18 @@ def write_score_partitions(
             row_count += len(scores)
             partition_count += 1
             del frame, scores
+        if forecast_calibration_config is not None and calibration_observations:
+            calibration_dir = method_dir / "calibration"
+            calibration_dir.mkdir(parents=True, exist_ok=True)
+            for old_path in calibration_dir.glob("score_forecast_calibration*.csv"):
+                old_path.unlink()
+            calibration = build_score_forecast_calibration_from_observations(
+                pd.concat(calibration_observations, ignore_index=True),
+                forecast_calibration_config,
+            )
+            calibration_path = calibration_dir / "score_forecast_calibration.csv"
+            calibration.to_csv(calibration_path, index=False)
+            calibration_paths.append(str(calibration_path))
         methods[method] = {
             "path": str(method_dir / "*.parquet"),
             "weights": effective_weights,
@@ -371,6 +433,7 @@ def write_score_partitions(
             "row_count": row_count,
             "partition_count": partition_count,
             "factor_contribution_diagnostics": diagnostics_paths,
+            "score_forecast_calibration": calibration_paths,
         }
     return {
         "candidate_features": [factor.feature for factor in candidates],

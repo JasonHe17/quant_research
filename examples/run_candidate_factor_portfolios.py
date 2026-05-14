@@ -19,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from quant_research.portfolio import (
     CandidateFactor,
     FactorHealthConfig,
+    ScoreForecastCalibrationConfig,
     build_factor_health_schedule,
     factor_combination_weights,
     load_candidate_factors,
@@ -103,6 +104,7 @@ def main() -> None:
         max_factor_contribution_share=args.factor_max_contribution_share,
         factor_health_schedule=factor_health_schedule,
         diagnostics_top_n=args.score_diagnostics_top_n,
+        forecast_calibration_config=_forecast_calibration_config(args),
     )
     summary = {
         "params": _summary_params(args),
@@ -172,6 +174,21 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
         "factor_health_rank_ic_ceiling": args.factor_health_rank_ic_ceiling,
         "factor_health_spread_floor": args.factor_health_spread_floor,
         "factor_health_spread_ceiling": args.factor_health_spread_ceiling,
+        "forecast_calibration_mode": args.forecast_calibration_mode,
+        "forecast_calibration_lookback_windows": (
+            args.forecast_calibration_lookback_windows
+        ),
+        "forecast_calibration_min_periods": args.forecast_calibration_min_periods,
+        "forecast_calibration_label_lag_windows": (
+            args.forecast_calibration_label_lag_windows
+        ),
+        "forecast_calibration_bucket_count": args.forecast_calibration_bucket_count,
+        "forecast_calibration_risk_multiplier": (
+            args.forecast_calibration_risk_multiplier
+        ),
+        "forecast_calibration_max_abs_edge_bps": (
+            args.forecast_calibration_max_abs_edge_bps
+        ),
         "score_diagnostics_top_n": args.score_diagnostics_top_n,
     }
     if args.run_backtests:
@@ -258,6 +275,25 @@ def _build_factor_health_schedule(
             spread_ceiling=args.factor_health_spread_ceiling,
         ),
         top_n=args.score_diagnostics_top_n or args.top_n,
+    )
+
+
+def _forecast_calibration_config(
+    args: argparse.Namespace,
+) -> ScoreForecastCalibrationConfig | None:
+    if args.forecast_calibration_mode == "off":
+        return None
+    if args.forecast_calibration_mode != "score_bucket":
+        raise ValueError(
+            f"unsupported forecast calibration mode: {args.forecast_calibration_mode}"
+        )
+    return ScoreForecastCalibrationConfig(
+        lookback_windows=args.forecast_calibration_lookback_windows,
+        min_periods=args.forecast_calibration_min_periods,
+        label_lag_windows=args.forecast_calibration_label_lag_windows,
+        bucket_count=args.forecast_calibration_bucket_count,
+        risk_multiplier=args.forecast_calibration_risk_multiplier,
+        max_abs_edge_bps=args.forecast_calibration_max_abs_edge_bps,
     )
 
 
@@ -811,6 +847,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--factor-health-spread-floor", type=float, default=-0.001)
     parser.add_argument("--factor-health-spread-ceiling", type=float, default=0.001)
     parser.add_argument(
+        "--forecast-calibration-mode",
+        choices=("off", "score_bucket"),
+        default="off",
+        help="optional lagged score-bucket forecast calibration",
+    )
+    parser.add_argument("--forecast-calibration-lookback-windows", type=int, default=20)
+    parser.add_argument("--forecast-calibration-min-periods", type=int, default=5)
+    parser.add_argument("--forecast-calibration-label-lag-windows", type=int, default=48)
+    parser.add_argument("--forecast-calibration-bucket-count", type=int, default=5)
+    parser.add_argument("--forecast-calibration-risk-multiplier", type=float, default=1.0)
+    parser.add_argument("--forecast-calibration-max-abs-edge-bps", type=float)
+    parser.add_argument(
         "--score-diagnostics-top-n",
         type=int,
         help="write per-partition top-N factor contribution diagnostics",
@@ -956,6 +1004,26 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError(
             "--factor-health-spread-floor must be below --factor-health-spread-ceiling"
         )
+    if args.forecast_calibration_lookback_windows <= 0:
+        raise ValueError("--forecast-calibration-lookback-windows must be positive")
+    if args.forecast_calibration_min_periods <= 0:
+        raise ValueError("--forecast-calibration-min-periods must be positive")
+    if args.forecast_calibration_min_periods > args.forecast_calibration_lookback_windows:
+        raise ValueError(
+            "--forecast-calibration-min-periods must be <= "
+            "--forecast-calibration-lookback-windows"
+        )
+    if args.forecast_calibration_label_lag_windows <= 0:
+        raise ValueError("--forecast-calibration-label-lag-windows must be positive")
+    if args.forecast_calibration_bucket_count <= 1:
+        raise ValueError("--forecast-calibration-bucket-count must be greater than 1")
+    if args.forecast_calibration_risk_multiplier < 0:
+        raise ValueError("--forecast-calibration-risk-multiplier must be non-negative")
+    if (
+        args.forecast_calibration_max_abs_edge_bps is not None
+        and args.forecast_calibration_max_abs_edge_bps <= 0
+    ):
+        raise ValueError("--forecast-calibration-max-abs-edge-bps must be positive")
     if args.score_diagnostics_top_n is not None and args.score_diagnostics_top_n <= 0:
         raise ValueError("--score-diagnostics-top-n must be positive")
     if args.top_n <= 0:
