@@ -267,6 +267,24 @@ all three score-combination methods. Use `decorrelated/partial_rebalance_daily`
 as the default candidate for the next broader validation phase, with equal and
 IC-weighted partial variants retained as method-robustness controls.
 
+Multi-year validation runner:
+
+```bash
+conda run -n quant python examples/run_candidate_policy_validation.py \
+  --output-dir runs/candidate_factor_portfolios/partial_rebalance_validation_standard \
+  --profile standard \
+  --methods decorrelated equal ic_weighted \
+  --primary-method decorrelated \
+  --policy partial_rebalance_daily \
+  --resume-existing
+```
+
+The standard profile infers full years from
+`runs/framework_v1_acceptance/standard/alpha_dataset`, runs `full_base`,
+calendar-year base slices, and `full_high_cost`, then writes
+`validation_summary.csv` and `validation_summary.json`. Use `--profile robust`
+to add a full-window zero-cost diagnostic.
+
 Initial Q1 2023 policy comparison:
 
 | Method | Policy | Return | Max drawdown | Gross turnover | Trades | Cost |

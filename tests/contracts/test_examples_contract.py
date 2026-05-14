@@ -63,3 +63,18 @@ def test_candidate_factor_portfolios_example_has_cli_help() -> None:
     assert result.returncode == 0
     assert "--admission-report" in result.stdout
     assert "--run-backtests" in result.stdout
+
+
+def test_candidate_policy_validation_example_has_cli_help() -> None:
+    script = Path("examples/run_candidate_policy_validation.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--profile" in result.stdout
+    assert "--policy" in result.stdout
