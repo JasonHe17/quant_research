@@ -187,7 +187,7 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --partition-end 2023_12 \
   --run-backtests \
   --start 2023-01-03T09:35:00+08:00 \
-  --end 2023-12-29T15:00:00+08:00 \
+  --end 2023-12-31T15:00:00+08:00 \
   --top-n 50 \
   --commission-bps 3 \
   --slippage-bps 1 \
@@ -238,9 +238,34 @@ turnover and shallower drawdown. `partial_rebalance_daily` has lower return for
 decorrelated, but it is the only policy family that stays positive across all
 three score-combination methods while cutting gross turnover to roughly 44.
 Every-bar policies remain research-only because costs and turnover dominate.
-Next, run zero/base/stressed cost variants for `decorrelated/top_k_drop_daily`,
-`decorrelated/entry_exit_buffer_daily`, and the three `partial_rebalance_daily`
-method variants before setting promotion gates.
+
+2023 candidate cost-stress result:
+
+Cost profiles:
+
+| Profile | Commission bps | Slippage bps | Sell tax bps | Min commission |
+| --- | ---: | ---: | ---: | ---: |
+| zero | 0 | 0 | 0 | 0 |
+| base | 3 | 1 | 5 | 5 |
+| stressed | 6 | 2 | 10 | 5 |
+
+| Method | Policy | Zero return | Base return | Stressed return | Base turnover | Stressed cost | Execution rows | Status |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| decorrelated | top_k_drop_daily | 26.38% | 9.42% | -5.13% | 218.71 | 280,914 | 7,318,512 | Reject for promotion; cost fragile |
+| decorrelated | entry_exit_buffer_daily | 20.56% | 8.41% | -2.16% | 158.63 | 211,509 | 7,591,248 | Reject for promotion; cost fragile |
+| decorrelated | partial_rebalance_daily | 15.02% | 8.39% | 6.60% | 43.85 | 81,318 | 1,117,344 | Promote to broader validation |
+| equal | partial_rebalance_daily | 12.86% | 6.13% | 4.25% | 43.91 | 81,003 | 1,117,344 | Promote as robustness check |
+| ic_weighted | partial_rebalance_daily | 13.65% | 7.04% | 5.23% | 43.59 | 80,592 | 1,117,344 | Promote as robustness check |
+
+The stress result changes the policy priority. The two higher-return
+decorrelated daily full-rebalance variants depend too much on favorable cost
+assumptions: zero-to-base drag is 12.15-16.95 percentage points, and both turn
+negative under the stressed profile. `partial_rebalance_daily` gives up some
+zero-cost return but keeps turnover near 44, uses about one seventh of the
+heavy daily execution rows, and remains positive under stressed costs across
+all three score-combination methods. Use `decorrelated/partial_rebalance_daily`
+as the default candidate for the next broader validation phase, with equal and
+IC-weighted partial variants retained as method-robustness controls.
 
 Initial Q1 2023 policy comparison:
 
