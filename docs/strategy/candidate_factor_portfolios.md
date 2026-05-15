@@ -611,3 +611,24 @@ sweep: it allows the optimizer to spend up to the normal per-rebalance cap while
 keeping the whole validation path inside the turnover envelope. Next step is a
 standard validation comparing `equal` budget `155` against the promoted
 `decorrelated` default.
+
+Standard validation after path-level turnover budget:
+
+```text
+runs/candidate_factor_portfolios/equal_path_turnover_budget_standard_budget155
+runs/candidate_factor_portfolios/decorrelated_promoted_standard_after_path_budget
+```
+
+Both wrappers completed with `overall_status=pass`, zero warnings, and zero
+failed checks.
+
+| Method | Control | Full return | Full drawdown | Full turnover | High-cost return | 2023 | 2024 | 2025 | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| equal | Path budget 155 | 33.86% | -7.89% | 148.11 | 22.21% | 8.93% | 16.69% | 7.07% | Best standard result; budget exhausted from 2025-09 |
+| decorrelated | Per-rebalance budget 0.10 | 32.21% | -8.49% | 156.37 | 20.31% | 7.97% | 12.18% | 5.10% | Current promoted default remains valid |
+
+Decision: `equal` with a path-level gross-turnover budget of `155` becomes the
+leading promoted candidate, but not yet a live default. The full-path budget is
+acceptable for research validation, while production needs a replenishing or
+rolling turnover budget horizon so the strategy cannot spend the entire long-run
+budget before the end of an operating period.

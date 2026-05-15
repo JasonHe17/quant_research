@@ -468,7 +468,7 @@ Near-term framework tasks:
   sensitivity check.
 - [x] Redesign turnover handling so the optimizer allocates a path-level
   turnover budget instead of only clipping each rebalance independently.
-- [ ] Revalidate `equal` and `decorrelated` after the turnover allocator change
+- [x] Revalidate `equal` and `decorrelated` after the turnover allocator change
   using the same standard gate.
 - [ ] Revisit calibrated risk penalties only after turnover allocation is
   stable.
@@ -500,6 +500,30 @@ overly conservative behavior caused by even pacing. It should now be validated
 on the standard suite for both `equal` and the promoted `decorrelated` default.
 The implementation still warrants a performance pass if full validation shows
 the post-decision cap is a bottleneck.
+
+Standard validation after the allocator change:
+
+```text
+runs/candidate_factor_portfolios/equal_path_turnover_budget_standard_budget155
+runs/candidate_factor_portfolios/decorrelated_promoted_standard_after_path_budget
+```
+
+Wrapper status: both runs `pass`, with zero warnings and zero failed checks.
+
+| Method | Turnover control | Full return | Full drawdown | Full turnover | High-cost return | Yearly returns | Read |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| equal | Path budget 155, no pacing | 33.86% | -7.89% | 148.11 | 22.21% | 8.93%, 16.69%, 7.07% | Strongest standard result; path budget exhausted by 2025-09 on the full path |
+| decorrelated | Per-rebalance budget 0.10 | 32.21% | -8.49% | 156.37 | 20.31% | 7.97%, 12.18%, 5.10% | Current default remains valid, but now dominated by equal path-budget candidate |
+
+Decision: promote `equal` with `--policy-total-gross-turnover-budget 155` to
+the leading implementation candidate. It passes the same standard gate as the
+current `decorrelated` default while improving full-window return, drawdown,
+high-cost robustness, and every yearly slice. Do not make a silent default
+switch yet: the full-path budget is exhausted around 2025-09, leaving no
+turnover for late-year adaptation. The next framework task should turn the
+static validation-path budget into a production-usable budget horizon, for
+example rolling annual/monthly envelopes or a replenishing budget ledger, before
+we treat the candidate as the live-trading default.
 
 ## References
 
