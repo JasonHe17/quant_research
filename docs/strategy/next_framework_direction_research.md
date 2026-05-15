@@ -370,6 +370,55 @@ raw bucket volatility as a direct bps deduction; keep it as an experimental
 field and use `optimizer-risk-penalty-multiplier=0` for the next validation
 until downside-specific risk calibration is implemented.
 
+Standard multi-year validation:
+
+```bash
+conda run -n quant python examples/run_candidate_policy_validation.py \
+  --profile standard \
+  --methods decorrelated \
+  --primary-method decorrelated \
+  --backtest-policy-set single \
+  --policy single \
+  --trade-policy cost_aware_optimizer \
+  --rebalance-every-n-bars 48 \
+  --policy-estimated-cost-bps 9 \
+  --policy-no-trade-weight-band 0.002 \
+  --policy-max-gross-turnover-per-rebalance 0.10 \
+  --policy-gross-exposure-scale-path \
+    runs/candidate_factor_portfolios/optimizer_regime_gate_validation/gate_budget_deadband_full/decorrelated/gross_exposure_schedule.csv \
+  --optimizer-candidate-rank 150 \
+  --optimizer-score-to-edge-bps 0 \
+  --optimizer-min-net-edge-bps 1 \
+  --optimizer-risk-penalty-multiplier 0 \
+  --optimizer-weighting equal \
+  --forecast-calibration-mode score_bucket \
+  --forecast-calibration-lookback-windows 3 \
+  --forecast-calibration-min-periods 1 \
+  --forecast-calibration-label-lag-windows 48 \
+  --forecast-calibration-bucket-count 5
+```
+
+Results:
+
+| Scenario | Variant | Return | Max drawdown | Gross turnover | Trade count | Avg target gross | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 2023-2025 full | Calibrated edge, turnover budget 0.15 | 27.15% | -9.46% | 182.96 | 16,043 | 0.38 | Positive, but above 160 turnover gate |
+| 2023-2025 full | Calibrated edge, turnover budget 0.10 | 32.21% | -8.49% | 156.37 | 13,663 | 0.40 | Promotable default for next experiments |
+| 2023-2025 high cost | Calibrated edge, turnover budget 0.15 | 14.11% | -10.37% | 182.49 | 16,011 | 0.38 | Positive, but turnover warning remains |
+| 2023-2025 high cost | Calibrated edge, turnover budget 0.10 | 20.31% | -9.28% | 156.19 | 13,595 | 0.40 | Positive under doubled costs |
+| 2023 | Calibrated edge, turnover budget 0.10 | 7.97% | -7.47% | 57.95 | 4,067 | 0.47 | Positive yearly slice |
+| 2024 | Calibrated edge, turnover budget 0.10 | 12.18% | -7.23% | 44.05 | 4,650 | 0.32 | Positive yearly slice |
+| 2025 | Calibrated edge, turnover budget 0.10 | 5.10% | -7.10% | 54.25 | 4,934 | 0.40 | Positive yearly slice |
+
+Parameter read: reducing the per-rebalance gross turnover budget from `0.15` to
+`0.10` is the cleanest turnover control found so far. It lowered full-window
+turnover below the current 160 gate and improved return/drawdown. By contrast,
+raising the no-trade band to `0.003` kept full-window turnover at 182.62, and
+raising `optimizer-min-net-edge-bps` to `3` kept turnover at 180.21 while
+reducing return. Use the calibrated edge-only optimizer with budget `0.10` as
+the next framework default; keep calibrated risk penalties disabled until their
+risk model is redesigned.
+
 ## References
 
 - Qlib: An AI-oriented Quantitative Investment Platform:

@@ -393,7 +393,7 @@ Live-readiness acceptance:
   backtests and flat comparison summaries.
 - [x] Add a policy-level gross exposure scale for market/regime gates, with
   `risk_reduction` diagnostics and candidate-runner plumbing.
-- [ ] Define promotion gates for policy-level acceptance before any new factor
+- [x] Define promotion gates for policy-level acceptance before any new factor
   research resumes.
 - [x] Add rolling market/regime signal generation that sets
   `gross_exposure_scale` from lagged out-of-sample basket health, not from
@@ -417,10 +417,17 @@ Live-readiness acceptance:
   gross-exposure rebuilding can be tested separately.
 - [x] Add an opt-in lagged score-bucket forecast calibration layer that writes
   optimizer-ready expected-edge and risk-penalty columns.
-- [ ] Validate calibrated-edge optimizer inputs across the standard multi-year
+- [x] Validate calibrated-edge optimizer inputs across the standard multi-year
   acceptance suite before further factor/operator expansion.
 - [ ] Replace raw bucket-volatility risk penalties with downside or uncertainty
   calibrated risk inputs before enabling optimizer risk penalties by default.
+- [ ] Re-run the standard validation entry point with the promoted calibrated
+  edge-only optimizer configuration: turnover budget `0.10`,
+  `optimizer-score-to-edge-bps=0`, `optimizer-risk-penalty-multiplier=0`, and
+  full-sample regime gate schedule. The manual validation already passed with
+  positive 2023/2024/2025 slices, positive doubled-cost stress, and full-window
+  turnover below the 160 gate; this item is to persist the exact promoted run
+  through the reusable validation wrapper.
 - [ ] Add paper-trading contracts for broker adapters, order IDs, fills, and
   reconciliation.
 
