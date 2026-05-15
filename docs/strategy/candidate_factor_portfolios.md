@@ -646,3 +646,39 @@ runs/candidate_factor_portfolios/equal_monthly_budget_quick_smoke
 The rolling ledger fixes the production problem of path-budget exhaustion, but
 budget size now needs calibration. The next sweep should focus on monthly
 budgets around `4.0-4.5` or annual budgets around `52`.
+
+Rolling budget calibration:
+
+```text
+runs/candidate_factor_portfolios/equal_monthly_budget_quick_budget43
+runs/candidate_factor_portfolios/equal_annual_budget_quick_budget52
+runs/candidate_factor_portfolios/equal_annual_budget_standard_budget52
+```
+
+Quick full-window calibration:
+
+| Method | Period | Budget | Return | Max drawdown | Gross turnover | Planned turnover | Period count | Status | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| equal | month | 4.3 | 21.95% | -10.49% | 146.41 | 143.86 | 36 | pass | Too restrictive; monthly local caps suppress useful turnover and lose too much return |
+| equal | year | 52 | 33.44% | -7.85% | 149.42 | 154.30 | 3 | pass | Preserves the path-budget return profile while replenishing annually |
+
+Standard validation for `equal`, annual budget `52`:
+
+| Scenario | Return | Max drawdown | Gross turnover | Planned turnover | Trades | Cost | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2023-2025 full | 33.44% | -7.85% | 149.42 | 154.30 | 13,008 | 135,304 | Passes full-window turnover gate |
+| 2023-2025 high cost | 22.05% | -8.72% | 149.47 | 154.30 | 12,939 | 229,027 | Positive under doubled costs |
+| 2023 | 8.51% | -6.44% | 50.69 | 52.00 | 3,504 | 39,394 | Budget spent, yearly slice positive |
+| 2024 | 16.69% | -7.23% | 48.33 | 50.08 | 4,987 | 44,267 | Same strong 2024 profile as path budget |
+| 2025 | 6.83% | -4.89% | 49.13 | 52.00 | 4,476 | 41,337 | Budget spent without late-year path exhaustion |
+
+Decision: promote `equal` with annual gross-turnover budget `52` as the current
+combination-layer candidate. It is slightly lower return than full-path budget
+`155` (`33.44%` vs. `33.86%`) but removes the production flaw where a
+multi-year path budget can be depleted before the end of the operating horizon.
+Annual replenishment is also a better match for how a live strategy would be
+monitored: it preserves a clear yearly turnover envelope of about `52`, keeps
+the full validation turnover below `160`, and avoids the excessive local
+constraint of a monthly `4.3` budget. Do not promote the monthly ledger until a
+separate experiment shows that monthly pacing improves live risk without
+destroying return.
