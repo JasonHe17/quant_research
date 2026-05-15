@@ -447,7 +447,11 @@ def test_candidate_factor_policy_set_rejects_unknown_filter() -> None:
 
 
 def test_candidate_factor_backtest_command_includes_policy_args(tmp_path: Path) -> None:
-    args = _portfolio_args(max_bar_turnover_participation=0.05)
+    args = _portfolio_args(
+        max_bar_turnover_participation=0.05,
+        policy_total_gross_turnover_budget=120.0,
+        policy_turnover_budget_pacing=1.25,
+    )
     spec = BacktestPolicySpec(
         name="entry_exit_buffer_daily",
         trade_policy="rank_buffer_drop",
@@ -472,6 +476,8 @@ def test_candidate_factor_backtest_command_includes_policy_args(tmp_path: Path) 
     assert command[command.index("--policy-partial-rebalance-rate") + 1] == "0.5"
     assert command[command.index("--policy-gross-exposure-scale") + 1] == "0.75"
     assert command[command.index("--policy-gross-exposure-scale-path") + 1] == "gate.csv"
+    assert command[command.index("--policy-total-gross-turnover-budget") + 1] == "120.0"
+    assert command[command.index("--policy-turnover-budget-pacing") + 1] == "1.25"
     assert command[command.index("--max-bar-turnover-participation") + 1] == "0.05"
 
 
@@ -518,6 +524,8 @@ def test_candidate_factor_backtest_summary_rows_flatten_nested_results() -> None
                         "policy_max_exits_per_rebalance": 10,
                         "policy_no_trade_weight_band": 0.002,
                         "policy_partial_rebalance_rate": 1.0,
+                        "policy_total_gross_turnover_budget": 120.0,
+                        "policy_turnover_budget_pacing": 1.2,
                         "policy_gross_exposure_scale": 0.75,
                         "policy_gross_exposure_scale_path": "gate.csv",
                     },
@@ -534,6 +542,8 @@ def test_candidate_factor_backtest_summary_rows_flatten_nested_results() -> None
                     "policy_diagnostics": {
                         "planned_gross_turnover": 54.4,
                         "average_target_gross_exposure": 0.74,
+                        "average_dynamic_turnover_cap": 0.4,
+                        "turnover_path_budget_remaining": 65.6,
                         "gross_exposure_scaled_count": 96,
                         "risk_reduction_count": 24,
                         "order_intent_count": 1232,
@@ -559,6 +569,8 @@ def test_candidate_factor_backtest_summary_rows_flatten_nested_results() -> None
             "policy_max_exits_per_rebalance": 10,
             "policy_no_trade_weight_band": 0.002,
             "policy_partial_rebalance_rate": 1.0,
+            "policy_total_gross_turnover_budget": 120.0,
+            "policy_turnover_budget_pacing": 1.2,
             "policy_gross_exposure_scale": 0.75,
             "policy_gross_exposure_scale_path": "gate.csv",
             "optimizer_candidate_rank": None,
@@ -578,6 +590,8 @@ def test_candidate_factor_backtest_summary_rows_flatten_nested_results() -> None
             "execution_row_count": 904224,
             "planned_gross_turnover": 54.4,
             "average_target_gross_exposure": 0.74,
+            "average_dynamic_turnover_cap": 0.4,
+            "turnover_path_budget_remaining": 65.6,
             "gross_exposure_scaled_count": 96,
             "risk_reduction_count": 24,
             "order_intent_count": 1232,
@@ -663,6 +677,8 @@ def _portfolio_args(**overrides: object) -> object:
         "policy_no_trade_weight_band": 0.0,
         "policy_partial_rebalance_rate": 1.0,
         "policy_max_gross_turnover_per_rebalance": None,
+        "policy_total_gross_turnover_budget": None,
+        "policy_turnover_budget_pacing": 0.0,
         "policy_gross_exposure_scale": 1.0,
         "policy_gross_exposure_scale_path": None,
         "optimizer_candidate_rank": None,

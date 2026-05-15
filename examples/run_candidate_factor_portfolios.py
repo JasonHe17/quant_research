@@ -45,6 +45,8 @@ class BacktestPolicySpec:
     policy_no_trade_weight_band: float = 0.0
     policy_partial_rebalance_rate: float = 1.0
     policy_max_gross_turnover_per_rebalance: float | None = None
+    policy_total_gross_turnover_budget: float | None = None
+    policy_turnover_budget_pacing: float = 0.0
     policy_gross_exposure_scale: float = 1.0
     policy_gross_exposure_scale_path: str | None = None
     optimizer_candidate_rank: int | None = None
@@ -220,6 +222,8 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             "policy_max_gross_turnover_per_rebalance": (
                 args.policy_max_gross_turnover_per_rebalance
             ),
+            "policy_total_gross_turnover_budget": args.policy_total_gross_turnover_budget,
+            "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
             "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
             "optimizer_candidate_rank": args.optimizer_candidate_rank,
@@ -512,6 +516,10 @@ def _backtest_summary_row(
         "policy_max_exits_per_rebalance": params.get("policy_max_exits_per_rebalance"),
         "policy_no_trade_weight_band": params.get("policy_no_trade_weight_band"),
         "policy_partial_rebalance_rate": params.get("policy_partial_rebalance_rate"),
+        "policy_total_gross_turnover_budget": params.get(
+            "policy_total_gross_turnover_budget"
+        ),
+        "policy_turnover_budget_pacing": params.get("policy_turnover_budget_pacing"),
         "policy_gross_exposure_scale": params.get("policy_gross_exposure_scale"),
         "policy_gross_exposure_scale_path": params.get("policy_gross_exposure_scale_path"),
         "optimizer_candidate_rank": params.get("optimizer_candidate_rank"),
@@ -535,6 +543,10 @@ def _backtest_summary_row(
         "execution_row_count": payload.get("execution_row_count"),
         "planned_gross_turnover": diagnostics.get("planned_gross_turnover"),
         "average_target_gross_exposure": diagnostics.get("average_target_gross_exposure"),
+        "average_dynamic_turnover_cap": diagnostics.get("average_dynamic_turnover_cap"),
+        "turnover_path_budget_remaining": diagnostics.get(
+            "turnover_path_budget_remaining"
+        ),
         "gross_exposure_scaled_count": diagnostics.get("gross_exposure_scaled_count"),
         "risk_reduction_count": diagnostics.get("risk_reduction_count"),
         "order_intent_count": diagnostics.get("order_intent_count"),
@@ -574,6 +586,8 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
                 policy_max_gross_turnover_per_rebalance=(
                     args.policy_max_gross_turnover_per_rebalance
                 ),
+                policy_total_gross_turnover_budget=args.policy_total_gross_turnover_budget,
+                policy_turnover_budget_pacing=args.policy_turnover_budget_pacing,
                 policy_gross_exposure_scale=args.policy_gross_exposure_scale,
                 policy_gross_exposure_scale_path=args.policy_gross_exposure_scale_path,
                 optimizer_candidate_rank=args.optimizer_candidate_rank,
@@ -606,6 +620,8 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
         "policy_max_gross_turnover_per_rebalance": (
             args.policy_max_gross_turnover_per_rebalance
         ),
+        "policy_total_gross_turnover_budget": args.policy_total_gross_turnover_budget,
+        "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
         "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
         "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
         "optimizer_candidate_rank": args.optimizer_candidate_rank,
@@ -746,6 +762,8 @@ def _backtest_command(
         "--policy-max-gross-turnover-per-rebalance": (
             spec.policy_max_gross_turnover_per_rebalance
         ),
+        "--policy-total-gross-turnover-budget": args.policy_total_gross_turnover_budget,
+        "--policy-turnover-budget-pacing": args.policy_turnover_budget_pacing,
         "--max-bar-turnover-participation": args.max_bar_turnover_participation,
     }
     for option, value in optional_floats.items():
@@ -894,6 +912,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-no-trade-weight-band", type=float, default=0.0)
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
+    parser.add_argument("--policy-total-gross-turnover-budget", type=float)
+    parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")
     parser.add_argument("--optimizer-candidate-rank", type=int)
@@ -1068,6 +1088,13 @@ def _parse_args() -> argparse.Namespace:
         and args.policy_max_gross_turnover_per_rebalance < 0
     ):
         raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
+    if (
+        args.policy_total_gross_turnover_budget is not None
+        and args.policy_total_gross_turnover_budget < 0
+    ):
+        raise ValueError("--policy-total-gross-turnover-budget must be non-negative")
+    if args.policy_turnover_budget_pacing < 0:
+        raise ValueError("--policy-turnover-budget-pacing must be non-negative")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
         raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
     if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:

@@ -729,6 +729,63 @@ def test_tree_score_target_builder_supports_cost_aware_optimizer(tmp_path) -> No
     assert result.diagnostics.loc[0, "policy_id"] == "cost_aware_optimizer"
 
 
+def test_tree_score_target_builder_enforces_remaining_path_turnover_budget(tmp_path) -> None:
+    ranked = pd.DataFrame(
+        [
+            {"signal_time": "t0", "instrument_id": "inst-a", "score": 0.9, "rank": 1},
+            {"signal_time": "t0", "instrument_id": "inst-b", "score": 0.1, "rank": 2},
+            {"signal_time": "t1", "instrument_id": "inst-b", "score": 0.9, "rank": 1},
+            {"signal_time": "t1", "instrument_id": "inst-a", "score": 0.1, "rank": 2},
+        ]
+    )
+
+    params = replace(
+        _tree_score_params(tmp_path),
+        trade_policy="cost_aware_optimizer",
+        top_n=1,
+        optimizer_candidate_rank=2,
+        optimizer_score_to_edge_bps=100.0,
+        policy_total_gross_turnover_budget=1.0,
+    )
+    result = _build_target_weights(ranked, params)
+
+    diagnostics = result.diagnostics.set_index("timestamp")
+    assert diagnostics.loc["t0", "dynamic_turnover_cap"] == pytest.approx(1.0)
+    assert diagnostics.loc["t0", "planned_gross_turnover"] == pytest.approx(1.0)
+    assert diagnostics.loc["t1", "dynamic_turnover_cap"] == pytest.approx(0.0)
+    assert diagnostics.loc["t1", "planned_gross_turnover"] == pytest.approx(0.0)
+    assert diagnostics.loc["t1", "turnover_path_budget_after"] == pytest.approx(0.0)
+    assert result.diagnostics["planned_gross_turnover"].sum() == pytest.approx(1.0)
+
+
+def test_tree_score_target_builder_optionally_paces_path_turnover_budget(tmp_path) -> None:
+    ranked = pd.DataFrame(
+        [
+            {"signal_time": "t0", "instrument_id": "inst-a", "score": 0.9, "rank": 1},
+            {"signal_time": "t0", "instrument_id": "inst-b", "score": 0.1, "rank": 2},
+            {"signal_time": "t1", "instrument_id": "inst-b", "score": 0.9, "rank": 1},
+            {"signal_time": "t1", "instrument_id": "inst-a", "score": 0.1, "rank": 2},
+        ]
+    )
+
+    params = replace(
+        _tree_score_params(tmp_path),
+        trade_policy="cost_aware_optimizer",
+        top_n=1,
+        optimizer_candidate_rank=2,
+        optimizer_score_to_edge_bps=100.0,
+        policy_total_gross_turnover_budget=1.0,
+        policy_turnover_budget_pacing=1.0,
+    )
+    result = _build_target_weights(ranked, params)
+
+    diagnostics = result.diagnostics.set_index("timestamp")
+    assert diagnostics.loc["t0", "dynamic_turnover_cap"] == pytest.approx(0.5)
+    assert diagnostics.loc["t0", "planned_gross_turnover"] == pytest.approx(0.5)
+    assert diagnostics.loc["t1", "dynamic_turnover_cap"] == pytest.approx(0.5)
+    assert diagnostics.loc["t1", "planned_gross_turnover"] == pytest.approx(0.5)
+
+
 def test_tree_score_rank_limit_includes_policy_exit_rank(tmp_path) -> None:
     params = _tree_score_params(tmp_path)
 
@@ -849,6 +906,8 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         policy_no_trade_weight_band=0.0,
         policy_partial_rebalance_rate=1.0,
         policy_max_gross_turnover_per_rebalance=None,
+        policy_total_gross_turnover_budget=None,
+        policy_turnover_budget_pacing=0.0,
         policy_gross_exposure_scale=1.0,
         policy_gross_exposure_scale_path=None,
         optimizer_candidate_rank=None,

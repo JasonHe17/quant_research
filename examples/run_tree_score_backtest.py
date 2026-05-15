@@ -22,6 +22,7 @@ from quant_research.strategies import (
     CostAwareOptimizerPolicy,
     RankBufferDropConfig,
     RankBufferDropPolicy,
+    StrategyPolicyResult,
     empty_portfolio_state,
 )
 
@@ -71,6 +72,8 @@ class TreeScoreBacktestParams:
     policy_no_trade_weight_band: float
     policy_partial_rebalance_rate: float
     policy_max_gross_turnover_per_rebalance: float | None
+    policy_total_gross_turnover_budget: float | None
+    policy_turnover_budget_pacing: float
     policy_gross_exposure_scale: float
     policy_gross_exposure_scale_path: Path | None
     optimizer_candidate_rank: int | None
@@ -92,11 +95,19 @@ class TreeScoreBacktestParams:
 
 
 @dataclass(frozen=True, slots=True)
+class PolicyBudgetState:
+    """Mutable path-level policy budget carried across streaming chunks."""
+
+    remaining_turnover_budget: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class TargetWeightBuildResult:
     """Target weights plus state and diagnostics from a strategy policy pass."""
 
     target_weights: pd.DataFrame
     policy_state: pd.DataFrame
+    budget_state: PolicyBudgetState
     diagnostics: pd.DataFrame
 
 
@@ -194,6 +205,8 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "policy_no_trade_weight_band": params.policy_no_trade_weight_band,
             "policy_partial_rebalance_rate": params.policy_partial_rebalance_rate,
             "policy_max_gross_turnover_per_rebalance": params.policy_max_gross_turnover_per_rebalance,
+            "policy_total_gross_turnover_budget": params.policy_total_gross_turnover_budget,
+            "policy_turnover_budget_pacing": params.policy_turnover_budget_pacing,
             "policy_gross_exposure_scale": params.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": (
                 str(params.policy_gross_exposure_scale_path)
@@ -256,6 +269,7 @@ def _run_tree_score_backtest_streaming(
     total_executions = 0
     instruments: set[str] = set()
     policy_state = empty_portfolio_state()
+    budget_state = PolicyBudgetState(params.policy_total_gross_turnover_budget)
     policy_diagnostics: list[pd.DataFrame] = []
     for work_unit in _streaming_work_units(backtest_params):
         bars = _load_bars_from_files(
@@ -284,9 +298,11 @@ def _run_tree_score_backtest_streaming(
             ranked_signals,
             params,
             policy_state=policy_state,
+            budget_state=budget_state,
         )
         signals = target_build.target_weights
         policy_state = target_build.policy_state
+        budget_state = target_build.budget_state
         if not target_build.diagnostics.empty:
             policy_diagnostics.append(target_build.diagnostics)
         total_signals += len(signals)
@@ -475,6 +491,7 @@ def _build_target_weights(
     params: TreeScoreBacktestParams,
     *,
     policy_state: pd.DataFrame | None = None,
+    budget_state: PolicyBudgetState | None = None,
 ) -> TargetWeightBuildResult:
     if params.trade_policy == "naive_top_n":
         return TargetWeightBuildResult(
@@ -482,6 +499,9 @@ def _build_target_weights(
             policy_state=policy_state
             if policy_state is not None
             else empty_portfolio_state(),
+            budget_state=budget_state
+            if budget_state is not None
+            else PolicyBudgetState(params.policy_total_gross_turnover_budget),
             diagnostics=pd.DataFrame(),
         )
     if params.trade_policy not in {"rank_buffer_drop", "cost_aware_optimizer"}:
@@ -491,14 +511,36 @@ def _build_target_weights(
     diagnostics: list[pd.DataFrame] = []
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
-    for signal_time, group in ranked_signals.groupby("signal_time", sort=True):
+    grouped_signals = list(ranked_signals.groupby("signal_time", sort=True))
+    remaining_turnover_budget = (
+        budget_state.remaining_turnover_budget
+        if budget_state is not None
+        else params.policy_total_gross_turnover_budget
+    )
+    for index, (signal_time, group) in enumerate(grouped_signals):
         policy = default_policy
+        policy_turnover_cap = _policy_turnover_cap_for_signal(
+            params,
+            remaining_turnover_budget=remaining_turnover_budget,
+            remaining_decision_count=len(grouped_signals) - index,
+        )
+        path_turnover_cap = _path_turnover_cap_for_signal(
+            params,
+            remaining_turnover_budget=remaining_turnover_budget,
+            remaining_decision_count=len(grouped_signals) - index,
+        )
         if scale_by_timestamp:
             scale = scale_by_timestamp.get(
                 _timestamp_key(signal_time),
                 params.policy_gross_exposure_scale,
             )
-            policy = _policy_for_params(params, gross_exposure_scale=scale)
+            policy = _policy_for_params(
+                params,
+                gross_exposure_scale=scale,
+                turnover_cap=policy_turnover_cap,
+            )
+        elif policy_turnover_cap != params.policy_max_gross_turnover_per_rebalance:
+            policy = _policy_for_params(params, turnover_cap=policy_turnover_cap)
         forecast_frame = group.rename(columns={"signal_time": "timestamp"})
         forecast_columns = [
             column
@@ -517,8 +559,20 @@ def _build_target_weights(
         ]
         forecasts = forecast_frame.loc[:, forecast_columns]
         result = policy.decide(forecasts, state)
+        if remaining_turnover_budget is not None:
+            result = _enforce_path_turnover_cap(result, path_turnover_cap)
         state = result.policy_state
-        diagnostics.append(result.diagnostics)
+        diagnostics_frame = result.diagnostics.copy()
+        if remaining_turnover_budget is not None:
+            planned_turnover = float(diagnostics_frame.loc[0, "planned_gross_turnover"])
+            budget_before = remaining_turnover_budget
+            remaining_turnover_budget = max(budget_before - planned_turnover, 0.0)
+            diagnostics_frame["dynamic_turnover_cap"] = (
+                0.0 if path_turnover_cap is None else float(path_turnover_cap)
+            )
+            diagnostics_frame["turnover_path_budget_before"] = budget_before
+            diagnostics_frame["turnover_path_budget_after"] = remaining_turnover_budget
+        diagnostics.append(diagnostics_frame)
         target = result.portfolio_intent.loc[
             result.portfolio_intent["policy_target_weight"].astype(float) > 0,
             [
@@ -558,6 +612,7 @@ def _build_target_weights(
     return TargetWeightBuildResult(
         target_weights=target_weights,
         policy_state=state,
+        budget_state=PolicyBudgetState(remaining_turnover_budget),
         diagnostics=_concat_policy_diagnostics(diagnostics),
     )
 
@@ -566,16 +621,22 @@ def _policy_for_params(
     params: TreeScoreBacktestParams,
     *,
     gross_exposure_scale: float | None = None,
+    turnover_cap: float | None = None,
 ) -> RankBufferDropPolicy | CostAwareOptimizerPolicy:
     if params.trade_policy == "rank_buffer_drop":
         return RankBufferDropPolicy(
-            _rank_buffer_drop_config(params, gross_exposure_scale=gross_exposure_scale)
+            _rank_buffer_drop_config(
+                params,
+                gross_exposure_scale=gross_exposure_scale,
+                turnover_cap=turnover_cap,
+            )
         )
     if params.trade_policy == "cost_aware_optimizer":
         return CostAwareOptimizerPolicy(
             _cost_aware_optimizer_config(
                 params,
                 gross_exposure_scale=gross_exposure_scale,
+                turnover_cap=turnover_cap,
             )
         )
     raise ValueError(f"unsupported trade policy: {params.trade_policy}")
@@ -585,6 +646,7 @@ def _rank_buffer_drop_config(
     params: TreeScoreBacktestParams,
     *,
     gross_exposure_scale: float | None = None,
+    turnover_cap: float | None = None,
 ) -> RankBufferDropConfig:
     return RankBufferDropConfig(
         target_count=params.top_n,
@@ -597,7 +659,11 @@ def _rank_buffer_drop_config(
         estimated_cost_bps=params.policy_estimated_cost_bps,
         no_trade_weight_band=params.policy_no_trade_weight_band,
         partial_rebalance_rate=params.policy_partial_rebalance_rate,
-        max_gross_turnover_per_rebalance=params.policy_max_gross_turnover_per_rebalance,
+        max_gross_turnover_per_rebalance=(
+            params.policy_max_gross_turnover_per_rebalance
+            if turnover_cap is None
+            else turnover_cap
+        ),
         gross_exposure_scale=(
             params.policy_gross_exposure_scale
             if gross_exposure_scale is None
@@ -610,7 +676,18 @@ def _cost_aware_optimizer_config(
     params: TreeScoreBacktestParams,
     *,
     gross_exposure_scale: float | None = None,
+    turnover_cap: float | None = None,
 ) -> CostAwareOptimizerConfig:
+    effective_turnover_cap = (
+        params.policy_max_gross_turnover_per_rebalance
+        if turnover_cap is None
+        else turnover_cap
+    )
+    if params.policy_total_gross_turnover_budget is not None and turnover_cap is not None:
+        # Let the optimizer spend the scheduled path budget for this timestamp;
+        # a hard post-decision cap clips the realized gross delta if the native
+        # sell/buy allocator would otherwise exceed it.
+        effective_turnover_cap = turnover_cap
     return CostAwareOptimizerConfig(
         target_count=params.top_n,
         candidate_rank=params.optimizer_candidate_rank or params.policy_exit_rank or params.top_n * 3,
@@ -625,7 +702,7 @@ def _cost_aware_optimizer_config(
         risk_penalty_multiplier=params.optimizer_risk_penalty_multiplier,
         no_trade_weight_band=params.policy_no_trade_weight_band,
         partial_rebalance_rate=params.policy_partial_rebalance_rate,
-        max_gross_turnover_per_rebalance=params.policy_max_gross_turnover_per_rebalance,
+        max_gross_turnover_per_rebalance=effective_turnover_cap,
         max_gross_exposure_increase_per_rebalance=(
             params.optimizer_max_gross_exposure_increase_per_rebalance
         ),
@@ -635,6 +712,143 @@ def _cost_aware_optimizer_config(
             else gross_exposure_scale
         ),
     )
+
+
+def _policy_turnover_cap_for_signal(
+    params: TreeScoreBacktestParams,
+    *,
+    remaining_turnover_budget: float | None,
+    remaining_decision_count: int,
+) -> float | None:
+    del remaining_turnover_budget, remaining_decision_count
+    return params.policy_max_gross_turnover_per_rebalance
+
+
+def _path_turnover_cap_for_signal(
+    params: TreeScoreBacktestParams,
+    *,
+    remaining_turnover_budget: float | None,
+    remaining_decision_count: int,
+) -> float | None:
+    if remaining_turnover_budget is None:
+        return params.policy_max_gross_turnover_per_rebalance
+    path_cap = max(float(remaining_turnover_budget), 0.0)
+    if params.policy_turnover_budget_pacing <= 0:
+        return path_cap
+    if remaining_decision_count <= 0:
+        return 0.0
+    paced_cap = (
+        path_cap
+        / remaining_decision_count
+        * params.policy_turnover_budget_pacing
+    )
+    return min(path_cap, paced_cap)
+
+
+def _enforce_path_turnover_cap(
+    result: StrategyPolicyResult,
+    cap: float | None,
+) -> StrategyPolicyResult:
+    if cap is None or cap < 0:
+        return result
+    decisions = result.trade_decisions.copy()
+    if decisions.empty:
+        return result
+    gross_turnover = float(decisions["delta_weight"].astype(float).abs().sum())
+    if gross_turnover <= cap + 1e-12 or gross_turnover <= 0:
+        return result
+    scale = cap / gross_turnover
+    target_by_id: dict[str, float] = {}
+    for row in decisions.itertuples(index=False):
+        current = float(row.current_weight)
+        target = current + float(row.delta_weight) * scale
+        target_by_id[str(row.instrument_id)] = target
+    return _replace_policy_targets(result, target_by_id, "path_turnover_budget_limited")
+
+
+def _replace_policy_targets(
+    result: StrategyPolicyResult,
+    target_by_id: dict[str, float],
+    flag: str,
+) -> StrategyPolicyResult:
+    if not target_by_id:
+        return result
+    target_series = pd.Series(target_by_id, dtype=float)
+    intent = result.portfolio_intent.copy()
+    decisions = result.trade_decisions.copy()
+    orders = result.order_intents.copy()
+    state = result.policy_state.copy()
+    if not intent.empty:
+        mapped_targets = intent["instrument_id"].astype(str).map(target_series)
+        intent["policy_target_weight"] = mapped_targets.fillna(
+            intent["policy_target_weight"].astype(float)
+        )
+        intent["aim_weight"] = intent["policy_target_weight"]
+        intent["constraint_flags"] = intent["constraint_flags"].map(
+            lambda value: _append_constraint_flag(value, flag)
+        )
+    if not decisions.empty:
+        mapped_targets = decisions["instrument_id"].astype(str).map(target_series)
+        decisions["target_weight"] = mapped_targets.fillna(
+            decisions["target_weight"].astype(float)
+        )
+        decisions["aim_weight"] = decisions["target_weight"]
+        decisions["delta_weight"] = (
+            decisions["target_weight"].astype(float)
+            - decisions["current_weight"].astype(float)
+        )
+        decisions["constraint_flags"] = decisions["constraint_flags"].map(
+            lambda value: _append_constraint_flag(value, flag)
+        )
+        zero_delta = decisions["delta_weight"].astype(float).abs() <= 1e-12
+        decisions.loc[zero_delta, "decision_reason"] = "turnover_budget_limited"
+    if not orders.empty:
+        orders = orders.loc[orders["instrument_id"].astype(str).isin(target_by_id)].copy()
+        if not orders.empty:
+            orders["target_weight"] = orders["instrument_id"].astype(str).map(target_by_id)
+            current_by_id = decisions.assign(
+                _instrument_id=decisions["instrument_id"].astype(str)
+            ).set_index("_instrument_id")["current_weight"].astype(float)
+            orders["_instrument_id"] = orders["instrument_id"].astype(str)
+            orders["delta_weight"] = (
+                orders["target_weight"].astype(float)
+                - orders["_instrument_id"].map(current_by_id).astype(float)
+            )
+            orders = orders.drop(columns=["_instrument_id"])
+            orders = orders.loc[orders["delta_weight"].astype(float).abs() > 1e-12].copy()
+            orders["side"] = orders["delta_weight"].map(lambda value: "buy" if value > 0 else "sell")
+    if not state.empty:
+        mapped_targets = state["instrument_id"].astype(str).map(target_series)
+        state = state.loc[mapped_targets.notna()].copy()
+        state["current_weight"] = mapped_targets.loc[state.index].astype(float)
+        state = state.loc[state["current_weight"].astype(float) > 1e-12].copy()
+    diagnostics = result.diagnostics.copy()
+    if not diagnostics.empty:
+        planned = float(decisions["delta_weight"].astype(float).abs().sum())
+        diagnostics.loc[:, "planned_gross_turnover"] = planned
+        diagnostics.loc[:, "order_intent_count"] = int(
+            decisions["delta_weight"].astype(float).abs().gt(1e-12).sum()
+        )
+        diagnostics.loc[:, "target_gross_exposure"] = float(
+            decisions["target_weight"].astype(float).sum()
+        )
+        diagnostics.loc[:, "turnover_budget_limited_flag_count"] = int(
+            decisions["constraint_flags"].astype(str).str.contains(flag).sum()
+        )
+    return StrategyPolicyResult(
+        portfolio_intent=intent,
+        trade_decisions=decisions,
+        order_intents=orders,
+        diagnostics=diagnostics,
+        policy_state=state,
+    )
+
+
+def _append_constraint_flag(value: object, flag: str) -> str:
+    flags = set(str(value or "").split(","))
+    flags.discard("")
+    flags.add(flag)
+    return ",".join(sorted(flags))
 
 
 def _load_policy_gross_exposure_schedule(
@@ -707,10 +921,23 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             "risk_reduction_count": 0,
             "gross_exposure_scaled_count": 0,
             "average_target_gross_exposure": 0.0,
+            "average_dynamic_turnover_cap": 0.0,
+            "min_dynamic_turnover_cap": 0.0,
+            "turnover_path_budget_remaining": 0.0,
         }
     target_gross = (
         diagnostics["target_gross_exposure"]
         if "target_gross_exposure" in diagnostics.columns
+        else pd.Series(dtype=float)
+    )
+    dynamic_cap = (
+        diagnostics["dynamic_turnover_cap"]
+        if "dynamic_turnover_cap" in diagnostics.columns
+        else pd.Series(dtype=float)
+    )
+    path_budget_after = (
+        diagnostics["turnover_path_budget_after"]
+        if "turnover_path_budget_after" in diagnostics.columns
         else pd.Series(dtype=float)
     )
     return {
@@ -742,6 +969,13 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
         ),
         "average_target_gross_exposure": (
             float(target_gross.mean()) if not target_gross.empty else 0.0
+        ),
+        "average_dynamic_turnover_cap": (
+            float(dynamic_cap.mean()) if not dynamic_cap.empty else 0.0
+        ),
+        "min_dynamic_turnover_cap": float(dynamic_cap.min()) if not dynamic_cap.empty else 0.0,
+        "turnover_path_budget_remaining": (
+            float(path_budget_after.iloc[-1]) if not path_budget_after.empty else 0.0
         ),
     }
 
@@ -783,6 +1017,8 @@ def _summary_payload(
             "policy_no_trade_weight_band": params.policy_no_trade_weight_band,
             "policy_partial_rebalance_rate": params.policy_partial_rebalance_rate,
             "policy_max_gross_turnover_per_rebalance": params.policy_max_gross_turnover_per_rebalance,
+            "policy_total_gross_turnover_budget": params.policy_total_gross_turnover_budget,
+            "policy_turnover_budget_pacing": params.policy_turnover_budget_pacing,
             "policy_gross_exposure_scale": params.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": (
                 str(params.policy_gross_exposure_scale_path)
@@ -978,6 +1214,8 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--policy-no-trade-weight-band", type=float, default=0.0)
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
+    parser.add_argument("--policy-total-gross-turnover-budget", type=float)
+    parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")
     parser.add_argument("--optimizer-candidate-rank", type=int)
@@ -1051,6 +1289,13 @@ def _parse_args() -> TreeScoreBacktestParams:
         and args.policy_max_gross_turnover_per_rebalance < 0
     ):
         raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
+    if (
+        args.policy_total_gross_turnover_budget is not None
+        and args.policy_total_gross_turnover_budget < 0
+    ):
+        raise ValueError("--policy-total-gross-turnover-budget must be non-negative")
+    if args.policy_turnover_budget_pacing < 0:
+        raise ValueError("--policy-turnover-budget-pacing must be non-negative")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
         raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
     if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:
@@ -1116,6 +1361,8 @@ def _parse_args() -> TreeScoreBacktestParams:
         policy_no_trade_weight_band=args.policy_no_trade_weight_band,
         policy_partial_rebalance_rate=args.policy_partial_rebalance_rate,
         policy_max_gross_turnover_per_rebalance=args.policy_max_gross_turnover_per_rebalance,
+        policy_total_gross_turnover_budget=args.policy_total_gross_turnover_budget,
+        policy_turnover_budget_pacing=args.policy_turnover_budget_pacing,
         policy_gross_exposure_scale=args.policy_gross_exposure_scale,
         policy_gross_exposure_scale_path=(
             Path(args.policy_gross_exposure_scale_path)

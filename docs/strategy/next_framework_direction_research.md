@@ -466,12 +466,40 @@ Near-term framework tasks:
   optimizer framework.
 - [x] Expand `equal` to standard validation and run a narrow turnover-budget
   sensitivity check.
-- [ ] Redesign turnover handling so the optimizer allocates a path-level
+- [x] Redesign turnover handling so the optimizer allocates a path-level
   turnover budget instead of only clipping each rebalance independently.
 - [ ] Revalidate `equal` and `decorrelated` after the turnover allocator change
   using the same standard gate.
 - [ ] Revisit calibrated risk penalties only after turnover allocation is
   stable.
+
+Implemented path-level turnover budget:
+
+- `run_tree_score_backtest.py` now carries `PolicyBudgetState` across streaming
+  chunks, tracks remaining path turnover, and applies a hard post-decision cap
+  through `--policy-total-gross-turnover-budget`.
+- `--policy-turnover-budget-pacing` is optional and defaults to `0`, meaning no
+  time-slicing. A positive value adds an additional remaining-budget pacing cap.
+  Early quick checks showed strict even pacing under-invested the book.
+- Candidate portfolio and policy-validation wrappers pass through the new
+  budget arguments and surface `average_dynamic_turnover_cap` plus
+  `turnover_path_budget_remaining` in summaries.
+
+Quick validation after the allocator change:
+
+```text
+runs/candidate_factor_portfolios/equal_path_turnover_budget_quick_budget155_v5
+```
+
+| Method | Path budget | Pacing | Return | Max drawdown | Gross turnover | Planned turnover | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| equal | 155 | 0 | 33.86% | -7.89% | 148.11 | 155.00 | Passes 160 turnover gate; budget consumed by 2025-09 |
+
+Decision: path-level budgeting fixes the immediate gate breach without the
+overly conservative behavior caused by even pacing. It should now be validated
+on the standard suite for both `equal` and the promoted `decorrelated` default.
+The implementation still warrants a performance pass if full validation shows
+the post-decision cap is a bottleneck.
 
 ## References
 

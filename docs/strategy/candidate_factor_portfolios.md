@@ -595,3 +595,19 @@ budget does not reliably bring full-window turnover below 160 and can hurt
 individual yearly slices. The next framework task should therefore improve the
 trade optimizer or turnover budget allocation itself, rather than continue a
 blind scalar threshold sweep.
+
+Path-level turnover-budget quick check for `equal`:
+
+```text
+runs/candidate_factor_portfolios/equal_path_turnover_budget_quick_budget155_v5
+```
+
+| Scenario | Return | Max drawdown | Gross turnover | Planned turnover | Trades | Cost | Avg target gross | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2023-2025 full | 33.86% | -7.89% | 148.11 | 155.00 | 12,736 | 134,011 | 0.358 | Passes turnover gate; budget exhausted from 2025-09 |
+
+The path-level budget is more useful than another scalar per-rebalance budget
+sweep: it allows the optimizer to spend up to the normal per-rebalance cap while
+keeping the whole validation path inside the turnover envelope. Next step is a
+standard validation comparing `equal` budget `155` against the promoted
+`decorrelated` default.

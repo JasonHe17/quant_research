@@ -305,6 +305,8 @@ def _scenario_command(
         "--policy-max-gross-turnover-per-rebalance": (
             args.policy_max_gross_turnover_per_rebalance
         ),
+        "--policy-total-gross-turnover-budget": args.policy_total_gross_turnover_budget,
+        "--policy-turnover-budget-pacing": args.policy_turnover_budget_pacing,
         "--forecast-calibration-max-abs-edge-bps": (
             args.forecast_calibration_max_abs_edge_bps
         ),
@@ -754,6 +756,8 @@ def _validation_summary(
             "policy_max_gross_turnover_per_rebalance": (
                 args.policy_max_gross_turnover_per_rebalance
             ),
+            "policy_total_gross_turnover_budget": args.policy_total_gross_turnover_budget,
+            "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
             "policy_set_drop_count": args.policy_set_drop_count,
             "policy_set_exit_rank": args.policy_set_exit_rank,
             "policy_set_rebalance_every_n_bars": (
@@ -1119,6 +1123,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-estimated-cost-bps", type=float, default=0.0)
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
+    parser.add_argument("--policy-total-gross-turnover-budget", type=float)
+    parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-set-drop-count", type=int, default=10)
     parser.add_argument("--policy-set-exit-rank", type=int, default=150)
     parser.add_argument("--policy-set-rebalance-every-n-bars", type=int, default=48)
@@ -1264,6 +1270,13 @@ def _parse_args() -> argparse.Namespace:
         and args.policy_max_gross_turnover_per_rebalance < 0
     ):
         raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
+    if (
+        args.policy_total_gross_turnover_budget is not None
+        and args.policy_total_gross_turnover_budget < 0
+    ):
+        raise ValueError("--policy-total-gross-turnover-budget must be non-negative")
+    if args.policy_turnover_budget_pacing < 0:
+        raise ValueError("--policy-turnover-budget-pacing must be non-negative")
     if not 0 < args.policy_set_partial_rebalance_rate <= 1:
         raise ValueError("--policy-set-partial-rebalance-rate must be in (0, 1]")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
