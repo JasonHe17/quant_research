@@ -419,15 +419,13 @@ Live-readiness acceptance:
   optimizer-ready expected-edge and risk-penalty columns.
 - [x] Validate calibrated-edge optimizer inputs across the standard multi-year
   acceptance suite before further factor/operator expansion.
-- [ ] Replace raw bucket-volatility risk penalties with downside or uncertainty
-  calibrated risk inputs before enabling optimizer risk penalties by default.
-- [ ] Re-run the standard validation entry point with the promoted calibrated
+- [x] Re-run the standard validation entry point with the promoted calibrated
   edge-only optimizer configuration: turnover budget `0.10`,
   `optimizer-score-to-edge-bps=0`, `optimizer-risk-penalty-multiplier=0`, and
-  full-sample regime gate schedule. The manual validation already passed with
-  positive 2023/2024/2025 slices, positive doubled-cost stress, and full-window
-  turnover below the 160 gate; this item is to persist the exact promoted run
-  through the reusable validation wrapper.
+  full-sample regime gate schedule. Output:
+  `runs/candidate_factor_portfolios/calibrated_edge_optimizer_validation_promoted_budget010`.
+- [ ] Replace raw bucket-volatility risk penalties with downside or uncertainty
+  calibrated risk inputs before enabling optimizer risk penalties by default.
 - [ ] Add paper-trading contracts for broker adapters, order IDs, fills, and
   reconciliation.
 

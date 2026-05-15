@@ -398,6 +398,14 @@ conda run -n quant python examples/run_candidate_policy_validation.py \
   --forecast-calibration-bucket-count 5
 ```
 
+Official promoted run output:
+
+```text
+runs/candidate_factor_portfolios/calibrated_edge_optimizer_validation_promoted_budget010
+```
+
+Wrapper status: `pass`, with zero failed checks and zero warnings.
+
 Results:
 
 | Scenario | Variant | Return | Max drawdown | Gross turnover | Trade count | Avg target gross | Read |
