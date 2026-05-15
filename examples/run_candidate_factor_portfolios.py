@@ -46,6 +46,7 @@ class BacktestPolicySpec:
     policy_partial_rebalance_rate: float = 1.0
     policy_max_gross_turnover_per_rebalance: float | None = None
     policy_total_gross_turnover_budget: float | None = None
+    policy_turnover_budget_period: str = "path"
     policy_turnover_budget_pacing: float = 0.0
     policy_gross_exposure_scale: float = 1.0
     policy_gross_exposure_scale_path: str | None = None
@@ -223,6 +224,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
                 args.policy_max_gross_turnover_per_rebalance
             ),
             "policy_total_gross_turnover_budget": args.policy_total_gross_turnover_budget,
+            "policy_turnover_budget_period": args.policy_turnover_budget_period,
             "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
             "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
@@ -520,6 +522,7 @@ def _backtest_summary_row(
             "policy_total_gross_turnover_budget"
         ),
         "policy_turnover_budget_pacing": params.get("policy_turnover_budget_pacing"),
+        "policy_turnover_budget_period": params.get("policy_turnover_budget_period"),
         "policy_gross_exposure_scale": params.get("policy_gross_exposure_scale"),
         "policy_gross_exposure_scale_path": params.get("policy_gross_exposure_scale_path"),
         "optimizer_candidate_rank": params.get("optimizer_candidate_rank"),
@@ -544,6 +547,7 @@ def _backtest_summary_row(
         "planned_gross_turnover": diagnostics.get("planned_gross_turnover"),
         "average_target_gross_exposure": diagnostics.get("average_target_gross_exposure"),
         "average_dynamic_turnover_cap": diagnostics.get("average_dynamic_turnover_cap"),
+        "turnover_budget_period_count": diagnostics.get("turnover_budget_period_count"),
         "turnover_path_budget_remaining": diagnostics.get(
             "turnover_path_budget_remaining"
         ),
@@ -587,6 +591,7 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
                     args.policy_max_gross_turnover_per_rebalance
                 ),
                 policy_total_gross_turnover_budget=args.policy_total_gross_turnover_budget,
+                policy_turnover_budget_period=args.policy_turnover_budget_period,
                 policy_turnover_budget_pacing=args.policy_turnover_budget_pacing,
                 policy_gross_exposure_scale=args.policy_gross_exposure_scale,
                 policy_gross_exposure_scale_path=args.policy_gross_exposure_scale_path,
@@ -621,6 +626,7 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
             args.policy_max_gross_turnover_per_rebalance
         ),
         "policy_total_gross_turnover_budget": args.policy_total_gross_turnover_budget,
+        "policy_turnover_budget_period": args.policy_turnover_budget_period,
         "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
         "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
         "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
@@ -776,6 +782,7 @@ def _backtest_command(
                 spec.policy_gross_exposure_scale_path,
             ]
         )
+    command.extend(["--policy-turnover-budget-period", args.policy_turnover_budget_period])
     if spec.optimizer_candidate_rank is not None:
         command.extend(["--optimizer-candidate-rank", str(spec.optimizer_candidate_rank)])
     command.extend(["--optimizer-score-to-edge-bps", str(spec.optimizer_score_to_edge_bps)])
@@ -913,6 +920,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
     parser.add_argument("--policy-total-gross-turnover-budget", type=float)
+    parser.add_argument(
+        "--policy-turnover-budget-period",
+        choices=("path", "year", "month"),
+        default="path",
+    )
     parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")

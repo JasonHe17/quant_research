@@ -73,6 +73,7 @@ class TreeScoreBacktestParams:
     policy_partial_rebalance_rate: float
     policy_max_gross_turnover_per_rebalance: float | None
     policy_total_gross_turnover_budget: float | None
+    policy_turnover_budget_period: str
     policy_turnover_budget_pacing: float
     policy_gross_exposure_scale: float
     policy_gross_exposure_scale_path: Path | None
@@ -99,6 +100,7 @@ class PolicyBudgetState:
     """Mutable path-level policy budget carried across streaming chunks."""
 
     remaining_turnover_budget: float | None = None
+    budget_period_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +208,7 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "policy_partial_rebalance_rate": params.policy_partial_rebalance_rate,
             "policy_max_gross_turnover_per_rebalance": params.policy_max_gross_turnover_per_rebalance,
             "policy_total_gross_turnover_budget": params.policy_total_gross_turnover_budget,
+            "policy_turnover_budget_period": params.policy_turnover_budget_period,
             "policy_turnover_budget_pacing": params.policy_turnover_budget_pacing,
             "policy_gross_exposure_scale": params.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": (
@@ -269,7 +272,7 @@ def _run_tree_score_backtest_streaming(
     total_executions = 0
     instruments: set[str] = set()
     policy_state = empty_portfolio_state()
-    budget_state = PolicyBudgetState(params.policy_total_gross_turnover_budget)
+    budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
     for work_unit in _streaming_work_units(backtest_params):
         bars = _load_bars_from_files(
@@ -501,7 +504,7 @@ def _build_target_weights(
             else empty_portfolio_state(),
             budget_state=budget_state
             if budget_state is not None
-            else PolicyBudgetState(params.policy_total_gross_turnover_budget),
+            else _initial_policy_budget_state(params),
             diagnostics=pd.DataFrame(),
         )
     if params.trade_policy not in {"rank_buffer_drop", "cost_aware_optimizer"}:
@@ -512,12 +515,20 @@ def _build_target_weights(
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
     grouped_signals = list(ranked_signals.groupby("signal_time", sort=True))
-    remaining_turnover_budget = (
-        budget_state.remaining_turnover_budget
-        if budget_state is not None
-        else params.policy_total_gross_turnover_budget
+    current_budget_state = (
+        budget_state if budget_state is not None else _initial_policy_budget_state(params)
     )
+    remaining_turnover_budget = current_budget_state.remaining_turnover_budget
+    budget_period_key = current_budget_state.budget_period_key
     for index, (signal_time, group) in enumerate(grouped_signals):
+        refreshed_budget = _policy_budget_state_for_signal(
+            params,
+            signal_time=signal_time,
+            remaining_turnover_budget=remaining_turnover_budget,
+            budget_period_key=budget_period_key,
+        )
+        remaining_turnover_budget = refreshed_budget.remaining_turnover_budget
+        budget_period_key = refreshed_budget.budget_period_key
         policy = default_policy
         policy_turnover_cap = _policy_turnover_cap_for_signal(
             params,
@@ -572,6 +583,8 @@ def _build_target_weights(
             )
             diagnostics_frame["turnover_path_budget_before"] = budget_before
             diagnostics_frame["turnover_path_budget_after"] = remaining_turnover_budget
+            diagnostics_frame["turnover_budget_period"] = params.policy_turnover_budget_period
+            diagnostics_frame["turnover_budget_period_key"] = budget_period_key
         diagnostics.append(diagnostics_frame)
         target = result.portfolio_intent.loc[
             result.portfolio_intent["policy_target_weight"].astype(float) > 0,
@@ -612,7 +625,10 @@ def _build_target_weights(
     return TargetWeightBuildResult(
         target_weights=target_weights,
         policy_state=state,
-        budget_state=PolicyBudgetState(remaining_turnover_budget),
+        budget_state=PolicyBudgetState(
+            remaining_turnover_budget,
+            budget_period_key,
+        ),
         diagnostics=_concat_policy_diagnostics(diagnostics),
     )
 
@@ -722,6 +738,42 @@ def _policy_turnover_cap_for_signal(
 ) -> float | None:
     del remaining_turnover_budget, remaining_decision_count
     return params.policy_max_gross_turnover_per_rebalance
+
+
+def _initial_policy_budget_state(params: TreeScoreBacktestParams) -> PolicyBudgetState:
+    return PolicyBudgetState(
+        remaining_turnover_budget=params.policy_total_gross_turnover_budget,
+        budget_period_key=None,
+    )
+
+
+def _policy_budget_state_for_signal(
+    params: TreeScoreBacktestParams,
+    *,
+    signal_time: object,
+    remaining_turnover_budget: float | None,
+    budget_period_key: str | None,
+) -> PolicyBudgetState:
+    budget = params.policy_total_gross_turnover_budget
+    if budget is None or params.policy_turnover_budget_period == "path":
+        return PolicyBudgetState(remaining_turnover_budget, budget_period_key)
+    current_key = _turnover_budget_period_key(signal_time, params.policy_turnover_budget_period)
+    if current_key != budget_period_key:
+        return PolicyBudgetState(budget, current_key)
+    return PolicyBudgetState(remaining_turnover_budget, budget_period_key)
+
+
+def _turnover_budget_period_key(value: object, period: str) -> str:
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        return str(value)
+    if period == "month":
+        return timestamp.strftime("%Y-%m")
+    if period == "year":
+        return timestamp.strftime("%Y")
+    if period == "path":
+        return "path"
+    raise ValueError(f"unsupported turnover budget period: {period}")
 
 
 def _path_turnover_cap_for_signal(
@@ -923,6 +975,7 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             "average_target_gross_exposure": 0.0,
             "average_dynamic_turnover_cap": 0.0,
             "min_dynamic_turnover_cap": 0.0,
+            "turnover_budget_period_count": 0,
             "turnover_path_budget_remaining": 0.0,
         }
     target_gross = (
@@ -934,6 +987,11 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
         diagnostics["dynamic_turnover_cap"]
         if "dynamic_turnover_cap" in diagnostics.columns
         else pd.Series(dtype=float)
+    )
+    period_key = (
+        diagnostics["turnover_budget_period_key"]
+        if "turnover_budget_period_key" in diagnostics.columns
+        else pd.Series(dtype=object)
     )
     path_budget_after = (
         diagnostics["turnover_path_budget_after"]
@@ -974,6 +1032,9 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             float(dynamic_cap.mean()) if not dynamic_cap.empty else 0.0
         ),
         "min_dynamic_turnover_cap": float(dynamic_cap.min()) if not dynamic_cap.empty else 0.0,
+        "turnover_budget_period_count": (
+            int(period_key.dropna().nunique()) if not period_key.empty else 0
+        ),
         "turnover_path_budget_remaining": (
             float(path_budget_after.iloc[-1]) if not path_budget_after.empty else 0.0
         ),
@@ -1018,6 +1079,7 @@ def _summary_payload(
             "policy_partial_rebalance_rate": params.policy_partial_rebalance_rate,
             "policy_max_gross_turnover_per_rebalance": params.policy_max_gross_turnover_per_rebalance,
             "policy_total_gross_turnover_budget": params.policy_total_gross_turnover_budget,
+            "policy_turnover_budget_period": params.policy_turnover_budget_period,
             "policy_turnover_budget_pacing": params.policy_turnover_budget_pacing,
             "policy_gross_exposure_scale": params.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": (
@@ -1215,6 +1277,11 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
     parser.add_argument("--policy-total-gross-turnover-budget", type=float)
+    parser.add_argument(
+        "--policy-turnover-budget-period",
+        choices=("path", "year", "month"),
+        default="path",
+    )
     parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")
@@ -1362,6 +1429,7 @@ def _parse_args() -> TreeScoreBacktestParams:
         policy_partial_rebalance_rate=args.policy_partial_rebalance_rate,
         policy_max_gross_turnover_per_rebalance=args.policy_max_gross_turnover_per_rebalance,
         policy_total_gross_turnover_budget=args.policy_total_gross_turnover_budget,
+        policy_turnover_budget_period=args.policy_turnover_budget_period,
         policy_turnover_budget_pacing=args.policy_turnover_budget_pacing,
         policy_gross_exposure_scale=args.policy_gross_exposure_scale,
         policy_gross_exposure_scale_path=(

@@ -79,6 +79,7 @@ def test_candidate_policy_validation_command_supports_single_calibrated_optimize
         policy_estimated_cost_bps=9.0,
         policy_max_gross_turnover_per_rebalance=0.15,
         policy_total_gross_turnover_budget=150.0,
+        policy_turnover_budget_period="year",
         policy_turnover_budget_pacing=1.2,
         forecast_calibration_mode="score_bucket",
         forecast_calibration_lookback_windows=3,
@@ -102,6 +103,7 @@ def test_candidate_policy_validation_command_supports_single_calibrated_optimize
         "0.15"
     )
     assert command[command.index("--policy-total-gross-turnover-budget") + 1] == "150.0"
+    assert command[command.index("--policy-turnover-budget-period") + 1] == "year"
     assert command[command.index("--policy-turnover-budget-pacing") + 1] == "1.2"
     assert command[command.index("--forecast-calibration-mode") + 1] == "score_bucket"
     assert command[command.index("--forecast-calibration-lookback-windows") + 1] == "3"
@@ -378,6 +380,7 @@ def _validation_args(**overrides: object) -> object:
         "policy_partial_rebalance_rate": 1.0,
         "policy_max_gross_turnover_per_rebalance": None,
         "policy_total_gross_turnover_budget": None,
+        "policy_turnover_budget_period": "path",
         "policy_turnover_budget_pacing": 0.0,
         "policy_set_drop_count": 10,
         "policy_set_exit_rank": 150,

@@ -525,6 +525,35 @@ static validation-path budget into a production-usable budget horizon, for
 example rolling annual/monthly envelopes or a replenishing budget ledger, before
 we treat the candidate as the live-trading default.
 
+Rolling budget ledger implementation:
+
+- `--policy-turnover-budget-period` now supports `path`, `year`, and `month`.
+  The default is `path`, so existing full-path budget experiments are unchanged.
+- For `year` and `month`, the configured
+  `--policy-total-gross-turnover-budget` is the per-period gross-turnover
+  envelope. The remaining budget is carried across streaming chunks within the
+  same calendar period and replenished when the period key changes.
+- Policy diagnostics now include `turnover_budget_period`,
+  `turnover_budget_period_key`, and `turnover_budget_period_count`, so run
+  summaries can detect whether a rolling ledger was actually active.
+
+Quick smoke for monthly replenishment:
+
+```text
+runs/candidate_factor_portfolios/equal_monthly_budget_quick_smoke
+```
+
+| Method | Period | Per-period budget | Return | Max drawdown | Gross turnover | Period count | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| equal | month | 6 | 37.27% | -7.24% | 163.53 | 36 | CLI and streaming ledger work; budget is too loose for 160 turnover gate |
+
+Decision: the production-oriented ledger is now available, but the monthly
+budget needs calibration. A monthly envelope of `6` keeps the strategy active
+through the whole path and improves return, but it exceeds the current full
+turnover gate. The next experiment should sweep monthly budgets around
+`4.0-4.5` or test an annual replenishing envelope around `52`, then standard
+validate the best candidate against `equal` path-budget `155`.
+
 ## References
 
 - Qlib: An AI-oriented Quantitative Investment Platform:

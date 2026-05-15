@@ -315,6 +315,7 @@ def _scenario_command(
     for option, value in optional_floats.items():
         if value is not None:
             command.extend([option, str(value)])
+    command.extend(["--policy-turnover-budget-period", args.policy_turnover_budget_period])
     if args.factor_max_weight is not None:
         command.extend(["--factor-max-weight", str(args.factor_max_weight)])
     if args.factor_max_contribution_share is not None:
@@ -757,6 +758,7 @@ def _validation_summary(
                 args.policy_max_gross_turnover_per_rebalance
             ),
             "policy_total_gross_turnover_budget": args.policy_total_gross_turnover_budget,
+            "policy_turnover_budget_period": args.policy_turnover_budget_period,
             "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
             "policy_set_drop_count": args.policy_set_drop_count,
             "policy_set_exit_rank": args.policy_set_exit_rank,
@@ -1124,6 +1126,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
     parser.add_argument("--policy-total-gross-turnover-budget", type=float)
+    parser.add_argument(
+        "--policy-turnover-budget-period",
+        choices=("path", "year", "month"),
+        default="path",
+    )
     parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-set-drop-count", type=int, default=10)
     parser.add_argument("--policy-set-exit-rank", type=int, default=150)

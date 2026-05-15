@@ -632,3 +632,17 @@ leading promoted candidate, but not yet a live default. The full-path budget is
 acceptable for research validation, while production needs a replenishing or
 rolling turnover budget horizon so the strategy cannot spend the entire long-run
 budget before the end of an operating period.
+
+Rolling turnover-budget smoke:
+
+```text
+runs/candidate_factor_portfolios/equal_monthly_budget_quick_smoke
+```
+
+| Method | Period | Budget | Return | Max drawdown | Gross turnover | Period count | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| equal | month | 6 | 37.27% | -7.24% | 163.53 | 36 | Replenishes across all months; too loose for 160 full-turnover gate |
+
+The rolling ledger fixes the production problem of path-budget exhaustion, but
+budget size now needs calibration. The next sweep should focus on monthly
+budgets around `4.0-4.5` or annual budgets around `52`.

@@ -786,6 +786,91 @@ def test_tree_score_target_builder_optionally_paces_path_turnover_budget(tmp_pat
     assert diagnostics.loc["t1", "planned_gross_turnover"] == pytest.approx(0.5)
 
 
+def test_tree_score_target_builder_replenishes_monthly_turnover_budget(tmp_path) -> None:
+    ranked = pd.DataFrame(
+        [
+            {
+                "signal_time": "2024-01-02T10:00:00+08:00",
+                "instrument_id": "inst-a",
+                "score": 0.9,
+                "rank": 1,
+            },
+            {
+                "signal_time": "2024-01-02T10:00:00+08:00",
+                "instrument_id": "inst-b",
+                "score": 0.1,
+                "rank": 2,
+            },
+            {
+                "signal_time": "2024-01-02T10:00:00+08:00",
+                "instrument_id": "inst-c",
+                "score": 0.0,
+                "rank": 3,
+            },
+            {
+                "signal_time": "2024-01-03T10:00:00+08:00",
+                "instrument_id": "inst-b",
+                "score": 0.9,
+                "rank": 1,
+            },
+            {
+                "signal_time": "2024-01-03T10:00:00+08:00",
+                "instrument_id": "inst-a",
+                "score": 0.1,
+                "rank": 2,
+            },
+            {
+                "signal_time": "2024-01-03T10:00:00+08:00",
+                "instrument_id": "inst-c",
+                "score": 0.0,
+                "rank": 3,
+            },
+            {
+                "signal_time": "2024-02-01T10:00:00+08:00",
+                "instrument_id": "inst-c",
+                "score": 0.9,
+                "rank": 1,
+            },
+            {
+                "signal_time": "2024-02-01T10:00:00+08:00",
+                "instrument_id": "inst-b",
+                "score": 0.1,
+                "rank": 2,
+            },
+            {
+                "signal_time": "2024-02-01T10:00:00+08:00",
+                "instrument_id": "inst-a",
+                "score": 0.0,
+                "rank": 3,
+            },
+        ]
+    )
+
+    params = replace(
+        _tree_score_params(tmp_path),
+        trade_policy="cost_aware_optimizer",
+        top_n=1,
+        optimizer_candidate_rank=3,
+        optimizer_score_to_edge_bps=100.0,
+        policy_total_gross_turnover_budget=1.0,
+        policy_turnover_budget_period="month",
+    )
+    result = _build_target_weights(ranked, params)
+
+    diagnostics = result.diagnostics.set_index("timestamp")
+    assert diagnostics.loc["2024-01-02T10:00:00+08:00", "dynamic_turnover_cap"] == pytest.approx(1.0)
+    assert diagnostics.loc["2024-01-02T10:00:00+08:00", "planned_gross_turnover"] == pytest.approx(1.0)
+    assert diagnostics.loc["2024-01-03T10:00:00+08:00", "dynamic_turnover_cap"] == pytest.approx(0.0)
+    assert diagnostics.loc["2024-01-03T10:00:00+08:00", "planned_gross_turnover"] == pytest.approx(0.0)
+    assert diagnostics.loc["2024-02-01T10:00:00+08:00", "dynamic_turnover_cap"] == pytest.approx(1.0)
+    assert diagnostics.loc["2024-02-01T10:00:00+08:00", "planned_gross_turnover"] == pytest.approx(1.0)
+    assert diagnostics["turnover_budget_period_key"].tolist() == [
+        "2024-01",
+        "2024-01",
+        "2024-02",
+    ]
+
+
 def test_tree_score_rank_limit_includes_policy_exit_rank(tmp_path) -> None:
     params = _tree_score_params(tmp_path)
 
@@ -907,6 +992,7 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         policy_partial_rebalance_rate=1.0,
         policy_max_gross_turnover_per_rebalance=None,
         policy_total_gross_turnover_budget=None,
+        policy_turnover_budget_period="path",
         policy_turnover_budget_pacing=0.0,
         policy_gross_exposure_scale=1.0,
         policy_gross_exposure_scale_path=None,
