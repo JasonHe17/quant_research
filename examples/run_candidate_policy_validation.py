@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 import json
 import math
@@ -70,15 +71,12 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
         )
         _write_summary(output_dir, summary)
         return summary
-    for scenario in scenarios:
-        scenario_dir = _scenario_output_dir(args, scenario)
-        if (
-            args.resume_existing
-            and (scenario_dir / "summary.json").exists()
-            and (scenario_dir / "backtest_summary.csv").exists()
-        ):
-            continue
-        _run_scenario(commands[scenario.name], logs_dir / f"{scenario.name}.log")
+    pending_scenarios = [
+        scenario
+        for scenario in scenarios
+        if not _scenario_outputs_exist(args, scenario)
+    ]
+    _run_scenarios(args, pending_scenarios, commands, logs_dir)
     rows = _collect_summary_rows(args, scenarios)
     monthly_rows = _collect_monthly_summary_rows(args, scenarios)
     factor_health_rows = _collect_factor_health_summary_rows(args, scenarios)
@@ -228,11 +226,21 @@ def _scenario_command(
         "--lot-size",
         str(args.lot_size),
         "--backtest-policy-set",
-        "comparison",
+        args.backtest_policy_set,
         "--backtest-policies",
         args.policy,
+        "--trade-policy",
+        args.trade_policy,
+        "--rebalance-every-n-bars",
+        str(args.rebalance_every_n_bars),
+        "--policy-min-hold-bars",
+        str(args.policy_min_hold_bars),
+        "--policy-estimated-cost-bps",
+        str(args.policy_estimated_cost_bps),
         "--policy-no-trade-weight-band",
         str(args.policy_no_trade_weight_band),
+        "--policy-partial-rebalance-rate",
+        str(args.policy_partial_rebalance_rate),
         "--policy-set-drop-count",
         str(args.policy_set_drop_count),
         "--policy-set-exit-rank",
@@ -243,6 +251,18 @@ def _scenario_command(
         str(args.policy_set_partial_rebalance_rate),
         "--policy-gross-exposure-scale",
         str(args.policy_gross_exposure_scale),
+        "--forecast-calibration-mode",
+        args.forecast_calibration_mode,
+        "--forecast-calibration-lookback-windows",
+        str(args.forecast_calibration_lookback_windows),
+        "--forecast-calibration-min-periods",
+        str(args.forecast_calibration_min_periods),
+        "--forecast-calibration-label-lag-windows",
+        str(args.forecast_calibration_label_lag_windows),
+        "--forecast-calibration-bucket-count",
+        str(args.forecast_calibration_bucket_count),
+        "--forecast-calibration-risk-multiplier",
+        str(args.forecast_calibration_risk_multiplier),
         "--optimizer-score-to-edge-bps",
         str(args.optimizer_score_to_edge_bps),
         "--optimizer-min-net-edge-bps",
@@ -270,6 +290,29 @@ def _scenario_command(
         "--backtest-memory-estimate-gb",
         str(scenario.memory_estimate_gb),
     ]
+    optional_ints = {
+        "--hold-rank-buffer": args.hold_rank_buffer,
+        "--policy-entry-rank": args.policy_entry_rank,
+        "--policy-exit-rank": args.policy_exit_rank,
+        "--policy-max-entries-per-rebalance": args.policy_max_entries_per_rebalance,
+        "--policy-max-exits-per-rebalance": args.policy_max_exits_per_rebalance,
+    }
+    for option, value in optional_ints.items():
+        if value is not None:
+            command.extend([option, str(value)])
+    optional_floats = {
+        "--policy-min-expected-edge-bps": args.policy_min_expected_edge_bps,
+        "--policy-max-gross-turnover-per-rebalance": (
+            args.policy_max_gross_turnover_per_rebalance
+        ),
+        "--forecast-calibration-max-abs-edge-bps": (
+            args.forecast_calibration_max_abs_edge_bps
+        ),
+        "--max-bar-turnover-participation": args.max_bar_turnover_participation,
+    }
+    for option, value in optional_floats.items():
+        if value is not None:
+            command.extend([option, str(value)])
     if args.factor_max_weight is not None:
         command.extend(["--factor-max-weight", str(args.factor_max_weight)])
     if args.factor_max_contribution_share is not None:
@@ -335,6 +378,17 @@ def _scenario_output_dir(args: argparse.Namespace, scenario: ValidationScenario)
     return Path(args.output_dir) / scenario.name
 
 
+def _backtest_output_dir(
+    args: argparse.Namespace,
+    scenario: ValidationScenario,
+    method: str,
+) -> Path:
+    path = _scenario_output_dir(args, scenario) / "backtests" / method
+    if args.backtest_policy_set == "single":
+        return path
+    return path / args.policy
+
+
 def _run_scenario(command: list[str], log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8") as log:
@@ -353,6 +407,98 @@ def _run_scenario(command: list[str], log_path: Path) -> None:
             f"candidate policy validation scenario failed with code "
             f"{result.returncode}: see {log_path}"
         )
+
+
+def _scenario_outputs_exist(args: argparse.Namespace, scenario: ValidationScenario) -> bool:
+    if not args.resume_existing:
+        return False
+    scenario_dir = _scenario_output_dir(args, scenario)
+    return (
+        (scenario_dir / "summary.json").exists()
+        and (scenario_dir / "backtest_summary.csv").exists()
+    )
+
+
+def _run_scenarios(
+    args: argparse.Namespace,
+    scenarios: list[ValidationScenario],
+    commands: dict[str, list[str]],
+    logs_dir: Path,
+) -> None:
+    if not scenarios:
+        return
+    if args.scenario_workers == 1 or len(scenarios) == 1:
+        for scenario in scenarios:
+            _run_scenario(commands[scenario.name], logs_dir / f"{scenario.name}.log")
+        return
+    _run_scenarios_with_budget(
+        scenarios,
+        commands=commands,
+        logs_dir=logs_dir,
+        max_workers=args.scenario_workers,
+        memory_budget_gb=_effective_scenario_memory_budget_gb(args),
+    )
+
+
+def _run_scenarios_with_budget(
+    scenarios: list[ValidationScenario],
+    *,
+    commands: dict[str, list[str]],
+    logs_dir: Path,
+    max_workers: int,
+    memory_budget_gb: float,
+) -> None:
+    pending = list(scenarios)
+    running: dict[Future[None], ValidationScenario] = {}
+    running_memory_gb = 0.0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        while pending or running:
+            while pending and len(running) < max_workers:
+                scenario = pending[0]
+                if running_memory_gb + scenario.memory_estimate_gb > memory_budget_gb:
+                    break
+                pending.pop(0)
+                future = executor.submit(
+                    _run_scenario,
+                    commands[scenario.name],
+                    logs_dir / f"{scenario.name}.log",
+                )
+                running[future] = scenario
+                running_memory_gb += scenario.memory_estimate_gb
+            if not running:
+                scenario = pending[0]
+                raise RuntimeError(
+                    f"validation scenario {scenario.name} requires an estimated "
+                    f"{scenario.memory_estimate_gb:.2f} GB, above the configured "
+                    f"scenario memory budget of {memory_budget_gb:.2f} GB"
+                )
+            done, _ = wait(running, return_when=FIRST_COMPLETED)
+            for future in done:
+                scenario = running.pop(future)
+                running_memory_gb -= scenario.memory_estimate_gb
+                future.result()
+
+
+def _effective_scenario_memory_budget_gb(args: argparse.Namespace) -> float:
+    if args.scenario_memory_budget_gb > 0:
+        return args.scenario_memory_budget_gb
+    available = _available_memory_gb()
+    max_estimate = max(args.full_backtest_memory_gb, args.yearly_backtest_memory_gb)
+    if available is None:
+        return max_estimate
+    return max(min(available * 0.55, available - 4.0), max_estimate)
+
+
+def _available_memory_gb() -> float | None:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return None
+    for line in meminfo.read_text(encoding="utf-8").splitlines():
+        if line.startswith("MemAvailable:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                return float(parts[1]) / 1024.0 / 1024.0
+    return None
 
 
 def _collect_summary_rows(
@@ -390,12 +536,7 @@ def _collect_monthly_summary_rows(
     rows: list[dict[str, Any]] = []
     for scenario in scenarios:
         for method in args.methods:
-            backtest_dir = (
-                _scenario_output_dir(args, scenario)
-                / "backtests"
-                / method
-                / args.policy
-            )
+            backtest_dir = _backtest_output_dir(args, scenario, method)
             rows.extend(
                 _monthly_summary_rows_for_backtest(
                     backtest_dir,
@@ -587,6 +728,7 @@ def _validation_summary(
             "factor_correlation": args.factor_correlation,
             "methods": args.methods,
             "primary_method": args.primary_method,
+            "backtest_policy_set": args.backtest_policy_set,
             "policy": args.policy,
             "years": years,
             "top_n": args.top_n,
@@ -595,7 +737,23 @@ def _validation_summary(
             "sell_stamp_tax_bps": args.sell_stamp_tax_bps,
             "min_commission": args.min_commission,
             "cost_stress_multiplier": args.cost_stress_multiplier,
+            "trade_policy": args.trade_policy,
+            "rebalance_every_n_bars": args.rebalance_every_n_bars,
+            "hold_rank_buffer": args.hold_rank_buffer,
+            "policy_entry_rank": args.policy_entry_rank,
+            "policy_exit_rank": args.policy_exit_rank,
+            "policy_max_entries_per_rebalance": (
+                args.policy_max_entries_per_rebalance
+            ),
+            "policy_max_exits_per_rebalance": args.policy_max_exits_per_rebalance,
+            "policy_min_hold_bars": args.policy_min_hold_bars,
+            "policy_min_expected_edge_bps": args.policy_min_expected_edge_bps,
+            "policy_estimated_cost_bps": args.policy_estimated_cost_bps,
             "policy_no_trade_weight_band": args.policy_no_trade_weight_band,
+            "policy_partial_rebalance_rate": args.policy_partial_rebalance_rate,
+            "policy_max_gross_turnover_per_rebalance": (
+                args.policy_max_gross_turnover_per_rebalance
+            ),
             "policy_set_drop_count": args.policy_set_drop_count,
             "policy_set_exit_rank": args.policy_set_exit_rank,
             "policy_set_rebalance_every_n_bars": (
@@ -606,6 +764,21 @@ def _validation_summary(
             ),
             "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
+            "forecast_calibration_mode": args.forecast_calibration_mode,
+            "forecast_calibration_lookback_windows": (
+                args.forecast_calibration_lookback_windows
+            ),
+            "forecast_calibration_min_periods": args.forecast_calibration_min_periods,
+            "forecast_calibration_label_lag_windows": (
+                args.forecast_calibration_label_lag_windows
+            ),
+            "forecast_calibration_bucket_count": args.forecast_calibration_bucket_count,
+            "forecast_calibration_risk_multiplier": (
+                args.forecast_calibration_risk_multiplier
+            ),
+            "forecast_calibration_max_abs_edge_bps": (
+                args.forecast_calibration_max_abs_edge_bps
+            ),
             "optimizer_candidate_rank": args.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": args.optimizer_score_to_edge_bps,
             "optimizer_min_net_edge_bps": args.optimizer_min_net_edge_bps,
@@ -628,6 +801,9 @@ def _validation_summary(
             "factor_health_spread_floor": args.factor_health_spread_floor,
             "factor_health_spread_ceiling": args.factor_health_spread_ceiling,
             "score_diagnostics_top_n": args.score_diagnostics_top_n,
+            "max_bar_turnover_participation": args.max_bar_turnover_participation,
+            "scenario_workers": args.scenario_workers,
+            "scenario_memory_budget_gb": args.scenario_memory_budget_gb,
         },
         "scenarios": {
             scenario.name: {
@@ -893,6 +1069,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--factor-health-rank-ic-ceiling", type=float, default=0.05)
     parser.add_argument("--factor-health-spread-floor", type=float, default=-0.001)
     parser.add_argument("--factor-health-spread-ceiling", type=float, default=0.001)
+    parser.add_argument(
+        "--forecast-calibration-mode",
+        choices=("off", "score_bucket"),
+        default="off",
+        help="optional lagged score-bucket forecast calibration",
+    )
+    parser.add_argument("--forecast-calibration-lookback-windows", type=int, default=20)
+    parser.add_argument("--forecast-calibration-min-periods", type=int, default=5)
+    parser.add_argument("--forecast-calibration-label-lag-windows", type=int, default=48)
+    parser.add_argument("--forecast-calibration-bucket-count", type=int, default=5)
+    parser.add_argument("--forecast-calibration-risk-multiplier", type=float, default=1.0)
+    parser.add_argument("--forecast-calibration-max-abs-edge-bps", type=float)
     parser.add_argument("--initial-cash", type=float, default=1_000_000.0)
     parser.add_argument("--commission-bps", type=float, default=3.0)
     parser.add_argument("--slippage-bps", type=float, default=1.0)
@@ -909,6 +1097,28 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--limit-up-bps", type=float, default=980.0)
     parser.add_argument("--limit-down-bps", type=float, default=980.0)
     parser.add_argument("--policy-no-trade-weight-band", type=float, default=0.002)
+    parser.add_argument(
+        "--backtest-policy-set",
+        choices=("single", "comparison"),
+        default="comparison",
+        help="run one configured policy or a fixed comparison policy set",
+    )
+    parser.add_argument(
+        "--trade-policy",
+        choices=("naive_top_n", "rank_buffer_drop", "cost_aware_optimizer"),
+        default="rank_buffer_drop",
+    )
+    parser.add_argument("--rebalance-every-n-bars", type=int, default=48)
+    parser.add_argument("--hold-rank-buffer", type=int)
+    parser.add_argument("--policy-entry-rank", type=int)
+    parser.add_argument("--policy-exit-rank", type=int)
+    parser.add_argument("--policy-max-entries-per-rebalance", type=int)
+    parser.add_argument("--policy-max-exits-per-rebalance", type=int)
+    parser.add_argument("--policy-min-hold-bars", type=int, default=0)
+    parser.add_argument("--policy-min-expected-edge-bps", type=float)
+    parser.add_argument("--policy-estimated-cost-bps", type=float, default=0.0)
+    parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
+    parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
     parser.add_argument("--policy-set-drop-count", type=int, default=10)
     parser.add_argument("--policy-set-exit-rank", type=int, default=150)
     parser.add_argument("--policy-set-rebalance-every-n-bars", type=int, default=48)
@@ -941,6 +1151,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--backtest-memory-budget-gb", type=float, default=12.0)
     parser.add_argument("--full-backtest-memory-gb", type=float, default=5.0)
     parser.add_argument("--yearly-backtest-memory-gb", type=float, default=5.0)
+    parser.add_argument(
+        "--scenario-workers",
+        type=int,
+        default=1,
+        help="maximum number of validation scenarios to run concurrently",
+    )
+    parser.add_argument(
+        "--scenario-memory-budget-gb",
+        type=float,
+        default=0.0,
+        help="memory budget for concurrent scenarios; 0 auto-detects available memory",
+    )
+    parser.add_argument("--max-bar-turnover-participation", type=float)
     parser.add_argument("--max-full-turnover", type=float, default=160.0)
     parser.add_argument("--resume-existing", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -981,10 +1204,66 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError(
             "--factor-health-spread-floor must be below --factor-health-spread-ceiling"
         )
+    if args.forecast_calibration_lookback_windows <= 0:
+        raise ValueError("--forecast-calibration-lookback-windows must be positive")
+    if args.forecast_calibration_min_periods <= 0:
+        raise ValueError("--forecast-calibration-min-periods must be positive")
+    if args.forecast_calibration_min_periods > args.forecast_calibration_lookback_windows:
+        raise ValueError(
+            "--forecast-calibration-min-periods must be <= "
+            "--forecast-calibration-lookback-windows"
+        )
+    if args.forecast_calibration_label_lag_windows <= 0:
+        raise ValueError("--forecast-calibration-label-lag-windows must be positive")
+    if args.forecast_calibration_bucket_count <= 1:
+        raise ValueError("--forecast-calibration-bucket-count must be greater than 1")
+    if args.forecast_calibration_risk_multiplier < 0:
+        raise ValueError("--forecast-calibration-risk-multiplier must be non-negative")
+    if (
+        args.forecast_calibration_max_abs_edge_bps is not None
+        and args.forecast_calibration_max_abs_edge_bps <= 0
+    ):
+        raise ValueError("--forecast-calibration-max-abs-edge-bps must be positive")
     if args.cost_stress_multiplier <= 0:
         raise ValueError("--cost-stress-multiplier must be positive")
+    if args.rebalance_every_n_bars <= 0:
+        raise ValueError("--rebalance-every-n-bars must be positive")
+    if args.policy_entry_rank is not None and args.policy_entry_rank <= 0:
+        raise ValueError("--policy-entry-rank must be positive")
+    if args.policy_exit_rank is not None and args.policy_exit_rank <= 0:
+        raise ValueError("--policy-exit-rank must be positive")
+    entry_rank = args.policy_entry_rank or args.top_n
+    exit_rank = args.policy_exit_rank or max(args.top_n, args.policy_set_exit_rank)
+    if exit_rank < entry_rank:
+        raise ValueError("--policy-exit-rank must be greater than or equal to entry rank")
+    if (
+        args.policy_max_entries_per_rebalance is not None
+        and args.policy_max_entries_per_rebalance < 0
+    ):
+        raise ValueError("--policy-max-entries-per-rebalance must be non-negative")
+    if (
+        args.policy_max_exits_per_rebalance is not None
+        and args.policy_max_exits_per_rebalance < 0
+    ):
+        raise ValueError("--policy-max-exits-per-rebalance must be non-negative")
+    if args.policy_min_hold_bars < 0:
+        raise ValueError("--policy-min-hold-bars must be non-negative")
+    if (
+        args.policy_min_expected_edge_bps is not None
+        and args.policy_min_expected_edge_bps < 0
+    ):
+        raise ValueError("--policy-min-expected-edge-bps must be non-negative")
+    if args.policy_estimated_cost_bps < 0:
+        raise ValueError("--policy-estimated-cost-bps must be non-negative")
     if args.policy_set_exit_rank < args.top_n:
         raise ValueError("--policy-set-exit-rank must be greater than or equal to --top-n")
+    if not 0 < args.policy_partial_rebalance_rate <= 1:
+        raise ValueError("--policy-partial-rebalance-rate must be in (0, 1]")
+    if (
+        args.policy_max_gross_turnover_per_rebalance is not None
+        and args.policy_max_gross_turnover_per_rebalance < 0
+    ):
+        raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
     if not 0 < args.policy_set_partial_rebalance_rate <= 1:
         raise ValueError("--policy-set-partial-rebalance-rate must be in (0, 1]")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
@@ -1015,6 +1294,15 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--backtest-memory-budget-gb must be non-negative")
     if args.full_backtest_memory_gb <= 0 or args.yearly_backtest_memory_gb <= 0:
         raise ValueError("backtest memory estimates must be positive")
+    if args.scenario_workers <= 0:
+        raise ValueError("--scenario-workers must be positive")
+    if args.scenario_memory_budget_gb < 0:
+        raise ValueError("--scenario-memory-budget-gb must be non-negative")
+    if (
+        args.max_bar_turnover_participation is not None
+        and not 0 < args.max_bar_turnover_participation <= 1
+    ):
+        raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
     if args.max_full_turnover <= 0:
         raise ValueError("--max-full-turnover must be positive")
     return args

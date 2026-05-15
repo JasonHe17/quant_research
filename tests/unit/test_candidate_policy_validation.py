@@ -5,11 +5,15 @@ from pathlib import Path
 import pytest
 
 from examples.run_candidate_policy_validation import (
+    ValidationScenario,
+    _backtest_output_dir,
     _collect_factor_contribution_summary_rows,
     _collect_factor_health_summary_rows,
+    _effective_scenario_memory_budget_gb,
     _infer_full_years,
     _monthly_summary_rows_for_backtest,
     _scenario_command,
+    _scenario_outputs_exist,
     _validation_checks,
     _validation_scenarios,
 )
@@ -60,6 +64,48 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     assert command[command.index("--factor-health-lookback-windows") + 1] == "10"
     assert command[command.index("--score-diagnostics-top-n") + 1] == "50"
     assert "--resume-existing" in command
+
+
+def test_candidate_policy_validation_command_supports_single_calibrated_optimizer(
+    tmp_path: Path,
+) -> None:
+    args = _validation_args(
+        output_dir=str(tmp_path),
+        methods=["decorrelated"],
+        backtest_policy_set="single",
+        policy="single",
+        trade_policy="cost_aware_optimizer",
+        rebalance_every_n_bars=48,
+        policy_estimated_cost_bps=9.0,
+        policy_max_gross_turnover_per_rebalance=0.15,
+        forecast_calibration_mode="score_bucket",
+        forecast_calibration_lookback_windows=3,
+        forecast_calibration_min_periods=1,
+        optimizer_candidate_rank=150,
+        optimizer_score_to_edge_bps=0.0,
+        optimizer_min_net_edge_bps=1.0,
+        optimizer_risk_penalty_multiplier=0.0,
+        optimizer_weighting="equal",
+    )
+    scenario = _validation_scenarios(args, years=[2024])[0]
+
+    command = _scenario_command(args, scenario)
+
+    assert command[command.index("--backtest-policy-set") + 1] == "single"
+    assert command[command.index("--backtest-policies") + 1] == "single"
+    assert command[command.index("--trade-policy") + 1] == "cost_aware_optimizer"
+    assert command[command.index("--rebalance-every-n-bars") + 1] == "48"
+    assert command[command.index("--policy-estimated-cost-bps") + 1] == "9.0"
+    assert command[command.index("--policy-max-gross-turnover-per-rebalance") + 1] == (
+        "0.15"
+    )
+    assert command[command.index("--forecast-calibration-mode") + 1] == "score_bucket"
+    assert command[command.index("--forecast-calibration-lookback-windows") + 1] == "3"
+    assert command[command.index("--forecast-calibration-min-periods") + 1] == "1"
+    assert command[command.index("--optimizer-candidate-rank") + 1] == "150"
+    assert command[command.index("--optimizer-score-to-edge-bps") + 1] == "0.0"
+    assert command[command.index("--optimizer-risk-penalty-multiplier") + 1] == "0.0"
+    assert command[command.index("--optimizer-weighting") + 1] == "equal"
 
 
 def test_candidate_policy_validation_infers_full_years(tmp_path: Path) -> None:
@@ -158,6 +204,60 @@ def test_candidate_policy_validation_builds_monthly_summary(tmp_path: Path) -> N
     assert rows[1]["total_transaction_cost"] == 7.0
 
 
+def test_candidate_policy_validation_backtest_output_dir_matches_policy_set(
+    tmp_path: Path,
+) -> None:
+    scenario = ValidationScenario(
+        name="full_base",
+        partition_start="2024_01",
+        partition_end="2024_12",
+        start="2024-01-01T00:00:00+08:00",
+        end="2024-12-31T23:59:59+08:00",
+        commission_bps=3.0,
+        slippage_bps=1.0,
+        sell_stamp_tax_bps=5.0,
+        min_commission=5.0,
+        memory_estimate_gb=5.0,
+        description="test",
+    )
+    comparison_args = _validation_args(output_dir=str(tmp_path))
+    single_args = _validation_args(
+        output_dir=str(tmp_path),
+        backtest_policy_set="single",
+        policy="single",
+    )
+
+    assert _backtest_output_dir(comparison_args, scenario, "decorrelated") == (
+        tmp_path / "full_base" / "backtests" / "decorrelated" / "partial_rebalance_daily"
+    )
+    assert _backtest_output_dir(single_args, scenario, "decorrelated") == (
+        tmp_path / "full_base" / "backtests" / "decorrelated"
+    )
+
+
+def test_candidate_policy_validation_detects_resume_existing_scenario(
+    tmp_path: Path,
+) -> None:
+    args = _validation_args(output_dir=str(tmp_path), resume_existing=True)
+    scenario = _validation_scenarios(args, years=[2024])[0]
+    scenario_dir = tmp_path / scenario.name
+    scenario_dir.mkdir(parents=True)
+    (scenario_dir / "summary.json").write_text("{}", encoding="utf-8")
+    (scenario_dir / "backtest_summary.csv").write_text("method,policy\n", encoding="utf-8")
+
+    assert _scenario_outputs_exist(args, scenario)
+    assert not _scenario_outputs_exist(
+        _validation_args(output_dir=str(tmp_path), resume_existing=False),
+        scenario,
+    )
+
+
+def test_candidate_policy_validation_uses_explicit_scenario_memory_budget() -> None:
+    args = _validation_args(scenario_memory_budget_gb=7.5)
+
+    assert _effective_scenario_memory_budget_gb(args) == 7.5
+
+
 def test_candidate_policy_validation_collects_factor_summaries(tmp_path: Path) -> None:
     args = _validation_args(output_dir=str(tmp_path))
     scenario = _validation_scenarios(args, years=[2024])[0]
@@ -226,6 +326,7 @@ def _validation_args(**overrides: object) -> object:
         "years": None,
         "methods": ["decorrelated", "equal", "ic_weighted"],
         "primary_method": "decorrelated",
+        "backtest_policy_set": "comparison",
         "policy": "partial_rebalance_daily",
         "top_n": 50,
         "score_diagnostics_top_n": 50,
@@ -241,6 +342,13 @@ def _validation_args(**overrides: object) -> object:
         "factor_health_rank_ic_ceiling": 0.05,
         "factor_health_spread_floor": -0.001,
         "factor_health_spread_ceiling": 0.001,
+        "forecast_calibration_mode": "off",
+        "forecast_calibration_lookback_windows": 20,
+        "forecast_calibration_min_periods": 5,
+        "forecast_calibration_label_lag_windows": 48,
+        "forecast_calibration_bucket_count": 5,
+        "forecast_calibration_risk_multiplier": 1.0,
+        "forecast_calibration_max_abs_edge_bps": None,
         "initial_cash": 1_000_000.0,
         "commission_bps": 3.0,
         "slippage_bps": 1.0,
@@ -252,7 +360,19 @@ def _validation_args(**overrides: object) -> object:
         "exclude_st": True,
         "limit_up_bps": 980.0,
         "limit_down_bps": 980.0,
+        "trade_policy": "rank_buffer_drop",
+        "rebalance_every_n_bars": 48,
+        "hold_rank_buffer": None,
+        "policy_entry_rank": None,
+        "policy_exit_rank": None,
+        "policy_max_entries_per_rebalance": None,
+        "policy_max_exits_per_rebalance": None,
+        "policy_min_hold_bars": 0,
+        "policy_min_expected_edge_bps": None,
+        "policy_estimated_cost_bps": 0.0,
         "policy_no_trade_weight_band": 0.002,
+        "policy_partial_rebalance_rate": 1.0,
+        "policy_max_gross_turnover_per_rebalance": None,
         "policy_set_drop_count": 10,
         "policy_set_exit_rank": 150,
         "policy_set_rebalance_every_n_bars": 48,
@@ -273,6 +393,9 @@ def _validation_args(**overrides: object) -> object:
         "backtest_memory_budget_gb": 12.0,
         "full_backtest_memory_gb": 5.0,
         "yearly_backtest_memory_gb": 5.0,
+        "scenario_workers": 1,
+        "scenario_memory_budget_gb": 0.0,
+        "max_bar_turnover_participation": None,
         "max_full_turnover": 160.0,
         "resume_existing": True,
         "dry_run": False,

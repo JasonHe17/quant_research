@@ -82,6 +82,9 @@ def test_candidate_policy_validation_example_has_cli_help() -> None:
     assert result.returncode == 0
     assert "--profile" in result.stdout
     assert "--policy" in result.stdout
+    assert "--backtest-policy-set" in result.stdout
+    assert "--forecast-calibration-mode" in result.stdout
+    assert "--scenario-workers" in result.stdout
 
 
 def test_candidate_policy_regime_analysis_example_has_cli_help() -> None:
