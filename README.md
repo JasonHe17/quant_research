@@ -53,6 +53,7 @@ it does not load large market data or write cache artifacts.
 - [Framework Pipeline v0](docs/architecture/framework_pipeline.md)
 - [Production Strategy Framework and Roadmap](docs/architecture/production_strategy_framework.md)
 - [Framework v1 Acceptance Plan](docs/validation/framework_v1_acceptance.md)
+- [Factor Development Standard](docs/validation/factor_development_standard.md)
 - [Factor Admission Plan](docs/validation/factor_admission.md)
 - [Candidate Factor Portfolio Experiments](docs/strategy/candidate_factor_portfolios.md)
 
@@ -73,6 +74,20 @@ After the standard suite passes, generate a factor admission report:
 conda run -n quant python examples/analyze_framework_v1_acceptance.py \
   --benchmark-summary runs/framework_v1_acceptance/standard/benchmark_summary.json \
   --output-dir runs/framework_v1_acceptance/standard/factor_admission
+```
+
+Before adding or promoting factors, validate the factor registry and render a
+candidate review:
+
+```bash
+conda run -n quant python examples/validate_factor_registry.py \
+  --registry configs/factors/factor_registry.json \
+  --output-dir runs/factor_registry_validation/current \
+  --enforce-clean
+
+conda run -n quant python examples/run_factor_candidate_review.py \
+  --factor-id intraday_volatility_5m_w24 \
+  --output-dir runs/factor_candidate_reviews/intraday_volatility_5m_w24
 ```
 
 Then build candidate-factor portfolio scores:

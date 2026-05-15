@@ -45,6 +45,17 @@ def test_readme_links_factor_admission_document() -> None:
     assert "Default Gates" in text
 
 
+def test_readme_links_factor_development_standard_document() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    doc = Path("docs/validation/factor_development_standard.md")
+
+    assert "docs/validation/factor_development_standard.md" in readme
+    assert doc.exists()
+    text = doc.read_text(encoding="utf-8")
+    assert "Factor Development Standard" in text
+    assert "Unified Candidate Review Format" in text
+
+
 def test_readme_links_candidate_factor_portfolio_document() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     doc = Path("docs/strategy/candidate_factor_portfolios.md")

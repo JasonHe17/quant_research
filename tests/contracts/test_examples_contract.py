@@ -87,6 +87,36 @@ def test_candidate_policy_validation_example_has_cli_help() -> None:
     assert "--scenario-workers" in result.stdout
 
 
+def test_factor_registry_validation_example_has_cli_help() -> None:
+    script = Path("examples/validate_factor_registry.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--registry" in result.stdout
+    assert "--enforce-clean" in result.stdout
+
+
+def test_factor_candidate_review_example_has_cli_help() -> None:
+    script = Path("examples/run_factor_candidate_review.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--factor-id" in result.stdout
+    assert "--admission-report" in result.stdout
+
+
 def test_candidate_policy_regime_analysis_example_has_cli_help() -> None:
     script = Path("examples/analyze_candidate_policy_regime.py")
 
