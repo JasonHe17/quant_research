@@ -427,6 +427,52 @@ reducing return. Use the calibrated edge-only optimizer with budget `0.10` as
 the next framework default; keep calibrated risk penalties disabled until their
 risk model is redesigned.
 
+## Candidate Combination Recheck Under Promoted Framework
+
+The first combination-layer expansion under the promoted framework compared
+`equal`, `ic_weighted`, and `decorrelated` while holding the trading policy,
+calibration, regime gross-exposure gate, optimizer settings, and cost model
+constant.
+
+Quick full-window output:
+
+```text
+runs/candidate_factor_portfolios/promoted_combination_methods_full_base_quick
+```
+
+| Method | Return | Max drawdown | Gross turnover | Trades | Read |
+| --- | ---: | ---: | ---: | ---: | --- |
+| equal | 36.40% | -7.89% | 166.00 | 14,357 | Best return, fails turnover gate |
+| decorrelated | 32.21% | -8.49% | 156.37 | 13,663 | Current default, passes gate |
+| ic_weighted | 16.15% | -9.69% | 157.91 | 14,260 | Not competitive |
+
+Expanded `equal` standard validation:
+
+| Run | Status | Full return | Full drawdown | Full turnover | High-cost return | Yearly returns | Read |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| `promoted_combination_methods_equal_standard_budget010` | `warn` | 36.40% | -7.89% | 166.00 | 23.47% | 8.93%, 16.69%, 7.07% | Strong, but breaches turnover |
+| `promoted_combination_methods_equal_standard_budget0095` | `warn` | 37.18% | -9.08% | 162.63 | 24.42% | 6.56%, 15.31%, 6.91% | Still breaches turnover |
+
+Decision: do not replace the promoted `decorrelated` default yet. `equal` is
+now the leading score-combination research candidate because it improves the
+2024 failure window and remains positive under cost stress, but it still cannot
+pass the full-window turnover gate through a small per-rebalance budget tweak.
+This points to a framework-side issue in the trade optimizer or turnover budget
+allocation, not to a need for more factor-side sweeps.
+
+Near-term framework tasks:
+
+- [x] Recheck candidate combination methods under the promoted calibrated
+  optimizer framework.
+- [x] Expand `equal` to standard validation and run a narrow turnover-budget
+  sensitivity check.
+- [ ] Redesign turnover handling so the optimizer allocates a path-level
+  turnover budget instead of only clipping each rebalance independently.
+- [ ] Revalidate `equal` and `decorrelated` after the turnover allocator change
+  using the same standard gate.
+- [ ] Revisit calibrated risk penalties only after turnover allocation is
+  stable.
+
 ## References
 
 - Qlib: An AI-oriented Quantitative Investment Platform:

@@ -529,3 +529,69 @@ The grid suggests the policy improvement is not a one-parameter artifact. Wider
 exit buffers reduce turnover, and larger drop budgets can improve Q1 return but
 raise trade count and cost. Use `exit_rank=150 or 200` and `drop=5 or 10` as the
 next conservative search region before expanding to multi-year runs.
+
+## Calibrated Optimizer Combination-Layer Sweep
+
+After promoting the calibrated expected-edge optimizer with regime gross
+exposure gating and a `0.10` per-rebalance gross-turnover budget, the next
+combination-layer check reused the same production-like trading framework and
+changed only the score-combination method. This keeps the comparison focused on
+factor combination quality rather than policy differences.
+
+Full-window quick comparison output:
+
+```text
+runs/candidate_factor_portfolios/promoted_combination_methods_full_base_quick
+```
+
+| Method | Return | Max drawdown | Gross turnover | Trades | Cost | Avg target gross | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| equal | 36.40% | -7.89% | 166.00 | 14,357 | 150,913 | 0.395 | Highest return, but above 160 turnover gate |
+| decorrelated | 32.21% | -8.49% | 156.37 | 13,663 | 141,100 | 0.397 | Current promoted default; passes gate |
+| ic_weighted | 16.15% | -9.69% | 157.91 | 14,260 | 138,315 | 0.369 | Weaker risk-adjusted result |
+
+The quick sweep changes the candidate ranking under the new framework:
+`equal` now beats `decorrelated` on full-window return and drawdown, while
+`ic_weighted` is not competitive. Because `equal` breaches the turnover gate,
+it was expanded to standard validation before any default change.
+
+Standard validation for `equal`, budget `0.10`:
+
+```text
+runs/candidate_factor_portfolios/promoted_combination_methods_equal_standard_budget010
+```
+
+Wrapper status: `warn`, with zero failed checks and one turnover warning.
+
+| Scenario | Return | Max drawdown | Gross turnover | Trades | Cost | Avg target gross | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2023-2025 full | 36.40% | -7.89% | 166.00 | 14,357 | 150,913 | 0.395 | Stronger than current default, but above turnover gate |
+| 2023-2025 high cost | 23.47% | -8.71% | 165.79 | 14,289 | 254,659 | 0.395 | Positive under doubled costs |
+| 2023 | 8.93% | -6.44% | 59.91 | 4,134 | 46,322 | 0.477 | Positive yearly slice |
+| 2024 | 16.69% | -7.23% | 48.33 | 4,987 | 44,267 | 0.317 | Stronger than current default |
+| 2025 | 7.07% | -4.89% | 57.09 | 5,225 | 48,206 | 0.377 | Positive yearly slice |
+
+Narrow budget check for `equal`, budget `0.095`:
+
+```text
+runs/candidate_factor_portfolios/promoted_combination_methods_equal_standard_budget0095
+```
+
+Wrapper status: `warn`, with zero failed checks and one turnover warning.
+
+| Scenario | Return | Max drawdown | Gross turnover | Trades | Cost | Avg target gross | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2023-2025 full | 37.18% | -9.08% | 162.63 | 14,368 | 148,917 | 0.394 | Still above turnover gate |
+| 2023-2025 high cost | 24.42% | -9.83% | 162.37 | 14,341 | 250,294 | 0.394 | Positive under doubled costs |
+| 2023 | 6.56% | -7.04% | 59.55 | 4,236 | 46,114 | 0.478 | Lower return than budget 0.10 |
+| 2024 | 15.31% | -7.14% | 47.26 | 4,963 | 43,419 | 0.320 | Still strong |
+| 2025 | 6.91% | -7.02% | 55.83 | 5,223 | 47,682 | 0.378 | Positive yearly slice |
+
+Decision: keep `decorrelated` as the promoted default because it is the only
+combination method that currently passes the standard gate without warnings.
+Promote `equal` to the leading research candidate, not to the default. The
+`0.095` check shows that simply tightening the single per-rebalance turnover
+budget does not reliably bring full-window turnover below 160 and can hurt
+individual yearly slices. The next framework task should therefore improve the
+trade optimizer or turnover budget allocation itself, rather than continue a
+blind scalar threshold sweep.
