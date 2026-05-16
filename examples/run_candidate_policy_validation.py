@@ -129,7 +129,7 @@ def _prepare_factor_risk_gate(
     generated_schedule_path = gate_output_dir / "gross_exposure_schedule.csv"
     args.policy_gross_exposure_scale_path = str(generated_schedule_path)
     params = {
-        "dataset_dir": args.dataset_dir,
+        "dataset_dir": args.factor_risk_gate_dataset_dir or args.dataset_dir,
         "feature": args.factor_risk_gate_feature,
         "output_dir": str(gate_output_dir),
         "aggregate": args.factor_risk_gate_aggregate,
@@ -841,6 +841,7 @@ def _validation_summary(
             "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
             "factor_risk_gate_feature": args.factor_risk_gate_feature,
+            "factor_risk_gate_dataset_dir": args.factor_risk_gate_dataset_dir,
             "factor_risk_gate_output_dir": args.factor_risk_gate_output_dir,
             "factor_risk_gate_base_schedule": args.factor_risk_gate_base_schedule,
             "factor_risk_gate_aggregate": args.factor_risk_gate_aggregate,
@@ -1251,6 +1252,13 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "build a lagged factor-risk gross-exposure schedule before validation "
             "and pass it to all policy scenarios"
+        ),
+    )
+    parser.add_argument(
+        "--factor-risk-gate-dataset-dir",
+        help=(
+            "optional dataset directory used only for factor-risk gate construction; "
+            "defaults to --dataset-dir"
         ),
     )
     parser.add_argument(

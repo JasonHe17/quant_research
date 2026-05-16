@@ -452,6 +452,7 @@ def _validation_args(**overrides: object) -> object:
         "policy_gross_exposure_scale": 1.0,
         "policy_gross_exposure_scale_path": None,
         "factor_risk_gate_feature": None,
+        "factor_risk_gate_dataset_dir": None,
         "factor_risk_gate_output_dir": None,
         "factor_risk_gate_base_schedule": None,
         "factor_risk_gate_aggregate": "mean",

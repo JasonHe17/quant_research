@@ -158,7 +158,10 @@ The validator treats missing active-factor safety metadata as a hard error.
    prefer the integrated
    `examples/run_candidate_policy_validation.py --factor-risk-gate-feature ...`
    path so the gate schedule is rebuilt from the validation dataset and passed
-   consistently to every full, yearly, and cost-stress scenario.
+   consistently to every full, yearly, and cost-stress scenario. If the
+   validation alpha dataset does not yet include the risk-control feature, use
+   `--factor-risk-gate-dataset-dir` to point the gate builder at the matching
+   factor dataset while keeping the portfolio alpha dataset fixed.
 
 7. Promote, watchlist, or reject with evidence.
    Promotion requires the registry entry, candidate review, admission report,

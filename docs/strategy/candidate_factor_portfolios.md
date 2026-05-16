@@ -727,3 +727,30 @@ the next integration target for the portfolio layer. This is not evidence that
 `intraday_downside_volatility_5m_w48` should be traded as a standalone alpha:
 the isolated sleeve lost `34.96%` in the same 2023-2025 window after the
 single-factor score path was fixed.
+
+Follow-up standard validation on the current leading `equal` annual-budget
+candidate:
+
+```text
+runs/candidate_factor_portfolios/equal_annual_budget52_downside_gate_standard
+```
+
+This run used `equal` score combination, annual gross-turnover budget `52`, and
+the same downside-volatility gate schedule. The wrapper completed with
+`overall_status=pass`, zero warnings, and zero failed checks.
+
+| Scenario | Equal budget 52 | Equal budget 52 + gate | Delta | Gate drawdown | Gate turnover | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 2023-2025 full | 33.44% | 28.73% | -4.71 pp | -8.01% | 146.62 | Gate reduces return despite lower turnover |
+| 2023-2025 high cost | 22.05% | 18.55% | -3.50 pp | -9.34% | 146.43 | Still positive but weaker than no-gate equal |
+| 2023 | 8.51% | 8.75% | +0.24 pp | -6.40% | 50.54 | Small improvement |
+| 2024 | 16.69% | 14.71% | -1.98 pp | -5.91% | 45.98 | Drawdown improves, return falls |
+| 2025 | 6.83% | 4.57% | -2.26 pp | -5.56% | 49.90 | Return falls |
+
+Decision update: do not make the downside-volatility gate part of the default
+`equal` annual-budget configuration. The gate remains valuable for
+`decorrelated` and for defensive risk-control experiments, but it is not a
+global default because it reduces the current leading `equal` configuration's
+full-window and high-cost returns. Keep it as an explicit optional profile until
+either the gate is recalibrated for `equal` or a market-regime selector chooses
+between gated and ungated exposure.
