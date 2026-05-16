@@ -21,6 +21,7 @@ from examples.run_baseline_a_real_backtest import (
     SimulationState,
     _add_execution_constraint_columns,
     _build_next_bar_executions,
+    _build_reversal_signals,
     _execution_constraint_counts,
     _simulate,
 )
@@ -187,6 +188,29 @@ def test_baseline_execution_builder_keeps_only_targets_and_tracked_holdings() ->
     ]
     assert target.iloc[0] == pytest.approx(1.0)
     assert pd.isna(held.iloc[0])
+
+
+def test_reversal_signals_select_top_names_with_stable_tie_breaks() -> None:
+    bars = pd.DataFrame(
+        [
+            _bar_with_close("t0", "inst-a", "600001.SH", 10.0),
+            _bar_with_close("t0", "inst-b", "600000.SH", 10.0),
+            _bar_with_close("t0", "inst-c", "600002.SH", 10.0),
+            _bar_with_close("t1", "inst-a", "600001.SH", 9.0),
+            _bar_with_close("t1", "inst-b", "600000.SH", 9.0),
+            _bar_with_close("t1", "inst-c", "600002.SH", 11.0),
+            _bar_with_close("t2", "inst-a", "600001.SH", 8.0),
+            _bar_with_close("t2", "inst-b", "600000.SH", 8.0),
+            _bar_with_close("t2", "inst-c", "600002.SH", 12.0),
+        ]
+    )
+
+    signals = _build_reversal_signals(bars, _params(top_n=2, lookback_bars=1))
+
+    first_time = signals.loc[signals["signal_time"] == "t1"]
+    assert first_time["instrument_id"].tolist() == ["inst-b", "inst-a"]
+    assert first_time["target_weight"].tolist() == [0.5, 0.5]
+    assert "inst-c" not in set(first_time["instrument_id"])
 
 
 def test_simulation_caps_trade_size_by_bar_turnover_participation() -> None:
@@ -507,3 +531,16 @@ def _bar(timestamp: str, instrument_id: str) -> dict[str, object]:
         "limit_up_open": False,
         "limit_down_open": False,
     }
+
+
+def _bar_with_close(
+    timestamp: str,
+    instrument_id: str,
+    canonical_code: str,
+    close_price: float,
+) -> dict[str, object]:
+    row = _bar(timestamp, instrument_id)
+    row["canonical_code"] = canonical_code
+    row["close_price"] = close_price
+    row["open_price"] = close_price
+    return row

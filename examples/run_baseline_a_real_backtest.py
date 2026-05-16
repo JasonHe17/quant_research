@@ -524,19 +524,7 @@ def _build_reversal_signals(
         )
         frame = frame.loc[frame["avg_turnover"] >= params.min_avg_turnover].copy()
     frame = frame.loc[frame["factor_value"].notna()].copy()
-    selected: list[pd.DataFrame] = []
-    for timestamp, group in frame.groupby("bar_end_time", sort=True):
-        chosen = group.sort_values(
-            ["factor_value", "canonical_code"],
-            ascending=[False, True],
-        ).head(params.top_n)
-        if chosen.empty:
-            continue
-        output = chosen.loc[:, ["bar_end_time", "instrument_id", "canonical_code"]].copy()
-        output["signal_time"] = timestamp
-        output["target_weight"] = 1.0 / len(chosen)
-        selected.append(output)
-    if not selected:
+    if frame.empty:
         return pd.DataFrame(
             columns=[
                 "signal_time",
@@ -546,7 +534,30 @@ def _build_reversal_signals(
                 "target_weight",
             ]
         )
-    return pd.concat(selected, ignore_index=True)
+    selected = (
+        frame.sort_values(
+            ["bar_end_time", "factor_value", "canonical_code"],
+            ascending=[True, False, True],
+        )
+        .groupby("bar_end_time", sort=False)
+        .head(params.top_n)
+        .loc[:, ["bar_end_time", "instrument_id", "canonical_code"]]
+        .copy()
+    )
+    selected["signal_time"] = selected["bar_end_time"]
+    selected["target_weight"] = 1.0 / selected.groupby(
+        "bar_end_time", sort=False
+    )["instrument_id"].transform("size")
+    return selected.loc[
+        :,
+        [
+            "signal_time",
+            "bar_end_time",
+            "instrument_id",
+            "canonical_code",
+            "target_weight",
+        ],
+    ].reset_index(drop=True)
 
 
 def _build_next_bar_executions(
