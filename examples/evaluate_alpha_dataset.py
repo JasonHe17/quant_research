@@ -403,7 +403,7 @@ def _parse_args() -> argparse.Namespace:
         default="spearman",
     )
     parser.add_argument("--skip-feature-correlation", action="store_true")
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=8)
     parser.add_argument(
         "--backend",
         choices=("thread", "process"),

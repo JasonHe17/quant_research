@@ -54,7 +54,7 @@ def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
         "backtest_full_high_cost",
     }
     assert summary["config"]["profile"] == "standard"
-    assert summary["config"]["evaluation_workers"] == 4
+    assert summary["config"]["evaluation_workers"] == 8
     assert summary["config"]["backtest_workers"] == 2
     assert summary["config"]["backtest_memory_budget_gb"] is None
     assert "acceptance_plan" in summary

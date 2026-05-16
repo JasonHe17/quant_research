@@ -42,7 +42,7 @@ Default settings:
 - Dataset partitioning: monthly, with 30 calendar days of warmup padding.
 - Factors: all currently implemented intraday factor groups.
 - Labels: one-bar delayed entry, 48 five-minute-bar forward return.
-- Factor evaluation: four worker processes by default; reduce with
+- Factor evaluation: eight worker processes by default; reduce with
   `--evaluation-workers` on memory-constrained machines.
 - Backtest streaming: fast parquet runs use monthly chunks by default, with
   10 calendar days of boundary padding for lookback and next-bar continuity.

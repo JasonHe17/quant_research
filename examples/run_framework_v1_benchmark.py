@@ -979,7 +979,7 @@ def _parse_args() -> argparse.Namespace:
         help="Padding passed to fast_parquet streaming chunks.",
     )
     parser.add_argument("--dataset-workers", type=int, default=1)
-    parser.add_argument("--evaluation-workers", type=int, default=4)
+    parser.add_argument("--evaluation-workers", type=int, default=8)
     parser.add_argument(
         "--evaluation-backend",
         choices=("thread", "process"),
