@@ -25,6 +25,10 @@ from examples.run_baseline_a_real_backtest import (
     _execution_constraint_counts,
     _simulate,
 )
+from examples.run_baseline_a_grid import (
+    _build_reversal_signals_from_features,
+    _factor_column,
+)
 
 
 def test_execution_constraint_columns_flag_st_and_limit_states() -> None:
@@ -211,6 +215,29 @@ def test_reversal_signals_select_top_names_with_stable_tie_breaks() -> None:
     assert first_time["instrument_id"].tolist() == ["inst-b", "inst-a"]
     assert first_time["target_weight"].tolist() == [0.5, 0.5]
     assert "inst-c" not in set(first_time["instrument_id"])
+
+
+def test_grid_reversal_signals_select_top_names_from_precomputed_features() -> None:
+    bars = pd.DataFrame(
+        [
+            _feature_bar("t1", "inst-a", "600001.SH", 0.2),
+            _feature_bar("t1", "inst-b", "600000.SH", 0.2),
+            _feature_bar("t1", "inst-c", "600002.SH", -0.1),
+            _feature_bar("t2", "inst-a", "600001.SH", 0.3),
+        ]
+    )
+
+    signals = _build_reversal_signals_from_features(
+        bars,
+        _params(top_n=2, lookback_bars=1),
+    )
+
+    first_time = signals.loc[signals["signal_time"] == "t1"]
+    assert first_time["instrument_id"].tolist() == ["inst-b", "inst-a"]
+    assert first_time["target_weight"].tolist() == [0.5, 0.5]
+    assert signals.loc[
+        signals["signal_time"] == "t2", "target_weight"
+    ].tolist() == [1.0]
 
 
 def test_simulation_caps_trade_size_by_bar_turnover_participation() -> None:
@@ -543,4 +570,16 @@ def _bar_with_close(
     row["canonical_code"] = canonical_code
     row["close_price"] = close_price
     row["open_price"] = close_price
+    return row
+
+
+def _feature_bar(
+    timestamp: str,
+    instrument_id: str,
+    canonical_code: str,
+    factor_value: float,
+) -> dict[str, object]:
+    row = _bar(timestamp, instrument_id)
+    row["canonical_code"] = canonical_code
+    row[_factor_column(1)] = factor_value
     return row

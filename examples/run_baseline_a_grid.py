@@ -116,7 +116,11 @@ def run_grid_shared_data(
             print(f"running {index}/{len(runs)} {run.name}", flush=True)
             signals = _build_reversal_signals_from_features(bars, run.params)
             run.signal_count += len(signals)
-            executions = _build_next_bar_executions(bars, signals)
+            executions = _build_next_bar_executions(
+                bars,
+                signals,
+                tracked_instruments=set(run.state.lots),
+            )
             del signals
             if executions.empty:
                 del executions
@@ -206,22 +210,7 @@ def _build_reversal_signals_from_features(
         avg_col = _avg_turnover_column(params.liquidity_window_bars)
         mask = mask & (bars[avg_col] >= params.min_avg_turnover)
     frame = bars.loc[mask]
-    selected: list[pd.DataFrame] = []
-    for timestamp, group in frame.groupby("bar_end_time", sort=True):
-        chosen = group.sort_values(
-            [factor_col, "canonical_code"],
-            ascending=[False, True],
-        ).head(params.top_n)
-        if chosen.empty:
-            continue
-        output = chosen.loc[
-            :,
-            ["bar_end_time", "instrument_id", "canonical_code"],
-        ].copy()
-        output["signal_time"] = timestamp
-        output["target_weight"] = 1.0 / len(chosen)
-        selected.append(output)
-    if not selected:
+    if frame.empty:
         return pd.DataFrame(
             columns=[
                 "signal_time",
@@ -231,7 +220,30 @@ def _build_reversal_signals_from_features(
                 "target_weight",
             ]
         )
-    return pd.concat(selected, ignore_index=True)
+    selected = (
+        frame.sort_values(
+            ["bar_end_time", factor_col, "canonical_code"],
+            ascending=[True, False, True],
+        )
+        .groupby("bar_end_time", sort=False)
+        .head(params.top_n)
+        .loc[:, ["bar_end_time", "instrument_id", "canonical_code"]]
+        .copy()
+    )
+    selected["signal_time"] = selected["bar_end_time"]
+    selected["target_weight"] = 1.0 / selected.groupby(
+        "bar_end_time", sort=False
+    )["instrument_id"].transform("size")
+    return selected.loc[
+        :,
+        [
+            "signal_time",
+            "bar_end_time",
+            "instrument_id",
+            "canonical_code",
+            "target_weight",
+        ],
+    ].reset_index(drop=True)
 
 
 def _factor_column(lookback_bars: int) -> str:
