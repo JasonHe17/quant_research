@@ -17,6 +17,10 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES_DIR = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from examples.build_factor_risk_gate import build_factor_risk_gate
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +51,7 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     logs_dir = output_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
+    factor_risk_gate_summary = _prepare_factor_risk_gate(args, output_dir)
     years = args.years or _infer_full_years(Path(args.dataset_dir))
     scenarios = _validation_scenarios(args, years=years)
     commands = {
@@ -68,6 +73,7 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
             monthly_rows=[],
             factor_health_rows=[],
             factor_contribution_rows=[],
+            factor_risk_gate_summary=factor_risk_gate_summary,
         )
         _write_summary(output_dir, summary)
         return summary
@@ -98,6 +104,7 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
         monthly_rows=monthly_rows,
         factor_health_rows=factor_health_rows,
         factor_contribution_rows=factor_contribution_rows,
+        factor_risk_gate_summary=factor_risk_gate_summary,
     )
     _write_summary(output_dir, summary)
     if args.enforce_gates and summary["validation"]["overall_status"] == "fail":
@@ -105,6 +112,57 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
             "candidate policy validation gates failed; see "
             f"{output_dir / 'validation_summary.json'}"
         )
+    return summary
+
+
+def _prepare_factor_risk_gate(
+    args: argparse.Namespace,
+    output_dir: Path,
+) -> dict[str, Any] | None:
+    if not args.factor_risk_gate_feature:
+        return None
+    gate_output_dir = Path(args.factor_risk_gate_output_dir or output_dir / "factor_risk_gate")
+    base_schedule = args.factor_risk_gate_base_schedule
+    if base_schedule is None:
+        base_schedule = args.policy_gross_exposure_scale_path
+    original_policy_scale_path = args.policy_gross_exposure_scale_path
+    generated_schedule_path = gate_output_dir / "gross_exposure_schedule.csv"
+    args.policy_gross_exposure_scale_path = str(generated_schedule_path)
+    params = {
+        "dataset_dir": args.dataset_dir,
+        "feature": args.factor_risk_gate_feature,
+        "output_dir": str(gate_output_dir),
+        "aggregate": args.factor_risk_gate_aggregate,
+        "aggregate_quantile": args.factor_risk_gate_aggregate_quantile,
+        "lookback_windows": args.factor_risk_gate_lookback_windows,
+        "min_periods": args.factor_risk_gate_min_periods,
+        "high_quantile": args.factor_risk_gate_high_quantile,
+        "extreme_quantile": args.factor_risk_gate_extreme_quantile,
+        "full_scale": args.factor_risk_gate_full_scale,
+        "reduced_scale": args.factor_risk_gate_reduced_scale,
+        "blocked_scale": args.factor_risk_gate_blocked_scale,
+        "warmup_scale": args.factor_risk_gate_warmup_scale,
+        "base_schedule": base_schedule,
+        "combine_mode": "min",
+        "partition_start": args.factor_risk_gate_partition_start,
+        "partition_end": args.factor_risk_gate_partition_end,
+        "max_partitions": args.factor_risk_gate_max_partitions,
+    }
+    if args.dry_run:
+        return {
+            "status": "dry_run",
+            "base_policy_gross_exposure_scale_path": original_policy_scale_path,
+            "effective_policy_gross_exposure_scale_path": str(generated_schedule_path),
+            "params": params,
+            "artifacts": {
+                "schedule": str(generated_schedule_path),
+                "summary": str(gate_output_dir / "summary.json"),
+            },
+        }
+    summary = build_factor_risk_gate(argparse.Namespace(**params))
+    summary["status"] = "completed"
+    summary["base_policy_gross_exposure_scale_path"] = original_policy_scale_path
+    summary["effective_policy_gross_exposure_scale_path"] = str(generated_schedule_path)
     return summary
 
 
@@ -729,6 +787,7 @@ def _validation_summary(
     monthly_rows: list[dict[str, Any]],
     factor_health_rows: list[dict[str, Any]],
     factor_contribution_rows: list[dict[str, Any]],
+    factor_risk_gate_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "status": status,
@@ -781,6 +840,30 @@ def _validation_summary(
             ),
             "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
+            "factor_risk_gate_feature": args.factor_risk_gate_feature,
+            "factor_risk_gate_output_dir": args.factor_risk_gate_output_dir,
+            "factor_risk_gate_base_schedule": args.factor_risk_gate_base_schedule,
+            "factor_risk_gate_aggregate": args.factor_risk_gate_aggregate,
+            "factor_risk_gate_aggregate_quantile": (
+                args.factor_risk_gate_aggregate_quantile
+            ),
+            "factor_risk_gate_lookback_windows": (
+                args.factor_risk_gate_lookback_windows
+            ),
+            "factor_risk_gate_min_periods": args.factor_risk_gate_min_periods,
+            "factor_risk_gate_high_quantile": args.factor_risk_gate_high_quantile,
+            "factor_risk_gate_extreme_quantile": (
+                args.factor_risk_gate_extreme_quantile
+            ),
+            "factor_risk_gate_full_scale": args.factor_risk_gate_full_scale,
+            "factor_risk_gate_reduced_scale": args.factor_risk_gate_reduced_scale,
+            "factor_risk_gate_blocked_scale": args.factor_risk_gate_blocked_scale,
+            "factor_risk_gate_warmup_scale": args.factor_risk_gate_warmup_scale,
+            "factor_risk_gate_partition_start": (
+                args.factor_risk_gate_partition_start
+            ),
+            "factor_risk_gate_partition_end": args.factor_risk_gate_partition_end,
+            "factor_risk_gate_max_partitions": args.factor_risk_gate_max_partitions,
             "forecast_calibration_mode": args.forecast_calibration_mode,
             "forecast_calibration_lookback_windows": (
                 args.forecast_calibration_lookback_windows
@@ -822,6 +905,7 @@ def _validation_summary(
             "scenario_workers": args.scenario_workers,
             "scenario_memory_budget_gb": args.scenario_memory_budget_gb,
         },
+        "factor_risk_gate": factor_risk_gate_summary,
         "scenarios": {
             scenario.name: {
                 "partition_start": scenario.partition_start,
@@ -1162,6 +1246,41 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-set-partial-rebalance-rate", type=float, default=0.5)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")
+    parser.add_argument(
+        "--factor-risk-gate-feature",
+        help=(
+            "build a lagged factor-risk gross-exposure schedule before validation "
+            "and pass it to all policy scenarios"
+        ),
+    )
+    parser.add_argument(
+        "--factor-risk-gate-output-dir",
+        help="optional output directory for the generated factor-risk gate schedule",
+    )
+    parser.add_argument(
+        "--factor-risk-gate-base-schedule",
+        help=(
+            "optional base schedule to combine with the generated gate; defaults "
+            "to --policy-gross-exposure-scale-path when that path is provided"
+        ),
+    )
+    parser.add_argument(
+        "--factor-risk-gate-aggregate",
+        choices=("mean", "median", "quantile"),
+        default="mean",
+    )
+    parser.add_argument("--factor-risk-gate-aggregate-quantile", type=float, default=0.75)
+    parser.add_argument("--factor-risk-gate-lookback-windows", type=int, default=240)
+    parser.add_argument("--factor-risk-gate-min-periods", type=int, default=48)
+    parser.add_argument("--factor-risk-gate-high-quantile", type=float, default=0.80)
+    parser.add_argument("--factor-risk-gate-extreme-quantile", type=float, default=0.95)
+    parser.add_argument("--factor-risk-gate-full-scale", type=float, default=1.0)
+    parser.add_argument("--factor-risk-gate-reduced-scale", type=float, default=0.5)
+    parser.add_argument("--factor-risk-gate-blocked-scale", type=float, default=0.0)
+    parser.add_argument("--factor-risk-gate-warmup-scale", type=float, default=1.0)
+    parser.add_argument("--factor-risk-gate-partition-start")
+    parser.add_argument("--factor-risk-gate-partition-end")
+    parser.add_argument("--factor-risk-gate-max-partitions", type=int)
     parser.add_argument("--optimizer-candidate-rank", type=int)
     parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
     parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
@@ -1312,6 +1431,50 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--policy-set-partial-rebalance-rate must be in (0, 1]")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
         raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
+    if not 0 < args.factor_risk_gate_aggregate_quantile < 1:
+        raise ValueError("--factor-risk-gate-aggregate-quantile must be in (0, 1)")
+    if args.factor_risk_gate_lookback_windows <= 0:
+        raise ValueError("--factor-risk-gate-lookback-windows must be positive")
+    if args.factor_risk_gate_min_periods <= 0:
+        raise ValueError("--factor-risk-gate-min-periods must be positive")
+    if args.factor_risk_gate_min_periods > args.factor_risk_gate_lookback_windows:
+        raise ValueError(
+            "--factor-risk-gate-min-periods must be <= "
+            "--factor-risk-gate-lookback-windows"
+        )
+    if not (
+        0
+        < args.factor_risk_gate_high_quantile
+        < args.factor_risk_gate_extreme_quantile
+        < 1
+    ):
+        raise ValueError(
+            "--factor-risk-gate-high-quantile and "
+            "--factor-risk-gate-extreme-quantile must satisfy 0 < high < extreme < 1"
+        )
+    for name in (
+        "factor_risk_gate_full_scale",
+        "factor_risk_gate_reduced_scale",
+        "factor_risk_gate_blocked_scale",
+        "factor_risk_gate_warmup_scale",
+    ):
+        value = getattr(args, name)
+        if not 0 <= value <= 1:
+            raise ValueError(f"--{name.replace('_', '-')} must be in [0, 1]")
+    if (
+        args.factor_risk_gate_partition_start
+        and args.factor_risk_gate_partition_end
+        and args.factor_risk_gate_partition_start > args.factor_risk_gate_partition_end
+    ):
+        raise ValueError(
+            "--factor-risk-gate-partition-start must not be after "
+            "--factor-risk-gate-partition-end"
+        )
+    if (
+        args.factor_risk_gate_max_partitions is not None
+        and args.factor_risk_gate_max_partitions <= 0
+    ):
+        raise ValueError("--factor-risk-gate-max-partitions must be positive")
     if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:
         raise ValueError("--optimizer-candidate-rank must be positive")
     if args.optimizer_score_to_edge_bps < 0:

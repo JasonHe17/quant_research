@@ -135,17 +135,54 @@ standard cost-aware optimizer.
 Portfolio artifact:
 `runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json`.
 
-An isolated downside-volatility-only portfolio attempt was also run, but the
-current single-factor score construction degenerated to zero-valued score files
-and the backtest aborted with no executable shifted signals. Treat that as a
-portfolio-validation framework limitation for single-factor score construction,
-not as promotion evidence.
+The isolated downside-volatility-only portfolio was rerun after the
+single-factor score normalization fix. Score files were produced for all 36
+months, but the standalone alpha sleeve was not viable: total return was
+`-34.96%`, max drawdown was `-37.93%`, and gross turnover was `154.25`.
+This confirms that the feature should not be treated as an independent alpha.
+
+## Downside-Volatility Risk Gate Follow-Up
+
+The active follow-up tested `intraday_downside_volatility_5m_w48` as a
+market-wide gross-exposure gate layered on top of the existing promoted
+decorrelated policy. The gate uses the cross-sectional mean of the downside
+volatility factor, computes thresholds from lagged rolling history only, and
+combines with the existing regime schedule by taking the lower gross-exposure
+scale.
+
+| artifact | path |
+| --- | --- |
+| Gate builder | `examples/build_factor_risk_gate.py` |
+| Gate schedule | `runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1/gross_exposure_schedule.csv` |
+| Standard validation | `runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1_promoted_standard/validation_summary.json` |
+
+Gate state counts: `full=26472`, `reduced=3978`, `blocked=4301`,
+`warmup=48`.
+
+Standard validation completed with `overall_status=pass`, zero failed checks,
+and zero warnings.
+
+| Scenario | Return | Max drawdown | Gross turnover | Cost | Read |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 2023-2025 full | 38.77% | -6.96% | 149.96 | 139,397 | Better return, drawdown, and turnover than promoted decorrelated baseline |
+| 2023-2025 high cost | 27.31% | -8.33% | 149.70 | 235,246 | Positive under doubled costs |
+| 2023 | 10.44% | -6.96% | 56.56 | 43,685 | Positive annual slice |
+| 2024 | 15.68% | -7.21% | 41.94 | 39,086 | Positive annual slice |
+| 2025 | 7.05% | -5.54% | 51.25 | 44,583 | Positive annual slice |
+
+Compared with
+`runs/candidate_factor_portfolios/decorrelated_promoted_standard_after_path_budget`,
+the gate improves full-window return from `32.21%` to `38.77%`, high-cost
+return from `20.31%` to `27.31%`, full-window drawdown from `-8.49%` to
+`-6.96%`, and full-window gross turnover from `156.37` to `149.96`.
+This is promotion evidence for a risk-gate use of the factor, not for a
+standalone alpha sleeve.
 
 ## Final Governance Decision
 
 | factor_id | registry_status | decision |
 | --- | --- | --- |
-| intraday_downside_volatility_5m_w48 | candidate | Strong standalone inverted risk penalty; keep for targeted portfolio review, do not promote from the negative equal-combo portfolio. |
+| intraday_downside_volatility_5m_w48 | candidate | Validated as a downside-risk gross-exposure gate; keep candidate status for risk-control integration, not standalone alpha promotion. |
 | intraday_volume_confirmed_momentum_5m_w48 | watchlist | Passed single-factor gates only weakly and failed portfolio validation when combined with downside volatility. |
 | intraday_return_skewness_5m_w48 | watchlist | Statistically strong but negative after transaction-cost spread. |
 | intraday_return_turnover_corr_5m_w48 | watchlist | Statistically useful but cost-fragile and only two stable annual slices. |
@@ -154,6 +191,6 @@ not as promotion evidence.
 | intraday_money_flow_5m_w48 | reject | Failed coverage, directional hit-rate, and annual stability gates. |
 | intraday_gap_5m | reject | Near-zero IC, failed t-stat and hit-rate gates, negative after-cost spread. |
 
-No factor from this batch is promoted. The only active follow-up candidate is
-`intraday_downside_volatility_5m_w48`, preferably as a risk penalty or gate
-rather than as an equal-weight alpha sleeve.
+No standalone alpha factor from this batch is promoted. The active positive
+result is `intraday_downside_volatility_5m_w48` as a risk-control gate layered
+onto the promoted portfolio policy.

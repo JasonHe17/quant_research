@@ -730,7 +730,9 @@
         "admission_status": "candidate",
         "candidate_review": "runs/factor_candidate_reviews/intraday_downside_volatility_5m_w48/factor_candidate_review.json",
         "portfolio_validation": "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
-        "portfolio_validation_status": "negative_combo_no_promotion"
+        "portfolio_validation_status": "risk_gate_validated",
+        "risk_gate_schedule": "runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1/gross_exposure_schedule.csv",
+        "risk_gate_validation": "runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1_promoted_standard/validation_summary.json"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_downside_volatility_5m_w48",
@@ -762,7 +764,9 @@
         "docs/strategy/factor_research_batch_2026_05_16.md",
         "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
         "runs/factor_candidate_reviews/intraday_downside_volatility_5m_w48/factor_candidate_review.json",
-        "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json"
+        "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
+        "runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1/summary.json",
+        "runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1_promoted_standard/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -777,7 +781,7 @@
         "research",
         "risk_penalty"
       ],
-      "notes": "Formal 2023-2025 admission cleared all gates in inverted direction, but the equal two-factor candidate portfolio was negative after costs; keep as a candidate risk penalty pending isolated portfolio validation."
+      "notes": "Formal 2023-2025 admission cleared all gates in inverted direction. The equal two-factor candidate portfolio was negative and the isolated alpha sleeve lost 34.96%, so do not promote it as standalone alpha. A lagged downside-volatility gross-exposure gate improved the promoted decorrelated policy from 32.21% to 38.77% full-window return, improved high-cost return from 20.31% to 27.31%, reduced drawdown, and passed all standard validation checks."
     },
     {
       "a_share_constraints": {

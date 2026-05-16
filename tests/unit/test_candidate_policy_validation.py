@@ -12,10 +12,12 @@ from examples.run_candidate_policy_validation import (
     _effective_scenario_memory_budget_gb,
     _infer_full_years,
     _monthly_summary_rows_for_backtest,
+    _prepare_factor_risk_gate,
     _scenario_command,
     _scenario_outputs_exist,
     _validation_checks,
     _validation_scenarios,
+    run_candidate_policy_validation,
 )
 
 
@@ -117,6 +119,59 @@ def test_candidate_policy_validation_command_supports_single_calibrated_optimize
     assert command[command.index("--optimizer-score-to-edge-bps") + 1] == "0.0"
     assert command[command.index("--optimizer-risk-penalty-multiplier") + 1] == "0.0"
     assert command[command.index("--optimizer-weighting") + 1] == "equal"
+
+
+def test_candidate_policy_validation_dry_run_wires_factor_risk_gate(
+    tmp_path: Path,
+) -> None:
+    args = _validation_args(
+        output_dir=str(tmp_path),
+        profile="quick",
+        years=[2024],
+        dry_run=True,
+        factor_risk_gate_feature="risk",
+        policy_gross_exposure_scale_path="base_schedule.csv",
+    )
+
+    summary = run_candidate_policy_validation(args)
+
+    schedule_path = str(tmp_path / "factor_risk_gate" / "gross_exposure_schedule.csv")
+    command = summary["commands"]["full_base"]
+    assert summary["factor_risk_gate"]["status"] == "dry_run"
+    assert summary["factor_risk_gate"]["base_policy_gross_exposure_scale_path"] == (
+        "base_schedule.csv"
+    )
+    assert summary["params"]["policy_gross_exposure_scale_path"] == schedule_path
+    assert command[command.index("--policy-gross-exposure-scale-path") + 1] == schedule_path
+
+
+def test_candidate_policy_validation_prepares_factor_risk_gate_schedule(
+    tmp_path: Path,
+) -> None:
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir()
+    pd = pytest.importorskip("pandas")
+    pd.DataFrame(
+        [
+            {"timestamp": f"t{index}", "risk": float(value)}
+            for index, value in enumerate([1, 1, 3, 5])
+        ]
+    ).to_parquet(dataset_dir / "dataset_2024_01.parquet", index=False)
+    args = _validation_args(
+        dataset_dir=str(dataset_dir),
+        output_dir=str(tmp_path / "validation"),
+        factor_risk_gate_feature="risk",
+        factor_risk_gate_lookback_windows=2,
+        factor_risk_gate_min_periods=1,
+    )
+
+    summary = _prepare_factor_risk_gate(args, tmp_path / "validation")
+
+    schedule_path = tmp_path / "validation" / "factor_risk_gate" / "gross_exposure_schedule.csv"
+    assert summary is not None
+    assert summary["status"] == "completed"
+    assert args.policy_gross_exposure_scale_path == str(schedule_path)
+    assert schedule_path.exists()
 
 
 def test_candidate_policy_validation_infers_full_years(tmp_path: Path) -> None:
@@ -396,6 +451,22 @@ def _validation_args(**overrides: object) -> object:
         "policy_set_partial_rebalance_rate": 0.5,
         "policy_gross_exposure_scale": 1.0,
         "policy_gross_exposure_scale_path": None,
+        "factor_risk_gate_feature": None,
+        "factor_risk_gate_output_dir": None,
+        "factor_risk_gate_base_schedule": None,
+        "factor_risk_gate_aggregate": "mean",
+        "factor_risk_gate_aggregate_quantile": 0.75,
+        "factor_risk_gate_lookback_windows": 240,
+        "factor_risk_gate_min_periods": 48,
+        "factor_risk_gate_high_quantile": 0.80,
+        "factor_risk_gate_extreme_quantile": 0.95,
+        "factor_risk_gate_full_scale": 1.0,
+        "factor_risk_gate_reduced_scale": 0.5,
+        "factor_risk_gate_blocked_scale": 0.0,
+        "factor_risk_gate_warmup_scale": 1.0,
+        "factor_risk_gate_partition_start": None,
+        "factor_risk_gate_partition_end": None,
+        "factor_risk_gate_max_partitions": None,
         "optimizer_candidate_rank": None,
         "optimizer_score_to_edge_bps": 100.0,
         "optimizer_min_net_edge_bps": 0.0,

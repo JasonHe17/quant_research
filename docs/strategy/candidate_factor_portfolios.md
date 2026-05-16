@@ -682,3 +682,48 @@ the full validation turnover below `160`, and avoids the excessive local
 constraint of a monthly `4.3` budget. Do not promote the monthly ledger until a
 separate experiment shows that monthly pacing improves live risk without
 destroying return.
+
+## Downside-Volatility Gross-Exposure Gate
+
+The next candidate control uses
+`intraday_downside_volatility_5m_w48` as a market-wide risk gate rather than as
+a standalone alpha. The schedule is built from the cross-sectional mean factor
+value, with high/extreme thresholds computed from lagged rolling history only.
+It is then combined with the existing regime gate by taking the lower
+gross-exposure scale.
+
+```text
+runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1
+runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1_promoted_standard
+```
+
+Gate state counts: `full=26472`, `reduced=3978`, `blocked=4301`,
+`warmup=48`.
+
+Standard validation completed with `overall_status=pass`, zero warnings, and
+zero failed checks.
+
+| Scenario | Return | Max drawdown | Gross turnover | Planned turnover | Trades | Cost | Avg target gross | Read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2023-2025 full | 38.77% | -6.96% | 149.96 | 156.58 | 13,433 | 139,397 | 0.381 | Passes turnover gate and improves promoted decorrelated baseline |
+| 2023-2025 high cost | 27.31% | -8.33% | 149.70 | 156.58 | 13,433 | 235,246 | 0.381 | Positive under doubled costs |
+| 2023 | 10.44% | -6.96% | 56.56 | 58.62 | 3,976 | 43,685 | 0.459 | Positive yearly slice |
+| 2024 | 15.68% | -7.21% | 41.94 | 44.07 | 4,505 | 39,086 | 0.316 | Positive yearly slice |
+| 2025 | 7.05% | -5.54% | 51.25 | 54.58 | 4,952 | 44,583 | 0.362 | Positive yearly slice |
+
+Baseline comparison against
+`runs/candidate_factor_portfolios/decorrelated_promoted_standard_after_path_budget`:
+
+| Scenario | Baseline return | Gate return | Baseline drawdown | Gate drawdown | Baseline turnover | Gate turnover |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2023-2025 full | 32.21% | 38.77% | -8.49% | -6.96% | 156.37 | 149.96 |
+| 2023-2025 high cost | 20.31% | 27.31% | -9.28% | -8.33% | 156.19 | 149.70 |
+| 2023 | 7.97% | 10.44% | -7.47% | -6.96% | 57.95 | 56.56 |
+| 2024 | 12.18% | 15.68% | -7.23% | -7.21% | 44.05 | 41.94 |
+| 2025 | 5.10% | 7.05% | -7.10% | -5.54% | 54.25 | 51.25 |
+
+Decision: keep the factor as a risk-control candidate and promote the gate to
+the next integration target for the portfolio layer. This is not evidence that
+`intraday_downside_volatility_5m_w48` should be traded as a standalone alpha:
+the isolated sleeve lost `34.96%` in the same 2023-2025 window after the
+single-factor score path was fixed.

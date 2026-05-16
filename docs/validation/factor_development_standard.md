@@ -154,7 +154,11 @@ The validator treats missing active-factor safety metadata as a hard error.
    The current downstream framework default for combination-layer review is the
    cost-aware optimizer with `equal` score combination and annual gross-turnover
    budget `52`. Portfolio validation must use the promoted framework unless a
-   framework issue is explicitly being tested.
+   framework issue is explicitly being tested. For factor-derived risk controls,
+   prefer the integrated
+   `examples/run_candidate_policy_validation.py --factor-risk-gate-feature ...`
+   path so the gate schedule is rebuilt from the validation dataset and passed
+   consistently to every full, yearly, and cost-stress scenario.
 
 7. Promote, watchlist, or reject with evidence.
    Promotion requires the registry entry, candidate review, admission report,

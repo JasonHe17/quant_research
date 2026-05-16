@@ -84,6 +84,7 @@ def test_candidate_policy_validation_example_has_cli_help() -> None:
     assert "--policy" in result.stdout
     assert "--backtest-policy-set" in result.stdout
     assert "--forecast-calibration-mode" in result.stdout
+    assert "--factor-risk-gate-feature" in result.stdout
     assert "--scenario-workers" in result.stdout
 
 
@@ -166,6 +167,22 @@ def test_policy_regime_gate_builder_example_has_cli_help() -> None:
     assert "--gate-mode" in result.stdout
     assert "--budget-min-scale" in result.stdout
     assert "--scale-change-deadband" in result.stdout
+
+
+def test_factor_risk_gate_builder_example_has_cli_help() -> None:
+    script = Path("examples/build_factor_risk_gate.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--feature" in result.stdout
+    assert "--high-quantile" in result.stdout
+    assert "--base-schedule" in result.stdout
 
 
 def test_policy_backtest_comparison_example_has_cli_help() -> None:
