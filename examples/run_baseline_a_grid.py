@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 import gc
 import itertools
 import json
+import multiprocessing as mp
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +43,18 @@ class GridRun:
     signal_count: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class GridRunPeriodResult:
+    name: str
+    state: SimulationState
+    equity_values: list[float]
+    trade_count: int
+    signal_count: int
+
+
+_GRID_WORKER_BARS: pd.DataFrame | None = None
+
+
 def main() -> None:
     args = _parse_args()
     output_root = Path(args.output_root)
@@ -49,6 +63,7 @@ def main() -> None:
     result_by_name = run_grid_shared_data(
         runs,
         write_run_artifacts=args.write_run_artifacts,
+        workers=args.workers,
     )
     rows: list[dict[str, object]] = []
     for run in runs:
@@ -81,7 +96,7 @@ def main() -> None:
 
 
 def run_grid_shared_data(
-    runs: list[GridRun], *, write_run_artifacts: bool
+    runs: list[GridRun], *, write_run_artifacts: bool, workers: int = 1
 ) -> dict[str, dict[str, object]]:
     if not runs:
         raise ValueError("empty parameter grid")
@@ -112,42 +127,19 @@ def run_grid_shared_data(
             flush=True,
         )
         _prepare_grid_features(bars, runs)
-        for index, run in enumerate(runs, start=1):
-            print(f"running {index}/{len(runs)} {run.name}", flush=True)
-            signals = _build_reversal_signals_from_features(bars, run.params)
-            run.signal_count += len(signals)
-            executions = _build_next_bar_executions(
-                bars,
-                signals,
-                tracked_instruments=set(run.state.lots),
+        if workers == 1 or len(runs) == 1:
+            _run_grid_file_sequential(
+                runs,
+                bars=bars,
+                write_run_artifacts=write_run_artifacts,
             )
-            del signals
-            if executions.empty:
-                del executions
-                continue
-            period_trades, period_equity, _, run.state = _simulate(
-                executions,
-                run.params,
-                state=run.state,
+        else:
+            _run_grid_file_parallel(
+                runs,
+                bars=bars,
+                write_run_artifacts=write_run_artifacts,
+                workers=min(workers, len(runs)),
             )
-            if not period_trades.empty:
-                run.trade_count += len(period_trades)
-                if write_run_artifacts and run.params.output_dir is not None:
-                    _append_frame_csv(
-                        period_trades,
-                        run.params.output_dir / "trades.csv",
-                    )
-            if not period_equity.empty:
-                run.equity_values.extend(
-                    period_equity["equity"].astype(float).tolist()
-                )
-                if write_run_artifacts and run.params.output_dir is not None:
-                    _append_frame_csv(
-                        period_equity,
-                        run.params.output_dir / "equity_curve.csv",
-                    )
-            del executions, period_trades, period_equity
-            gc.collect()
         del bars
         gc.collect()
     results: dict[str, dict[str, object]] = {}
@@ -177,6 +169,114 @@ def run_grid_shared_data(
             "instrument_count": len(instruments),
         }
     return results
+
+
+def _run_grid_file_sequential(
+    runs: list[GridRun],
+    *,
+    bars: pd.DataFrame,
+    write_run_artifacts: bool,
+) -> None:
+    for index, run in enumerate(runs, start=1):
+        print(f"running {index}/{len(runs)} {run.name}", flush=True)
+        result = _run_grid_period(run, bars, write_run_artifacts=write_run_artifacts)
+        _apply_grid_period_result(run, result)
+        gc.collect()
+
+
+def _run_grid_file_parallel(
+    runs: list[GridRun],
+    *,
+    bars: pd.DataFrame,
+    write_run_artifacts: bool,
+    workers: int,
+) -> None:
+    global _GRID_WORKER_BARS
+    print(f"running {len(runs)} grid runs with workers={workers}", flush=True)
+    _GRID_WORKER_BARS = bars
+    try:
+        context = mp.get_context("fork")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as executor:
+            futures = [
+                executor.submit(
+                    _run_grid_period_from_worker,
+                    run,
+                    write_run_artifacts,
+                )
+                for run in runs
+            ]
+            results = [future.result() for future in futures]
+            result_by_name = {result.name: result for result in results}
+    finally:
+        _GRID_WORKER_BARS = None
+    for run in runs:
+        _apply_grid_period_result(run, result_by_name[run.name])
+
+
+def _run_grid_period_from_worker(
+    run: GridRun,
+    write_run_artifacts: bool,
+) -> GridRunPeriodResult:
+    if _GRID_WORKER_BARS is None:
+        raise RuntimeError("grid worker bars are not initialized")
+    return _run_grid_period(
+        run,
+        _GRID_WORKER_BARS,
+        write_run_artifacts=write_run_artifacts,
+    )
+
+
+def _run_grid_period(
+    run: GridRun,
+    bars: pd.DataFrame,
+    *,
+    write_run_artifacts: bool,
+) -> GridRunPeriodResult:
+    signals = _build_reversal_signals_from_features(bars, run.params)
+    signal_count = len(signals)
+    executions = _build_next_bar_executions(
+        bars,
+        signals,
+        tracked_instruments=set(run.state.lots),
+    )
+    del signals
+    if executions.empty:
+        return GridRunPeriodResult(
+            name=run.name,
+            state=run.state,
+            equity_values=[],
+            trade_count=0,
+            signal_count=signal_count,
+        )
+    period_trades, period_equity, _, state = _simulate(
+        executions,
+        run.params,
+        state=run.state,
+    )
+    trade_count = 0
+    if not period_trades.empty:
+        trade_count = len(period_trades)
+        if write_run_artifacts and run.params.output_dir is not None:
+            _append_frame_csv(period_trades, run.params.output_dir / "trades.csv")
+    equity_values: list[float] = []
+    if not period_equity.empty:
+        equity_values = period_equity["equity"].astype(float).tolist()
+        if write_run_artifacts and run.params.output_dir is not None:
+            _append_frame_csv(period_equity, run.params.output_dir / "equity_curve.csv")
+    return GridRunPeriodResult(
+        name=run.name,
+        state=state,
+        equity_values=equity_values,
+        trade_count=trade_count,
+        signal_count=signal_count,
+    )
+
+
+def _apply_grid_period_result(run: GridRun, result: GridRunPeriodResult) -> None:
+    run.state = result.state
+    run.signal_count += result.signal_count
+    run.trade_count += result.trade_count
+    run.equity_values.extend(result.equity_values)
 
 
 def _prepare_grid_features(bars: pd.DataFrame, runs: list[GridRun]) -> None:
@@ -339,11 +439,22 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--lot-size", type=int, default=100)
     parser.add_argument("--max-symbols", type=int)
     parser.add_argument("--write-run-artifacts", action="store_true")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "number of parameter-grid runs to simulate concurrently per loaded "
+            "data chunk; uses forked workers to share the read-only bar frame"
+        ),
+    )
     args = parser.parse_args()
     args.min_avg_turnover = [
         None if value.lower() == "none" else float(value)
         for value in args.min_avg_turnover
     ]
+    if args.workers <= 0:
+        raise ValueError("--workers must be positive")
     return args
 
 

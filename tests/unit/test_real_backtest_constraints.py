@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+import warnings
 
 import pandas as pd
 import pytest
@@ -26,8 +27,12 @@ from examples.run_baseline_a_real_backtest import (
     _simulate,
 )
 from examples.run_baseline_a_grid import (
+    GridRun,
+    _run_grid_file_parallel,
+    _run_grid_file_sequential,
     _build_reversal_signals_from_features,
     _factor_column,
+    _prepare_grid_features,
 )
 
 
@@ -238,6 +243,50 @@ def test_grid_reversal_signals_select_top_names_from_precomputed_features() -> N
     assert signals.loc[
         signals["signal_time"] == "t2", "target_weight"
     ].tolist() == [1.0]
+
+
+def test_grid_parallel_run_matches_sequential_run() -> None:
+    bars = pd.DataFrame(
+        [
+            _bar_with_close("t0", "inst-a", "600001.SH", 10.0),
+            _bar_with_close("t0", "inst-b", "600000.SH", 10.0),
+            _bar_with_close("t0", "inst-c", "600002.SH", 10.0),
+            _bar_with_close("t1", "inst-a", "600001.SH", 9.0),
+            _bar_with_close("t1", "inst-b", "600000.SH", 11.0),
+            _bar_with_close("t1", "inst-c", "600002.SH", 8.0),
+            _bar_with_close("t2", "inst-a", "600001.SH", 8.0),
+            _bar_with_close("t2", "inst-b", "600000.SH", 12.0),
+            _bar_with_close("t2", "inst-c", "600002.SH", 9.0),
+        ]
+    )
+    sequential_runs = _grid_runs()
+    parallel_runs = _grid_runs()
+
+    _prepare_grid_features(bars, sequential_runs)
+    _run_grid_file_sequential(
+        sequential_runs,
+        bars=bars,
+        write_run_artifacts=False,
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*multi-threaded, use of fork\\(\\) may lead to deadlocks.*",
+            category=DeprecationWarning,
+        )
+        _run_grid_file_parallel(
+            parallel_runs,
+            bars=bars,
+            write_run_artifacts=False,
+            workers=2,
+        )
+
+    for sequential, parallel in zip(sequential_runs, parallel_runs, strict=True):
+        assert sequential.signal_count == parallel.signal_count
+        assert sequential.trade_count == parallel.trade_count
+        assert sequential.equity_values == parallel.equity_values
+        assert sequential.state.cash == pytest.approx(parallel.state.cash)
+        assert sequential.state.lots == parallel.state.lots
 
 
 def test_simulation_caps_trade_size_by_bar_turnover_participation() -> None:
@@ -583,3 +632,30 @@ def _feature_bar(
     row["canonical_code"] = canonical_code
     row[_factor_column(1)] = factor_value
     return row
+
+
+def _grid_runs() -> list[GridRun]:
+    return [
+        GridRun(
+            name="lb1_top1",
+            params=_params(top_n=1, lookback_bars=1, initial_cash=10_000.0),
+            state=SimulationState(
+                cash=10_000.0,
+                lots={},
+                previous_date=None,
+                last_prices={},
+            ),
+            equity_values=[10_000.0],
+        ),
+        GridRun(
+            name="lb1_top2",
+            params=_params(top_n=2, lookback_bars=1, initial_cash=10_000.0),
+            state=SimulationState(
+                cash=10_000.0,
+                lots={},
+                previous_date=None,
+                last_prices={},
+            ),
+            equity_values=[10_000.0],
+        ),
+    ]
