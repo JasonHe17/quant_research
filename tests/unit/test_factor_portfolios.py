@@ -15,6 +15,7 @@ from examples.run_candidate_factor_portfolios import (
     _backtest_summary_rows,
     _dataset_paths,
     _effective_backtest_memory_budget_gb,
+    _registry_filter_summary,
     _summary_params,
 )
 from quant_research.portfolio import (
@@ -58,6 +59,72 @@ def test_load_candidate_factors_uses_admission_direction(tmp_path: Path) -> None
     factors = load_candidate_factors(path)
 
     assert factors == (CandidateFactor("alpha_a", -1, -0.02),)
+
+
+def test_candidate_factor_registry_filter_excludes_unregistered_and_rejected(
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "registry_name": "test",
+                "version": 1,
+                "entries": [
+                    {
+                        "factor_id": "alpha_a",
+                        "display_name": "alpha_a",
+                        "family": "momentum",
+                        "status": "candidate",
+                        "expected_direction": "long",
+                        "feature_columns": ["alpha_a"],
+                        "required_inputs": ["close_price"],
+                        "frequency": "5m",
+                        "description": "test",
+                        "hypothesis": "test",
+                    },
+                    {
+                        "factor_id": "alpha_b",
+                        "display_name": "alpha_b",
+                        "family": "momentum",
+                        "status": "reject",
+                        "expected_direction": "long",
+                        "feature_columns": ["alpha_b"],
+                        "required_inputs": ["close_price"],
+                        "frequency": "5m",
+                        "description": "test",
+                        "hypothesis": "test",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = type(
+        "Args",
+        (),
+        {
+            "enforce_registry": True,
+            "registry": str(registry_path),
+            "registry_statuses": ["candidate", "promoted"],
+        },
+    )()
+
+    summary = _registry_filter_summary(
+        args,
+        (
+            CandidateFactor("alpha_a", 1, 0.02),
+            CandidateFactor("alpha_b", 1, 0.01),
+            CandidateFactor("alpha_unregistered", 1, 0.01),
+        ),
+    )
+
+    assert summary["included_features"] == ["alpha_a"]
+    assert summary["output_candidate_count"] == 1
+    assert summary["excluded_features"] == [
+        {"feature": "alpha_b", "reason": "registry_status=reject"},
+        {"feature": "alpha_unregistered", "reason": "unregistered"},
+    ]
 
 
 def test_factor_combination_weights_support_methods() -> None:
@@ -640,6 +707,9 @@ def _portfolio_args(**overrides: object) -> object:
     defaults = {
         "dataset_dir": "dataset",
         "admission_report": "admission.json",
+        "registry": "configs/factors/factor_registry.json",
+        "enforce_registry": True,
+        "registry_statuses": ["candidate", "promoted"],
         "factor_correlation": "correlation.csv",
         "methods": ["decorrelated"],
         "statuses": ["candidate"],

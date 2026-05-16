@@ -70,6 +70,9 @@ Every active factor must record:
   `price_limit_aware`, and `st_aware`.
 - `implementation`: module and callable used to build the feature.
 - `evaluation`: latest admission status and evidence path.
+- `research_memory`: required for `watchlist`, `reject`, and `deprecated`
+  factors. It records why the idea did not advance and when, if ever, it may be
+  retried.
 - `description`, `hypothesis`, `tags`, and `references`.
 
 The validator treats missing active-factor safety metadata as a hard error.
@@ -81,12 +84,28 @@ The validator treats missing active-factor safety metadata as a hard error.
    state the expected direction, raw inputs, lookback horizon, and A-share
    execution assumptions.
 
-2. Implement within the declared boundary.
+2. Check research memory before implementation.
+   Search the registry for matching `family`, `required_inputs`, lookback
+   horizon, transform type, `similar_to`, tags, and notes. If a rejected or
+   watchlist factor is similar, the new entry must explain what is materially
+   different before code is written.
+
+   ```bash
+   conda run -n quant python examples/check_factor_research_memory.py \
+     --factor-id intraday_new_reversal_5m_w48 \
+     --family reversal \
+     --required-inputs instrument_id bar_end_time close_price volume turnover \
+     --lookback-bars 48 \
+     --keywords vwap deviation reversal \
+     --enforce-no-blocking
+   ```
+
+3. Implement within the declared boundary.
    The implementation may add columns only under the registered
    `feature_columns`. New raw data dependencies require a registry update before
    code changes.
 
-3. Run single-factor evaluation.
+4. Run single-factor evaluation.
    Use the existing standard framework evaluation and admission flow:
 
    ```bash
@@ -101,7 +120,7 @@ The validator treats missing active-factor safety metadata as a hard error.
      --enforce-candidates
    ```
 
-4. Render a candidate review.
+5. Render a candidate review.
 
    ```bash
    conda run -n quant python examples/run_factor_candidate_review.py \
@@ -110,16 +129,58 @@ The validator treats missing active-factor safety metadata as a hard error.
      --enforce-ready
    ```
 
-5. Run portfolio-level validation only after the review is ready.
+6. Run portfolio-level validation only after the review is ready.
    The current downstream framework default for combination-layer review is the
    cost-aware optimizer with `equal` score combination and annual gross-turnover
    budget `52`. Portfolio validation must use the promoted framework unless a
    framework issue is explicitly being tested.
 
-6. Promote or reject with evidence.
+7. Promote, watchlist, or reject with evidence.
    Promotion requires the registry entry, candidate review, admission report,
    and portfolio validation summary to be linked from the entry before default
-   configuration changes.
+   configuration changes. Watchlist, reject, and deprecated decisions must also
+   update `research_memory`.
+
+## Research Memory
+
+Research memory prevents repeated discovery of the same failed idea under a new
+name. Any factor with status `watchlist`, `reject`, or `deprecated` must include:
+
+- `decision_reason`: one of `weak_ic`, `unstable_years`, `weak_hit_rate`,
+  `cost_fragile`, `portfolio_negative`, `duplicate_like`,
+  `implementation_issue`, `data_quality`, `risk_concentration`, or `other`.
+- `negative_findings`: concise explanation of what failed or why the result is
+  not promotion-ready.
+- `similar_to`: factor ids with close hypotheses, raw inputs, transforms, or
+  portfolio behavior.
+- `retry_conditions`: concrete condition required before the idea can be opened
+  again. "Try another window" is not enough unless the evidence identifies
+  window sensitivity as the specific failure.
+- `evidence_artifacts`: admission reports, candidate reviews, portfolio
+  validations, or research notes supporting the decision.
+
+Default rule: a `reject` factor cannot enter portfolio-level validation again
+unless the new registry entry documents a materially different transform or
+satisfies the rejected factor's `retry_conditions`. A `watchlist` factor may be
+used only for targeted combination, risk overlay, or conditional experiments
+until it clears the missing gate.
+
+The executable pre-development check is:
+
+```bash
+conda run -n quant python examples/check_factor_research_memory.py \
+  --factor-id intraday_new_reversal_5m_w48 \
+  --family reversal \
+  --required-inputs close_price volume turnover \
+  --lookback-bars 48 \
+  --keywords vwap deviation reversal \
+  --output-dir runs/factor_research_memory/intraday_new_reversal_5m_w48 \
+  --enforce-no-blocking
+```
+
+`reject` and `deprecated` matches are blocking under `--enforce-no-blocking`.
+`watchlist` matches are warnings and require an explicit material-difference
+note in the registry before implementation.
 
 ## Evaluation Gates
 

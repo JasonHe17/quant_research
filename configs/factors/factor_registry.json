@@ -1,9 +1,722 @@
 {
-  "registry_name": "factor_development_registry",
-  "version": 1,
+  "entries": [
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 24-bar 5-minute close-return volatility.",
+      "display_name": "Intraday volatility, 24-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_volatility_5m_w24",
+      "family": "volatility",
+      "feature_columns": [
+        "intraday_volatility_5m_w24"
+      ],
+      "frequency": "5m",
+      "hypothesis": "High short-horizon realized volatility should reduce long-only selection quality after costs and execution constraints.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "volatility"
+          ],
+          "volatility_windows": [
+            24
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 24,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "seed",
+        "current_candidate",
+        "intraday"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 12-bar 5-minute close-return volatility.",
+      "display_name": "Intraday volatility, 12-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_volatility_5m_w12",
+      "family": "volatility",
+      "feature_columns": [
+        "intraday_volatility_5m_w12"
+      ],
+      "frequency": "5m",
+      "hypothesis": "A medium intraday volatility penalty may complement the 24-bar risk filter with less regime lag.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "volatility"
+          ],
+          "volatility_windows": [
+            12
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 12,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "seed",
+        "current_candidate",
+        "intraday"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 6-bar 5-minute close-return volatility.",
+      "display_name": "Intraday volatility, 6-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_volatility_5m_w6",
+      "family": "volatility",
+      "feature_columns": [
+        "intraday_volatility_5m_w6"
+      ],
+      "frequency": "5m",
+      "hypothesis": "A short intraday volatility penalty may catch fast deterioration before longer windows react.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "volatility"
+          ],
+          "volatility_windows": [
+            6
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 6,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "seed",
+        "current_candidate",
+        "intraday"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Absolute close-to-close return scaled by turnover.",
+      "display_name": "Intraday Amihud-style illiquidity",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_amihud_5m",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_amihud_5m"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Price impact can capture intraday crowding or liquidity stress that is not captured by raw volume or turnover ratios.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "liquidity_impact"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 1,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price",
+        "turnover"
+      ],
+      "status": "candidate",
+      "tags": [
+        "seed",
+        "current_candidate",
+        "intraday"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Current turnover divided by the 48-bar rolling average minus one.",
+      "display_name": "Intraday turnover ratio, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_turnover_ratio_5m_w48",
+      "family": "turnover",
+      "feature_columns": [
+        "intraday_turnover_ratio_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Persistent turnover expansion can indicate participation and tradability, but must be evaluated against cost and crowding.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "turnover"
+          ],
+          "turnover_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "turnover"
+      ],
+      "status": "candidate",
+      "tags": [
+        "seed",
+        "current_candidate",
+        "intraday"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Current turnover standardized by a 48-bar rolling mean and standard deviation.",
+      "display_name": "Intraday turnover z-score, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_turnover_zscore_5m_w48",
+      "family": "turnover",
+      "feature_columns": [
+        "intraday_turnover_zscore_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Extreme turnover shocks may be informative, but the latest admission report marks the standalone signal as economically weak after costs.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "turnover"
+          ],
+          "turnover_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_admission.md"
+        ],
+        "negative_findings": "Standard admission kept the factor on watchlist because standalone economics were weak after transaction-cost and stability gates; do not reuse as a primary alpha without a targeted redesign.",
+        "retry_conditions": "Retry only as a conditional crowding or liquidity-stress overlay, or after demonstrating positive portfolio contribution net of costs in annual slices.",
+        "similar_to": [
+          "intraday_turnover_ratio_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "seed",
+        "watchlist",
+        "intraday"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Current volume divided by the 48-bar rolling average minus one.",
+      "display_name": "Intraday volume ratio, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_volume_ratio_5m_w48",
+      "family": "volume",
+      "feature_columns": [
+        "intraday_volume_ratio_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Volume expansion may help separate tradable attention from volatility-only effects, but current standalone economics are weak.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "volume"
+          ],
+          "volume_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "volume"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_admission.md"
+        ],
+        "negative_findings": "Volume expansion was statistically usable but did not clear the economic or stability bar in standard admission; raw volume ratio should not be reintroduced as a standalone long signal.",
+        "retry_conditions": "Retry only with price-confirmation, liquidity-adjusted transforms, or a regime filter that proves incremental portfolio contribution after costs.",
+        "similar_to": [
+          "intraday_turnover_ratio_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "seed",
+        "watchlist",
+        "intraday"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Twelve-bar close-to-close return, currently used in inverted direction when reviewed.",
+      "display_name": "Intraday momentum, 12-bar lookback",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_momentum_5m_lb12",
+      "family": "momentum",
+      "feature_columns": [
+        "intraday_momentum_5m_lb12"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Short intraday continuation may reverse after execution lag and costs; keep as a controlled watchlist signal before reuse.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "momentum"
+          ],
+          "momentum_lookback_bars": [
+            12
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 12,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "unstable_years",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_admission.md"
+        ],
+        "negative_findings": "Short intraday momentum required inverted treatment and remained on watchlist because execution lag and annual stability were not strong enough for default promotion.",
+        "retry_conditions": "Retry only as a reversal or overreaction variant with explicit holding-period and cost controls, not as raw short-horizon continuation.",
+        "similar_to": []
+      },
+      "status": "watchlist",
+      "tags": [
+        "seed",
+        "watchlist",
+        "intraday"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Close price position within the rolling 48-bar intraday high-low range, centered around zero.",
+      "display_name": "Intraday range position, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
+        "admission_status": "reject"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_range_position_5m_w48",
+      "family": "momentum",
+      "feature_columns": [
+        "intraday_range_position_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "A close near the top of the recent range may indicate stronger short-horizon demand than a close near the bottom of the range.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "price_position"
+          ],
+          "price_position_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_15.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "high_price",
+        "low_price",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_hit_rate",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
+          "docs/strategy/factor_research_batch_2026_05_15.md"
+        ],
+        "negative_findings": "Rejected in the 2026-05-15 batch: rank IC was positive but directional hit rate and stable-year count were insufficient, so range position did not show reliable standalone selection value.",
+        "retry_conditions": "Retry only after redesigning as an overextension reversal or breakout-confirmation feature with materially different transform and documented stability improvement.",
+        "similar_to": [
+          "intraday_momentum_5m_lb12"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "batch_2026_05_15",
+        "intraday",
+        "research"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar high-low range volatility based on log intrabar range.",
+      "display_name": "Intraday range volatility, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_range_volatility_5m_w48",
+      "family": "volatility",
+      "feature_columns": [
+        "intraday_range_volatility_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "High high-low range volatility should signal unstable execution conditions and lower long-only selection quality after costs.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "range_volatility"
+          ],
+          "range_volatility_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_15.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "high_price",
+        "low_price",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "batch_2026_05_15",
+        "intraday",
+        "research"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Directional close-to-close move divided by the total absolute 1-bar path length over the same window.",
+      "display_name": "Intraday efficiency ratio, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_efficiency_ratio_5m_w48",
+      "family": "momentum",
+      "feature_columns": [
+        "intraday_efficiency_ratio_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Very efficient intraday directional moves may be overextended after execution lag; the current admission report supports the inverted direction.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "efficiency_windows": [
+            48
+          ],
+          "factor_groups": [
+            "efficiency"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_15.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "batch_2026_05_15",
+        "intraday",
+        "research"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Close-to-VWAP stretch relative to a rolling 48-bar intraday VWAP.",
+      "display_name": "Intraday VWAP deviation, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
+        "admission_status": "reject"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_vwap_deviation_5m_w48",
+      "family": "reversal",
+      "feature_columns": [
+        "intraday_vwap_deviation_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Large positive stretches above rolling VWAP should be prone to short-horizon mean reversion after entry lag and trading costs.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "vwap_deviation"
+          ],
+          "vwap_deviation_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_15.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "volume",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_hit_rate",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
+          "docs/strategy/factor_research_batch_2026_05_15.md"
+        ],
+        "negative_findings": "Rejected in the 2026-05-15 batch: standalone IC and spread were not stable enough across years, and the feature failed hit-rate/stability gates despite being point-in-time safe.",
+        "retry_conditions": "Retry only with a different microstructure hypothesis such as volume-weighted mean reversion, signed deviation buckets, or liquidity-conditioned recovery; do not rerun the same raw deviation.",
+        "similar_to": [
+          "intraday_range_position_5m_w48"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "batch_2026_05_15",
+        "intraday",
+        "research"
+      ]
+    }
+  ],
   "owner": "quant_research",
-  "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-15",
   "references": [
     "docs/validation/factor_development_standard.md",
     "docs/validation/factor_admission.md",
@@ -14,302 +727,8 @@
     "https://github.com/quantopian/alphalens",
     "https://english.sse.com.cn/start/trading/mechanism/"
   ],
-  "entries": [
-    {
-      "factor_id": "intraday_volatility_5m_w24",
-      "display_name": "Intraday volatility, 24-bar window",
-      "family": "volatility",
-      "status": "candidate",
-      "expected_direction": "invert",
-      "feature_columns": ["intraday_volatility_5m_w24"],
-      "required_inputs": ["instrument_id", "bar_end_time", "close_price"],
-      "frequency": "5m",
-      "lookback_bars": 24,
-      "label_lag_bars": 48,
-      "point_in_time_safe": true,
-      "live_available": true,
-      "a_share_constraints": {
-        "long_only": true,
-        "price_limit_aware": true,
-        "st_aware": true,
-        "t_plus_one_safe": true
-      },
-      "implementation": {
-        "module": "quant_research.datasets.intraday_features",
-        "builder": "build_intraday_feature_matrix",
-        "parameters": {"factor_groups": ["volatility"], "volatility_windows": [24]}
-      },
-      "evaluation": {
-        "admission_status": "candidate",
-        "admission_direction": "invert",
-        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      },
-      "description": "Rolling 24-bar 5-minute close-return volatility.",
-      "hypothesis": "High short-horizon realized volatility should reduce long-only selection quality after costs and execution constraints.",
-      "tags": ["seed", "current_candidate", "intraday"],
-      "references": [
-        "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      ]
-    },
-    {
-      "factor_id": "intraday_volatility_5m_w12",
-      "display_name": "Intraday volatility, 12-bar window",
-      "family": "volatility",
-      "status": "candidate",
-      "expected_direction": "invert",
-      "feature_columns": ["intraday_volatility_5m_w12"],
-      "required_inputs": ["instrument_id", "bar_end_time", "close_price"],
-      "frequency": "5m",
-      "lookback_bars": 12,
-      "label_lag_bars": 48,
-      "point_in_time_safe": true,
-      "live_available": true,
-      "a_share_constraints": {
-        "long_only": true,
-        "price_limit_aware": true,
-        "st_aware": true,
-        "t_plus_one_safe": true
-      },
-      "implementation": {
-        "module": "quant_research.datasets.intraday_features",
-        "builder": "build_intraday_feature_matrix",
-        "parameters": {"factor_groups": ["volatility"], "volatility_windows": [12]}
-      },
-      "evaluation": {
-        "admission_status": "candidate",
-        "admission_direction": "invert",
-        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      },
-      "description": "Rolling 12-bar 5-minute close-return volatility.",
-      "hypothesis": "A medium intraday volatility penalty may complement the 24-bar risk filter with less regime lag.",
-      "tags": ["seed", "current_candidate", "intraday"],
-      "references": [
-        "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      ]
-    },
-    {
-      "factor_id": "intraday_volatility_5m_w6",
-      "display_name": "Intraday volatility, 6-bar window",
-      "family": "volatility",
-      "status": "candidate",
-      "expected_direction": "invert",
-      "feature_columns": ["intraday_volatility_5m_w6"],
-      "required_inputs": ["instrument_id", "bar_end_time", "close_price"],
-      "frequency": "5m",
-      "lookback_bars": 6,
-      "label_lag_bars": 48,
-      "point_in_time_safe": true,
-      "live_available": true,
-      "a_share_constraints": {
-        "long_only": true,
-        "price_limit_aware": true,
-        "st_aware": true,
-        "t_plus_one_safe": true
-      },
-      "implementation": {
-        "module": "quant_research.datasets.intraday_features",
-        "builder": "build_intraday_feature_matrix",
-        "parameters": {"factor_groups": ["volatility"], "volatility_windows": [6]}
-      },
-      "evaluation": {
-        "admission_status": "candidate",
-        "admission_direction": "invert",
-        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      },
-      "description": "Rolling 6-bar 5-minute close-return volatility.",
-      "hypothesis": "A short intraday volatility penalty may catch fast deterioration before longer windows react.",
-      "tags": ["seed", "current_candidate", "intraday"],
-      "references": [
-        "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      ]
-    },
-    {
-      "factor_id": "intraday_amihud_5m",
-      "display_name": "Intraday Amihud-style illiquidity",
-      "family": "liquidity",
-      "status": "candidate",
-      "expected_direction": "long",
-      "feature_columns": ["intraday_amihud_5m"],
-      "required_inputs": ["instrument_id", "bar_end_time", "open_price", "close_price", "turnover"],
-      "frequency": "5m",
-      "lookback_bars": 1,
-      "label_lag_bars": 48,
-      "point_in_time_safe": true,
-      "live_available": true,
-      "a_share_constraints": {
-        "long_only": true,
-        "price_limit_aware": true,
-        "st_aware": true,
-        "t_plus_one_safe": true
-      },
-      "implementation": {
-        "module": "quant_research.datasets.intraday_features",
-        "builder": "build_intraday_feature_matrix",
-        "parameters": {"factor_groups": ["liquidity_impact"]}
-      },
-      "evaluation": {
-        "admission_status": "candidate",
-        "admission_direction": "long",
-        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      },
-      "description": "Absolute close-to-close return scaled by turnover.",
-      "hypothesis": "Price impact can capture intraday crowding or liquidity stress that is not captured by raw volume or turnover ratios.",
-      "tags": ["seed", "current_candidate", "intraday"],
-      "references": [
-        "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      ]
-    },
-    {
-      "factor_id": "intraday_turnover_ratio_5m_w48",
-      "display_name": "Intraday turnover ratio, 48-bar window",
-      "family": "turnover",
-      "status": "candidate",
-      "expected_direction": "long",
-      "feature_columns": ["intraday_turnover_ratio_5m_w48"],
-      "required_inputs": ["instrument_id", "bar_end_time", "turnover"],
-      "frequency": "5m",
-      "lookback_bars": 48,
-      "label_lag_bars": 48,
-      "point_in_time_safe": true,
-      "live_available": true,
-      "a_share_constraints": {
-        "long_only": true,
-        "price_limit_aware": true,
-        "st_aware": true,
-        "t_plus_one_safe": true
-      },
-      "implementation": {
-        "module": "quant_research.datasets.intraday_features",
-        "builder": "build_intraday_feature_matrix",
-        "parameters": {"factor_groups": ["turnover"], "turnover_windows": [48]}
-      },
-      "evaluation": {
-        "admission_status": "candidate",
-        "admission_direction": "long",
-        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      },
-      "description": "Current turnover divided by the 48-bar rolling average minus one.",
-      "hypothesis": "Persistent turnover expansion can indicate participation and tradability, but must be evaluated against cost and crowding.",
-      "tags": ["seed", "current_candidate", "intraday"],
-      "references": [
-        "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      ]
-    },
-    {
-      "factor_id": "intraday_turnover_zscore_5m_w48",
-      "display_name": "Intraday turnover z-score, 48-bar window",
-      "family": "turnover",
-      "status": "watchlist",
-      "expected_direction": "invert",
-      "feature_columns": ["intraday_turnover_zscore_5m_w48"],
-      "required_inputs": ["instrument_id", "bar_end_time", "turnover"],
-      "frequency": "5m",
-      "lookback_bars": 48,
-      "label_lag_bars": 48,
-      "point_in_time_safe": true,
-      "live_available": true,
-      "a_share_constraints": {
-        "long_only": true,
-        "price_limit_aware": true,
-        "st_aware": true,
-        "t_plus_one_safe": true
-      },
-      "implementation": {
-        "module": "quant_research.datasets.intraday_features",
-        "builder": "build_intraday_feature_matrix",
-        "parameters": {"factor_groups": ["turnover"], "turnover_windows": [48]}
-      },
-      "evaluation": {
-        "admission_status": "watchlist",
-        "admission_direction": "invert",
-        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      },
-      "description": "Current turnover standardized by a 48-bar rolling mean and standard deviation.",
-      "hypothesis": "Extreme turnover shocks may be informative, but the latest admission report marks the standalone signal as economically weak after costs.",
-      "tags": ["seed", "watchlist", "intraday"],
-      "references": [
-        "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      ]
-    },
-    {
-      "factor_id": "intraday_volume_ratio_5m_w48",
-      "display_name": "Intraday volume ratio, 48-bar window",
-      "family": "volume",
-      "status": "watchlist",
-      "expected_direction": "long",
-      "feature_columns": ["intraday_volume_ratio_5m_w48"],
-      "required_inputs": ["instrument_id", "bar_end_time", "volume"],
-      "frequency": "5m",
-      "lookback_bars": 48,
-      "label_lag_bars": 48,
-      "point_in_time_safe": true,
-      "live_available": true,
-      "a_share_constraints": {
-        "long_only": true,
-        "price_limit_aware": true,
-        "st_aware": true,
-        "t_plus_one_safe": true
-      },
-      "implementation": {
-        "module": "quant_research.datasets.intraday_features",
-        "builder": "build_intraday_feature_matrix",
-        "parameters": {"factor_groups": ["volume"], "volume_windows": [48]}
-      },
-      "evaluation": {
-        "admission_status": "watchlist",
-        "admission_direction": "long",
-        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      },
-      "description": "Current volume divided by the 48-bar rolling average minus one.",
-      "hypothesis": "Volume expansion may help separate tradable attention from volatility-only effects, but current standalone economics are weak.",
-      "tags": ["seed", "watchlist", "intraday"],
-      "references": [
-        "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      ]
-    },
-    {
-      "factor_id": "intraday_momentum_5m_lb12",
-      "display_name": "Intraday momentum, 12-bar lookback",
-      "family": "momentum",
-      "status": "watchlist",
-      "expected_direction": "invert",
-      "feature_columns": ["intraday_momentum_5m_lb12"],
-      "required_inputs": ["instrument_id", "bar_end_time", "close_price"],
-      "frequency": "5m",
-      "lookback_bars": 12,
-      "label_lag_bars": 48,
-      "point_in_time_safe": true,
-      "live_available": true,
-      "a_share_constraints": {
-        "long_only": true,
-        "price_limit_aware": true,
-        "st_aware": true,
-        "t_plus_one_safe": true
-      },
-      "implementation": {
-        "module": "quant_research.datasets.intraday_features",
-        "builder": "build_intraday_feature_matrix",
-        "parameters": {"factor_groups": ["momentum"], "momentum_lookback_bars": [12]}
-      },
-      "evaluation": {
-        "admission_status": "watchlist",
-        "admission_direction": "invert",
-        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      },
-      "description": "Twelve-bar close-to-close return, currently used in inverted direction when reviewed.",
-      "hypothesis": "Short intraday continuation may reverse after execution lag and costs; keep as a controlled watchlist signal before reuse.",
-      "tags": ["seed", "watchlist", "intraday"],
-      "references": [
-        "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
-      ]
-    }
-  ]
+  "registry_name": "factor_development_registry",
+  "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
+  "updated_at": "2026-05-15",
+  "version": 1
 }

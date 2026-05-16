@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,20 @@ FACTOR_STATUSES = frozenset(
     {"planned", "candidate", "watchlist", "reject", "promoted", "deprecated"}
 )
 EXPECTED_DIRECTIONS = frozenset({"long", "invert", "neutral", "mixed"})
+DECISION_REASONS = frozenset(
+    {
+        "weak_ic",
+        "unstable_years",
+        "weak_hit_rate",
+        "cost_fragile",
+        "portfolio_negative",
+        "duplicate_like",
+        "implementation_issue",
+        "data_quality",
+        "risk_concentration",
+        "other",
+    }
+)
 REQUIRED_A_SHARE_FLAGS = (
     "long_only",
     "price_limit_aware",
@@ -37,6 +52,7 @@ REQUIRED_A_SHARE_FLAGS = (
     "t_plus_one_safe",
 )
 ACTIVE_STATUSES = frozenset({"candidate", "watchlist", "promoted"})
+MEMORY_REQUIRED_STATUSES = frozenset({"watchlist", "reject", "deprecated"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +71,7 @@ class FactorRegistryEntry:
     hypothesis: str
     implementation: dict[str, Any] = field(default_factory=dict)
     evaluation: dict[str, Any] = field(default_factory=dict)
+    research_memory: dict[str, Any] = field(default_factory=dict)
     a_share_constraints: dict[str, bool] = field(default_factory=dict)
     tags: tuple[str, ...] = ()
     references: tuple[str, ...] = ()
@@ -82,6 +99,7 @@ class FactorRegistryEntry:
             hypothesis=str(payload.get("hypothesis", "")),
             implementation=dict(payload.get("implementation") or {}),
             evaluation=dict(payload.get("evaluation") or {}),
+            research_memory=dict(payload.get("research_memory") or {}),
             a_share_constraints={
                 str(key): bool(value)
                 for key, value in dict(payload.get("a_share_constraints") or {}).items()
@@ -112,6 +130,7 @@ class FactorRegistryEntry:
             "hypothesis": self.hypothesis,
             "implementation": self.implementation,
             "evaluation": self.evaluation,
+            "research_memory": self.research_memory,
             "a_share_constraints": self.a_share_constraints,
             "tags": list(self.tags),
             "references": list(self.references),
@@ -176,6 +195,40 @@ class FactorRegistry:
 
 
 @dataclass(frozen=True, slots=True)
+class FactorResearchMemoryMatch:
+    """One historical factor similar to a proposed research idea."""
+
+    factor_id: str
+    status: str
+    family: str
+    feature_columns: tuple[str, ...]
+    decision_reason: str | None
+    similarity_score: float
+    matched_fields: tuple[str, ...]
+    negative_findings: str
+    retry_conditions: str
+    evidence_artifacts: tuple[str, ...]
+    blocking: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-compatible match payload."""
+
+        return {
+            "factor_id": self.factor_id,
+            "status": self.status,
+            "family": self.family,
+            "feature_columns": list(self.feature_columns),
+            "decision_reason": self.decision_reason,
+            "similarity_score": self.similarity_score,
+            "matched_fields": list(self.matched_fields),
+            "negative_findings": self.negative_findings,
+            "retry_conditions": self.retry_conditions,
+            "evidence_artifacts": list(self.evidence_artifacts),
+            "blocking": self.blocking,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class FactorRegistryIssue:
     """One registry validation issue."""
 
@@ -226,6 +279,94 @@ def load_factor_registry(path: str | Path) -> FactorRegistry:
     if not isinstance(payload, dict):
         raise ValueError("factor registry payload must be a JSON object")
     return FactorRegistry.from_dict(payload)
+
+
+def find_factor_research_memory_matches(
+    registry: FactorRegistry,
+    *,
+    factor_id: str,
+    family: str,
+    required_inputs: tuple[str, ...] = (),
+    lookback_bars: int | None = None,
+    keywords: tuple[str, ...] = (),
+    min_score: float = 0.35,
+    statuses: tuple[str, ...] = ("watchlist", "reject", "deprecated"),
+) -> tuple[FactorResearchMemoryMatch, ...]:
+    """Find historical watchlist/rejected factors similar to a proposed idea."""
+
+    if not factor_id:
+        raise ValueError("factor_id must be non-empty")
+    if min_score < 0:
+        raise ValueError("min_score must be non-negative")
+    requested_inputs = frozenset(required_inputs)
+    requested_keywords = _normalize_keywords((factor_id, family, *keywords))
+    matches: list[FactorResearchMemoryMatch] = []
+    for entry in registry.entries:
+        if entry.factor_id == factor_id:
+            continue
+        if entry.status not in statuses:
+            continue
+        matched_fields: list[str] = []
+        score = 0.0
+        if family and entry.family == family:
+            score += 0.30
+            matched_fields.append("family")
+        input_overlap = _jaccard(requested_inputs, frozenset(entry.required_inputs))
+        if input_overlap > 0:
+            score += 0.25 * input_overlap
+            matched_fields.append("required_inputs")
+        if lookback_bars is not None and entry.lookback_bars is not None:
+            lookback_similarity = 1.0 - min(
+                abs(float(lookback_bars) - float(entry.lookback_bars))
+                / max(float(lookback_bars), float(entry.lookback_bars), 1.0),
+                1.0,
+            )
+            if lookback_similarity >= 0.50:
+                score += 0.15 * lookback_similarity
+                matched_fields.append("lookback_bars")
+        entry_keywords = _normalize_keywords(
+            (
+                entry.factor_id,
+                entry.display_name,
+                *entry.feature_columns,
+                entry.description,
+                entry.hypothesis,
+                *entry.tags,
+                *entry.research_memory.get("similar_to", ()),
+                entry.notes,
+            )
+        )
+        keyword_overlap = _jaccard(requested_keywords, entry_keywords)
+        if keyword_overlap > 0:
+            score += 0.20 * keyword_overlap
+            matched_fields.append("keywords")
+        similar_to = set(str(value) for value in entry.research_memory.get("similar_to", ()))
+        if factor_id in similar_to:
+            score += 0.30
+            matched_fields.append("similar_to")
+        if score < min_score:
+            continue
+        matches.append(
+            FactorResearchMemoryMatch(
+                factor_id=entry.factor_id,
+                status=entry.status,
+                family=entry.family,
+                feature_columns=entry.feature_columns,
+                decision_reason=entry.research_memory.get("decision_reason"),
+                similarity_score=round(score, 6),
+                matched_fields=tuple(matched_fields),
+                negative_findings=str(entry.research_memory.get("negative_findings", "")),
+                retry_conditions=str(entry.research_memory.get("retry_conditions", "")),
+                evidence_artifacts=tuple(
+                    str(value)
+                    for value in entry.research_memory.get("evidence_artifacts", ())
+                ),
+                blocking=entry.status in {"reject", "deprecated"},
+            )
+        )
+    return tuple(
+        sorted(matches, key=lambda match: (-match.similarity_score, match.factor_id))
+    )
 
 
 def validate_factor_registry(registry: FactorRegistry) -> FactorRegistryValidationReport:
@@ -451,6 +592,8 @@ def _validate_entry(
         )
     if entry.status in ACTIVE_STATUSES:
         _validate_active_entry(entry, issues)
+    if entry.status in MEMORY_REQUIRED_STATUSES:
+        _validate_research_memory(entry, issues)
 
 
 def _validate_required_strings(
@@ -552,6 +695,79 @@ def _validate_active_entry(
         )
 
 
+def _validate_research_memory(
+    entry: FactorRegistryEntry,
+    issues: list[FactorRegistryIssue],
+) -> None:
+    memory = entry.research_memory
+    if not memory:
+        _issue(
+            issues,
+            "error",
+            "missing_research_memory",
+            "watchlist, reject, and deprecated factors must record research_memory",
+            factor_id=entry.factor_id,
+            field="research_memory",
+        )
+        return
+    decision_reason = str(memory.get("decision_reason", "")).strip()
+    if decision_reason not in DECISION_REASONS:
+        _issue(
+            issues,
+            "error",
+            "invalid_decision_reason",
+            f"research_memory.decision_reason must be one of {sorted(DECISION_REASONS)}",
+            factor_id=entry.factor_id,
+            field="research_memory.decision_reason",
+        )
+    negative_findings = str(memory.get("negative_findings", "")).strip()
+    if not negative_findings:
+        _issue(
+            issues,
+            "error",
+            "missing_negative_findings",
+            "research_memory.negative_findings must summarize the failed or limited result",
+            factor_id=entry.factor_id,
+            field="research_memory.negative_findings",
+        )
+    retry_conditions = str(memory.get("retry_conditions", "")).strip()
+    if not retry_conditions:
+        _issue(
+            issues,
+            "error",
+            "missing_retry_conditions",
+            "research_memory.retry_conditions must state when the idea may be retried",
+            factor_id=entry.factor_id,
+            field="research_memory.retry_conditions",
+        )
+    evidence = memory.get("evidence_artifacts")
+    if not isinstance(evidence, list) or not evidence or not all(
+        str(item).strip() for item in evidence
+    ):
+        _issue(
+            issues,
+            "error",
+            "missing_evidence_artifacts",
+            "research_memory.evidence_artifacts must list validation artifacts",
+            factor_id=entry.factor_id,
+            field="research_memory.evidence_artifacts",
+        )
+    similar_to = memory.get("similar_to", [])
+    if similar_to is None:
+        similar_to = []
+    if not isinstance(similar_to, list) or not all(
+        isinstance(item, str) and item.strip() for item in similar_to
+    ):
+        _issue(
+            issues,
+            "error",
+            "invalid_similar_to",
+            "research_memory.similar_to must be a list of factor ids",
+            factor_id=entry.factor_id,
+            field="research_memory.similar_to",
+        )
+
+
 def _entry_summary(
     entry: FactorRegistryEntry,
     issues: list[FactorRegistryIssue],
@@ -566,6 +782,7 @@ def _entry_summary(
         "required_inputs": list(entry.required_inputs),
         "point_in_time_safe": entry.point_in_time_safe,
         "live_available": entry.live_available,
+        "decision_reason": entry.research_memory.get("decision_reason"),
         "issues": [
             issue.code
             for issue in issues
@@ -580,6 +797,21 @@ def _count_by(entries: tuple[FactorRegistryEntry, ...], field_name: str) -> dict
         key = str(getattr(entry, field_name))
         counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _normalize_keywords(values: tuple[str, ...]) -> frozenset[str]:
+    tokens: set[str] = set()
+    for value in values:
+        for token in re.split(r"[^A-Za-z0-9]+", value.lower()):
+            if len(token) >= 3:
+                tokens.add(token)
+    return frozenset(tokens)
+
+
+def _jaccard(left: frozenset[str], right: frozenset[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
 
 
 def _issue(

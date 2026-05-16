@@ -25,6 +25,7 @@ from quant_research.portfolio import (
     load_candidate_factors,
     write_score_partitions,
 )
+from quant_research.factors import load_factor_registry
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +82,8 @@ def main() -> None:
         Path(args.admission_report),
         statuses=tuple(args.statuses),
     )
+    registry_filter = _registry_filter_summary(args, candidates)
+    candidates = registry_filter["candidates"]
     correlation = _load_correlation(Path(args.factor_correlation))
     weights_by_method = {
         method: factor_combination_weights(
@@ -111,6 +114,11 @@ def main() -> None:
     )
     summary = {
         "params": _summary_params(args),
+        "registry_filter": {
+            key: value
+            for key, value in registry_filter.items()
+            if key != "candidates"
+        },
         **scores_summary,
     }
     if factor_health_path is not None:
@@ -158,6 +166,9 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
     params: dict[str, object] = {
         "dataset_dir": args.dataset_dir,
         "admission_report": args.admission_report,
+        "registry": args.registry,
+        "enforce_registry": args.enforce_registry,
+        "registry_statuses": args.registry_statuses,
         "factor_correlation": args.factor_correlation,
         "methods": args.methods,
         "statuses": args.statuses,
@@ -255,6 +266,59 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             "resume_existing": args.resume_existing,
         }
     return params
+
+
+def _registry_filter_summary(
+    args: argparse.Namespace,
+    candidates: tuple[CandidateFactor, ...],
+) -> dict[str, object]:
+    if not args.enforce_registry:
+        return {
+            "enabled": False,
+            "registry": args.registry,
+            "registry_statuses": args.registry_statuses,
+            "input_candidate_count": len(candidates),
+            "output_candidate_count": len(candidates),
+            "included_features": [factor.feature for factor in candidates],
+            "excluded_features": [],
+            "candidates": candidates,
+        }
+    registry = load_factor_registry(args.registry)
+    feature_status: dict[str, str] = {}
+    for entry in registry.entries:
+        for feature in entry.feature_columns:
+            feature_status[feature] = entry.status
+    allowed_statuses = set(args.registry_statuses)
+    included: list[CandidateFactor] = []
+    excluded: list[dict[str, str]] = []
+    for factor in candidates:
+        status = feature_status.get(factor.feature)
+        if status in allowed_statuses:
+            included.append(factor)
+        else:
+            excluded.append(
+                {
+                    "feature": factor.feature,
+                    "reason": "unregistered"
+                    if status is None
+                    else f"registry_status={status}",
+                }
+            )
+    if not included:
+        raise ValueError(
+            "no admission factors remain after registry filtering; "
+            f"registry={args.registry}, allowed_statuses={sorted(allowed_statuses)}"
+        )
+    return {
+        "enabled": True,
+        "registry": args.registry,
+        "registry_statuses": list(args.registry_statuses),
+        "input_candidate_count": len(candidates),
+        "output_candidate_count": len(included),
+        "included_features": [factor.feature for factor in included],
+        "excluded_features": excluded,
+        "candidates": tuple(included),
+    }
 
 
 def _build_factor_health_schedule(
@@ -820,6 +884,23 @@ def _parse_args() -> argparse.Namespace:
             "runs/framework_v1_acceptance/standard/factor_admission/"
             "factor_admission_report.json"
         ),
+    )
+    parser.add_argument(
+        "--registry",
+        default="configs/factors/factor_registry.json",
+        help="factor registry used to filter admission candidates before portfolio testing",
+    )
+    parser.add_argument(
+        "--enforce-registry",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="require admission candidates to be registered with an allowed lifecycle status",
+    )
+    parser.add_argument(
+        "--registry-statuses",
+        nargs="+",
+        default=["candidate", "promoted"],
+        help="registry statuses eligible for portfolio-level testing",
     )
     parser.add_argument(
         "--factor-correlation",

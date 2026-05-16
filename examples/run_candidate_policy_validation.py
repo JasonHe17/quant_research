@@ -196,6 +196,10 @@ def _scenario_command(
         args.admission_report,
         "--factor-correlation",
         args.factor_correlation,
+        "--registry",
+        args.registry,
+        "--registry-statuses",
+        *args.registry_statuses,
         "--output-dir",
         str(_scenario_output_dir(args, scenario)),
         "--methods",
@@ -290,6 +294,10 @@ def _scenario_command(
         "--backtest-memory-estimate-gb",
         str(scenario.memory_estimate_gb),
     ]
+    if args.enforce_registry:
+        command.append("--enforce-registry")
+    else:
+        command.append("--no-enforce-registry")
     optional_ints = {
         "--hold-rank-buffer": args.hold_rank_buffer,
         "--policy-entry-rank": args.policy_entry_rank,
@@ -729,6 +737,9 @@ def _validation_summary(
             "dataset_dir": args.dataset_dir,
             "admission_report": args.admission_report,
             "factor_correlation": args.factor_correlation,
+            "registry": args.registry,
+            "enforce_registry": args.enforce_registry,
+            "registry_statuses": args.registry_statuses,
             "methods": args.methods,
             "primary_method": args.primary_method,
             "backtest_policy_set": args.backtest_policy_set,
@@ -1029,6 +1040,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--factor-correlation",
         default="runs/framework_v1_acceptance/standard/factor_evaluation/feature_correlation.csv",
+    )
+    parser.add_argument("--registry", default="configs/factors/factor_registry.json")
+    parser.add_argument(
+        "--enforce-registry",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="only portfolio-test factors that are present in the factor registry",
+    )
+    parser.add_argument(
+        "--registry-statuses",
+        nargs="+",
+        default=["candidate", "promoted"],
+        help="registry statuses eligible for candidate portfolio validation",
     )
     parser.add_argument(
         "--output-dir",

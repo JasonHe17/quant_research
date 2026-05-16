@@ -63,6 +63,11 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     assert command[command.index("--factor-health-mode") + 1] == "shrink"
     assert command[command.index("--factor-health-lookback-windows") + 1] == "10"
     assert command[command.index("--score-diagnostics-top-n") + 1] == "50"
+    assert command[command.index("--registry") + 1] == "configs/factors/factor_registry.json"
+    assert command[
+        command.index("--registry-statuses") + 1 : command.index("--output-dir")
+    ] == ["candidate", "promoted"]
+    assert "--enforce-registry" in command
     assert "--resume-existing" in command
 
 
@@ -327,6 +332,9 @@ def _validation_args(**overrides: object) -> object:
         "dataset_dir": "dataset",
         "admission_report": "admission.json",
         "factor_correlation": "correlation.csv",
+        "registry": "configs/factors/factor_registry.json",
+        "enforce_registry": True,
+        "registry_statuses": ["candidate", "promoted"],
         "output_dir": "runs/validation",
         "profile": "standard",
         "years": None,

@@ -117,6 +117,22 @@ def test_factor_candidate_review_example_has_cli_help() -> None:
     assert "--admission-report" in result.stdout
 
 
+def test_factor_research_memory_check_example_has_cli_help() -> None:
+    script = Path("examples/check_factor_research_memory.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--factor-id" in result.stdout
+    assert "--family" in result.stdout
+    assert "--enforce-no-blocking" in result.stdout
+
+
 def test_candidate_policy_regime_analysis_example_has_cli_help() -> None:
     script = Path("examples/analyze_candidate_policy_regime.py")
 

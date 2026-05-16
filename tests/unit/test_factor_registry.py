@@ -6,6 +6,7 @@ from quant_research.factors import (
     FactorRegistry,
     FactorRegistryEntry,
     build_factor_candidate_review,
+    find_factor_research_memory_matches,
     load_factor_registry,
     validate_factor_registry,
 )
@@ -43,6 +44,101 @@ def test_factor_registry_requires_active_point_in_time_safety() -> None:
 
     assert report.status == "fail"
     assert any(issue.code == "point_in_time_not_confirmed" for issue in report.issues)
+
+
+def test_factor_registry_requires_research_memory_for_rejected_factors() -> None:
+    entry = _entry("alpha_reject", "alpha_reject_feature", status="reject")
+    registry = FactorRegistry(registry_name="test", version=1, entries=(entry,))
+
+    report = validate_factor_registry(registry)
+
+    assert report.status == "fail"
+    assert any(issue.code == "missing_research_memory" for issue in report.issues)
+
+
+def test_factor_registry_accepts_structured_research_memory() -> None:
+    entry = _entry(
+        "alpha_watch",
+        "alpha_watch_feature",
+        status="watchlist",
+        research_memory={
+            "decision_reason": "unstable_years",
+            "negative_findings": "Useful IC but unstable annual slices.",
+            "similar_to": ["alpha_parent"],
+            "retry_conditions": "Retry only with a regime gate or orthogonal transform.",
+            "evidence_artifacts": ["runs/test/factor_admission_report.json"],
+        },
+    )
+    registry = FactorRegistry(registry_name="test", version=1, entries=(entry,))
+
+    report = validate_factor_registry(registry)
+
+    assert report.status == "pass"
+
+
+def test_factor_research_memory_matches_rejected_similar_factor() -> None:
+    rejected = _entry(
+        "intraday_vwap_deviation_5m_w48",
+        "intraday_vwap_deviation_5m_w48",
+        family="reversal",
+        status="reject",
+        required_inputs=("close_price", "volume", "turnover"),
+        lookback_bars=48,
+        research_memory={
+            "decision_reason": "weak_hit_rate",
+            "negative_findings": "Negative after cost-aware portfolio validation.",
+            "similar_to": ["intraday_range_position_5m_w48"],
+            "retry_conditions": "Retry only with a materially different transform.",
+            "evidence_artifacts": ["runs/test/factor_candidate_review.json"],
+        },
+    )
+    registry = FactorRegistry(registry_name="test", version=1, entries=(rejected,))
+
+    matches = find_factor_research_memory_matches(
+        registry,
+        factor_id="intraday_vwap_reversal_redesign_5m_w48",
+        family="reversal",
+        required_inputs=("close_price", "volume", "turnover"),
+        lookback_bars=48,
+        keywords=("vwap", "deviation", "reversal"),
+    )
+
+    assert len(matches) == 1
+    assert matches[0].factor_id == "intraday_vwap_deviation_5m_w48"
+    assert matches[0].blocking is True
+    assert "family" in matches[0].matched_fields
+    assert "required_inputs" in matches[0].matched_fields
+
+
+def test_factor_research_memory_filters_low_similarity() -> None:
+    rejected = _entry(
+        "intraday_liquidity_noise_5m_w12",
+        "intraday_liquidity_noise_5m_w12",
+        family="liquidity",
+        status="reject",
+        required_inputs=("bid_ask_spread",),
+        lookback_bars=12,
+        research_memory={
+            "decision_reason": "weak_ic",
+            "negative_findings": "No stable IC.",
+            "similar_to": [],
+            "retry_conditions": "Retry only with better microstructure inputs.",
+            "evidence_artifacts": ["runs/test/factor_admission_report.json"],
+        },
+    )
+    registry = FactorRegistry(registry_name="test", version=1, entries=(rejected,))
+
+    matches = find_factor_research_memory_matches(
+        registry,
+        factor_id="overnight_gap_reversal",
+        family="reversal",
+        required_inputs=("open_price", "close_price"),
+        lookback_bars=96,
+        keywords=("overnight", "gap"),
+        min_score=0.35,
+    )
+
+    assert matches == ()
 
 
 def test_factor_candidate_review_uses_registry_and_admission_report() -> None:
@@ -88,15 +184,20 @@ def _entry(
     feature_column: str,
     *,
     point_in_time_safe: bool = True,
+    status: str = "candidate",
+    family: str = "momentum",
+    required_inputs: tuple[str, ...] = ("close_price",),
+    lookback_bars: int | None = None,
+    research_memory: dict[str, object] | None = None,
 ) -> FactorRegistryEntry:
     return FactorRegistryEntry(
         factor_id=factor_id,
         display_name=factor_id,
-        family="momentum",
-        status="candidate",
+        family=family,
+        status=status,
         expected_direction="long",
         feature_columns=(feature_column,),
-        required_inputs=("close_price",),
+        required_inputs=required_inputs,
         frequency="5m",
         description="test factor",
         hypothesis="test hypothesis",
@@ -105,6 +206,8 @@ def _entry(
             "function": "build_test_factor",
         },
         evaluation={"admission_status": "candidate"},
+        research_memory=research_memory or {},
+        lookback_bars=lookback_bars,
         a_share_constraints={
             "long_only": True,
             "price_limit_aware": True,

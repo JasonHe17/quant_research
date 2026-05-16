@@ -154,8 +154,12 @@ def _build_partition_dataset(
             reversal_lookback_bars=tuple(args.lookback_bars),
             momentum_lookback_bars=tuple(args.momentum_lookback_bars),
             volatility_windows=tuple(args.volatility_windows),
+            price_position_windows=tuple(args.price_position_windows),
+            range_volatility_windows=tuple(args.range_volatility_windows),
+            efficiency_windows=tuple(args.efficiency_windows),
             volume_windows=tuple(args.volume_windows),
             turnover_windows=tuple(args.turnover_windows),
+            vwap_deviation_windows=tuple(args.vwap_deviation_windows),
         ),
     )
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
@@ -366,8 +370,12 @@ def _write_summary(
             "lookback_bars": args.lookback_bars,
             "momentum_lookback_bars": args.momentum_lookback_bars,
             "volatility_windows": args.volatility_windows,
+            "price_position_windows": args.price_position_windows,
+            "range_volatility_windows": args.range_volatility_windows,
+            "efficiency_windows": args.efficiency_windows,
             "volume_windows": args.volume_windows,
             "turnover_windows": args.turnover_windows,
+            "vwap_deviation_windows": args.vwap_deviation_windows,
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
             "entry_lag_bars": args.entry_lag_bars,
@@ -410,10 +418,14 @@ def _parse_args() -> argparse.Namespace:
             "reversal",
             "momentum",
             "volatility",
+            "price_position",
+            "range_volatility",
+            "efficiency",
             "volume",
             "turnover",
             "bar_return",
             "liquidity_impact",
+            "vwap_deviation",
         ),
     )
     parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 3, 6])
@@ -424,8 +436,12 @@ def _parse_args() -> argparse.Namespace:
         default=[3, 6, 12],
     )
     parser.add_argument("--volatility-windows", type=int, nargs="+", default=[6, 12, 24])
+    parser.add_argument("--price-position-windows", type=int, nargs="+", default=[48])
+    parser.add_argument("--range-volatility-windows", type=int, nargs="+", default=[12, 48])
+    parser.add_argument("--efficiency-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--volume-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--turnover-windows", type=int, nargs="+", default=[12, 48])
+    parser.add_argument("--vwap-deviation-windows", type=int, nargs="+", default=[48])
     parser.add_argument("--label-name", default="forward_return")
     parser.add_argument("--horizon-bars", type=int, default=48)
     parser.add_argument("--entry-lag-bars", type=int, default=1)
@@ -455,10 +471,18 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--momentum-lookback-bars values must be positive")
     if any(value <= 0 for value in args.volatility_windows):
         raise ValueError("--volatility-windows values must be positive")
+    if any(value <= 0 for value in args.price_position_windows):
+        raise ValueError("--price-position-windows values must be positive")
+    if any(value <= 0 for value in args.range_volatility_windows):
+        raise ValueError("--range-volatility-windows values must be positive")
+    if any(value <= 0 for value in args.efficiency_windows):
+        raise ValueError("--efficiency-windows values must be positive")
     if any(value <= 0 for value in args.volume_windows):
         raise ValueError("--volume-windows values must be positive")
     if any(value <= 0 for value in args.turnover_windows):
         raise ValueError("--turnover-windows values must be positive")
+    if any(value <= 0 for value in args.vwap_deviation_windows):
+        raise ValueError("--vwap-deviation-windows values must be positive")
     if args.padding_days < 0:
         raise ValueError("--padding-days must be non-negative")
     if args.workers <= 0:
@@ -478,8 +502,12 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "lookback_bars": list(args.lookback_bars),
         "momentum_lookback_bars": list(args.momentum_lookback_bars),
         "volatility_windows": list(args.volatility_windows),
+        "price_position_windows": list(args.price_position_windows),
+        "range_volatility_windows": list(args.range_volatility_windows),
+        "efficiency_windows": list(args.efficiency_windows),
         "volume_windows": list(args.volume_windows),
         "turnover_windows": list(args.turnover_windows),
+        "vwap_deviation_windows": list(args.vwap_deviation_windows),
         "label_name": args.label_name,
         "horizon_bars": args.horizon_bars,
         "entry_lag_bars": args.entry_lag_bars,
@@ -503,8 +531,12 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.lookback_bars,
                     *args.momentum_lookback_bars,
                     *args.volatility_windows,
+                    *args.price_position_windows,
+                    *args.range_volatility_windows,
+                    *args.efficiency_windows,
                     *args.volume_windows,
                     *args.turnover_windows,
+                    *args.vwap_deviation_windows,
                 ]
             ),
         },
