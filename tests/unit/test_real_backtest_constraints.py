@@ -20,6 +20,7 @@ from examples.run_baseline_a_real_backtest import (
     BacktestParams,
     SimulationState,
     _add_execution_constraint_columns,
+    _build_next_bar_executions,
     _execution_constraint_counts,
     _simulate,
 )
@@ -142,6 +143,50 @@ def test_simulation_blocks_limit_up_buys_and_limit_down_sells() -> None:
     assert trades.empty
     assert next_state.cash == 10_000.0
     assert sum(int(lot["shares"]) for lot in next_state.lots["held"]) == 1_000
+
+
+def test_baseline_execution_builder_keeps_only_targets_and_tracked_holdings() -> None:
+    bars = pd.DataFrame(
+        [
+            _bar("t0", "inst-a"),
+            _bar("t0", "inst-held"),
+            _bar("t0", "inst-unused"),
+            _bar("t1", "inst-a"),
+            _bar("t1", "inst-held"),
+            _bar("t1", "inst-unused"),
+            _bar("t2", "inst-a"),
+            _bar("t2", "inst-held"),
+            _bar("t2", "inst-unused"),
+        ]
+    )
+    signals = pd.DataFrame(
+        [
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-a",
+                "target_weight": 1.0,
+            }
+        ]
+    )
+
+    executions = _build_next_bar_executions(
+        bars,
+        signals,
+        tracked_instruments={"inst-held"},
+    )
+
+    assert set(executions["instrument_id"]) == {"inst-a", "inst-held"}
+    assert len(executions) == 2
+    target = executions.loc[
+        (executions["exec_time"] == "t1") & (executions["instrument_id"] == "inst-a"),
+        "target_weight",
+    ]
+    held = executions.loc[
+        (executions["exec_time"] == "t1") & (executions["instrument_id"] == "inst-held"),
+        "target_weight",
+    ]
+    assert target.iloc[0] == pytest.approx(1.0)
+    assert pd.isna(held.iloc[0])
 
 
 def test_simulation_caps_trade_size_by_bar_turnover_participation() -> None:
@@ -448,3 +493,17 @@ def _params(**overrides: object) -> BacktestParams:
     }
     values.update(overrides)
     return BacktestParams(**values)
+
+
+def _bar(timestamp: str, instrument_id: str) -> dict[str, object]:
+    return {
+        "bar_end_time": timestamp,
+        "instrument_id": instrument_id,
+        "canonical_code": instrument_id,
+        "open_price": 10.0,
+        "close_price": 10.0,
+        "turnover": 1_000_000.0,
+        "tradable_bar": True,
+        "limit_up_open": False,
+        "limit_down_open": False,
+    }

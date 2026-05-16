@@ -288,35 +288,49 @@ def simulate_target_weight_executions(
     for exec_time, group in executions.groupby("exec_time", sort=True):
         trade_date = str(exec_time)[:10]
         _roll_lots_to_sellable(state, trade_date)
-        execution_price_by_instrument = _column_by_instrument(group, config.price_field)
-        sizing_price_by_instrument = _column_by_instrument(
-            group, config.sizing_price_field
+        target_rows = group.loc[group["target_weight"].notna()]
+        target_instruments = (
+            set(target_rows["instrument_id"].astype(str)) if not target_rows.empty else set()
         )
-        mark_price_by_instrument = _column_by_instrument(group, config.mark_price_field)
+        relevant_instruments = set(state.lots) | target_instruments
+        if relevant_instruments:
+            relevant_group = group.loc[
+                group["instrument_id"].astype(str).isin(relevant_instruments)
+            ]
+        else:
+            relevant_group = group.iloc[0:0]
+        execution_price_by_instrument = _column_by_instrument(
+            relevant_group, config.price_field
+        )
+        sizing_price_by_instrument = _column_by_instrument(
+            relevant_group, config.sizing_price_field
+        )
+        mark_price_by_instrument = _column_by_instrument(
+            relevant_group, config.mark_price_field
+        )
         tradable_by_instrument = _bool_column_by_instrument(
-            group,
+            relevant_group,
             config.tradable_field,
             default=True,
         )
         limit_up_by_instrument = _bool_column_by_instrument(
-            group,
+            relevant_group,
             config.limit_up_field,
             default=False,
         )
         limit_down_by_instrument = _bool_column_by_instrument(
-            group,
+            relevant_group,
             config.limit_down_field,
             default=False,
         )
         capacity_by_instrument = (
-            _column_by_instrument(group, config.capacity_notional_field)
+            _column_by_instrument(relevant_group, config.capacity_notional_field)
             if config.capacity_notional_field is not None
             and config.capacity_notional_field in group.columns
             else {}
         )
         state.last_prices.update(sizing_price_by_instrument)
         equity = state.cash + positions_value(state.lots, state.last_prices)
-        target_rows = group.loc[group["target_weight"].notna()]
         if not target_rows.empty:
             targets = {
                 str(row.instrument_id): float(row.target_weight)

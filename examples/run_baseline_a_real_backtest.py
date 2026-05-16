@@ -133,7 +133,11 @@ def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
         signals = _build_reversal_signals(bars, params)
         signals = _filter_signals_to_work_unit(signals, work_unit)
         total_signals += len(signals)
-        executions = _build_next_bar_executions(bars, signals)
+        executions = _build_next_bar_executions(
+            bars,
+            signals,
+            tracked_instruments=set(state.lots),
+        )
         if executions.empty:
             continue
         _merge_execution_constraint_counts(
@@ -546,7 +550,10 @@ def _build_reversal_signals(
 
 
 def _build_next_bar_executions(
-    bars: pd.DataFrame, signals: pd.DataFrame
+    bars: pd.DataFrame,
+    signals: pd.DataFrame,
+    *,
+    tracked_instruments: set[str] | None = None,
 ) -> pd.DataFrame:
     signal_times = sorted(signals["signal_time"].unique().tolist())
     all_times = sorted(bars["bar_end_time"].unique().tolist())
@@ -574,12 +581,18 @@ def _build_next_bar_executions(
     ].rename(columns={"bar_end_time": "exec_time"})
     exec_times = shifted["exec_time"].drop_duplicates().tolist()
     prices = prices.loc[prices["exec_time"].isin(exec_times)].copy()
+    relevant_instruments = {str(value) for value in tracked_instruments or set()}
+    if not shifted.empty:
+        relevant_instruments.update(shifted["instrument_id"].astype(str).unique())
+    if not relevant_instruments:
+        return pd.DataFrame(columns=[*prices.columns, "target_weight"])
+    prices = prices.loc[
+        prices["instrument_id"].astype(str).isin(relevant_instruments)
+    ].copy()
     targets = shifted.loc[
         :, ["exec_time", "instrument_id", "target_weight"]
     ].copy()
-    merged = prices.merge(targets, on=["exec_time", "instrument_id"], how="left")
-    merged["target_weight"] = merged["target_weight"].fillna(0.0)
-    return merged
+    return prices.merge(targets, on=["exec_time", "instrument_id"], how="left")
 
 
 def _simulate(
