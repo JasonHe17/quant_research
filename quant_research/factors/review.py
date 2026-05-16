@@ -141,6 +141,21 @@ def render_factor_candidate_review_markdown(report: dict[str, Any]) -> str:
     else:
         lines.append(f"- Status: `{portfolio.get('status')}`")
         lines.append(f"- Overall validation: `{portfolio.get('overall_status')}`")
+        if portfolio.get("summary_type"):
+            lines.append(f"- Summary type: `{portfolio.get('summary_type')}`")
+        if portfolio.get("result_count") is not None:
+            lines.append(f"- Result count: `{portfolio.get('result_count')}`")
+        primary = portfolio.get("primary_result")
+        if isinstance(primary, dict) and primary:
+            lines.append(
+                "- Primary result: method `{method}`, total_return `{total_return}`, "
+                "max_drawdown `{max_drawdown}`, gross_turnover `{gross_turnover}`".format(
+                    method=primary.get("method"),
+                    total_return=_format_number(primary.get("total_return")),
+                    max_drawdown=_format_number(primary.get("max_drawdown")),
+                    gross_turnover=_format_number(primary.get("gross_turnover")),
+                )
+            )
     lines.append("")
     return "\n".join(lines)
 
@@ -260,13 +275,74 @@ def _portfolio_validation_summary(
 ) -> dict[str, Any]:
     if not portfolio_validation:
         return {"status": "not_provided"}
+    if "validation" in portfolio_validation:
+        return _policy_validation_summary(portfolio_validation)
+    if "backtest_summary" in portfolio_validation or "methods" in portfolio_validation:
+        return _candidate_portfolio_summary(portfolio_validation)
+    return {
+        "status": "provided",
+        "summary_type": "unknown",
+        "overall_status": None,
+        "failed_count": None,
+        "warning_count": None,
+        "result_count": 0,
+    }
+
+
+def _policy_validation_summary(portfolio_validation: dict[str, Any]) -> dict[str, Any]:
     validation = portfolio_validation.get("validation", {})
     return {
         "status": "provided",
+        "summary_type": "policy_validation",
         "overall_status": validation.get("overall_status"),
         "failed_count": validation.get("failed_count"),
         "warning_count": validation.get("warning_count"),
         "result_count": len(portfolio_validation.get("results", [])),
+    }
+
+
+def _candidate_portfolio_summary(portfolio_validation: dict[str, Any]) -> dict[str, Any]:
+    rows = [
+        row
+        for row in portfolio_validation.get("backtest_summary", [])
+        if isinstance(row, dict)
+    ]
+    failed_count = sum(1 for row in rows if _number(row.get("total_return")) <= 0)
+    warning_count = sum(
+        1
+        for row in rows
+        if _number(row.get("total_return")) is not None
+        and _number(row.get("total_return")) <= 0
+    )
+    overall_status = (
+        "not_run"
+        if not rows
+        else "fail"
+        if failed_count
+        else "pass"
+    )
+    primary = rows[0] if rows else {}
+    return {
+        "status": "provided",
+        "summary_type": "candidate_factor_portfolio",
+        "overall_status": overall_status,
+        "failed_count": failed_count,
+        "warning_count": warning_count,
+        "result_count": len(rows),
+        "candidate_features": portfolio_validation.get("candidate_features", []),
+        "method_count": len(portfolio_validation.get("methods", {})),
+        "primary_result": {
+            "method": primary.get("method"),
+            "policy": primary.get("policy"),
+            "total_return": primary.get("total_return"),
+            "max_drawdown": primary.get("max_drawdown"),
+            "gross_turnover": primary.get("gross_turnover"),
+            "total_transaction_cost": primary.get("total_transaction_cost"),
+            "trade_count": primary.get("trade_count"),
+            "signal_count": primary.get("signal_count"),
+        }
+        if primary
+        else {},
     }
 
 
@@ -282,3 +358,13 @@ def _format_number(value: object) -> str:
     except (TypeError, ValueError):
         return ""
     return f"{number:.6g}"
+
+
+def _number(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number

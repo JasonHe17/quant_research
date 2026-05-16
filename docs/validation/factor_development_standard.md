@@ -106,7 +106,28 @@ The validator treats missing active-factor safety metadata as a hard error.
    code changes.
 
 4. Run single-factor evaluation.
-   Use the existing standard framework evaluation and admission flow:
+   For a new factor batch, build and evaluate only the newly introduced factor
+   groups first. Do not run `--factor-groups all` during iterative discovery
+   unless the task is explicitly a full-regression benchmark or release gate.
+   This keeps admission evidence focused on the new hypotheses and prevents
+   full-feature memory growth from slowing every iteration.
+
+   A new-factor-only dataset command should name the new groups explicitly:
+
+   ```bash
+   conda run -n quant python examples/build_baseline_a_alpha_dataset.py \
+     --catalog-path ../quant_dataset/canonical_store/catalog/quant_research.duckdb \
+     --start 2023-01-03T09:35:00+08:00 \
+     --end 2025-12-31T15:00:00+08:00 \
+     --output-dir runs/framework_v1_acceptance/<batch>/alpha_dataset \
+     --factor-groups intraday_new_group another_new_group \
+     --workers 4 \
+     --memory-budget-gb 0 \
+     --worker-memory-estimate-gb 10
+   ```
+
+   Full-suite benchmark runs remain available for framework regression, but
+   dataset worker concurrency must be bounded by the dataset memory budget:
 
    ```bash
    conda run -n quant python examples/run_framework_v1_benchmark.py \
@@ -228,7 +249,13 @@ parallelized only within explicit family boundaries:
 
 - At most one active implementation task per factor family unless the write
   paths are disjoint.
+- Python compute parallelism must use process workers. Do not add
+  `ThreadPoolExecutor` or `thread` backends for factor builds, evaluations,
+  backtests, or validation orchestration.
 - Evaluation can run in parallel under the existing memory-budget controls.
+- Full-feature dataset builds must set an explicit worker memory estimate or
+  memory budget. The builder may reduce requested worker count to stay within
+  budget.
 - Promotion decisions are not automated. Reports are inputs to review, not
   authority to change defaults.
 

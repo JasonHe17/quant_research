@@ -6,7 +6,7 @@ import argparse
 import gc
 import json
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import replace
 from pathlib import Path
 
@@ -75,7 +75,14 @@ def main() -> None:
         end=args.end,
         partition=args.partition,
     )
-    if args.workers == 1:
+    effective_workers = _effective_workers(args)
+    if effective_workers != args.workers:
+        print(
+            f"dataset workers reduced from {args.workers} to {effective_workers} "
+            "by memory budget",
+            flush=True,
+        )
+    if effective_workers == 1:
         row_iterable = (
             _build_partition_dataset(
                 partition_name=partition_name,
@@ -96,9 +103,16 @@ def main() -> None:
             rows.sort(key=lambda item: str(item["partition"]))
             _write_summary(output_dir, args, rows)
     else:
-        with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = [
-                executor.submit(
+        pending = list(chunks)
+        running: dict[
+            Future[dict[str, object] | None],
+            tuple[str, pd.Timestamp, pd.Timestamp],
+        ] = {}
+        with ProcessPoolExecutor(max_workers=effective_workers) as executor:
+            while pending or running:
+                while pending and len(running) < effective_workers:
+                    partition_name, core_start, core_end = pending.pop(0)
+                    future = executor.submit(
                     _build_partition_dataset,
                     partition_name=partition_name,
                     core_start=core_start,
@@ -109,15 +123,16 @@ def main() -> None:
                     label_config=label_config,
                     output_dir=output_dir,
                 )
-                for partition_name, core_start, core_end in chunks
-            ]
-            for future in as_completed(futures):
-                row = future.result()
-                if row is None:
-                    continue
-                rows.append(row)
-                rows.sort(key=lambda item: str(item["partition"]))
-                _write_summary(output_dir, args, rows)
+                    running[future] = (partition_name, core_start, core_end)
+                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in done:
+                    running.pop(future)
+                    row = future.result()
+                    if row is None:
+                        continue
+                    rows.append(row)
+                    rows.sort(key=lambda item: str(item["partition"]))
+                    _write_summary(output_dir, args, rows)
     print(pd.DataFrame(rows).to_string(index=False))
 
 
@@ -160,6 +175,19 @@ def _build_partition_dataset(
             volume_windows=tuple(args.volume_windows),
             turnover_windows=tuple(args.turnover_windows),
             vwap_deviation_windows=tuple(args.vwap_deviation_windows),
+            downside_volatility_windows=tuple(args.downside_volatility_windows),
+            return_skewness_windows=tuple(args.return_skewness_windows),
+            money_flow_windows=tuple(args.money_flow_windows),
+            signed_turnover_imbalance_windows=tuple(
+                args.signed_turnover_imbalance_windows
+            ),
+            risk_adjusted_momentum_windows=tuple(args.risk_adjusted_momentum_windows),
+            volume_confirmed_momentum_windows=tuple(
+                args.volume_confirmed_momentum_windows
+            ),
+            return_turnover_correlation_windows=tuple(
+                args.return_turnover_correlation_windows
+            ),
         ),
     )
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
@@ -376,6 +404,13 @@ def _write_summary(
             "volume_windows": args.volume_windows,
             "turnover_windows": args.turnover_windows,
             "vwap_deviation_windows": args.vwap_deviation_windows,
+            "downside_volatility_windows": args.downside_volatility_windows,
+            "return_skewness_windows": args.return_skewness_windows,
+            "money_flow_windows": args.money_flow_windows,
+            "signed_turnover_imbalance_windows": args.signed_turnover_imbalance_windows,
+            "risk_adjusted_momentum_windows": args.risk_adjusted_momentum_windows,
+            "volume_confirmed_momentum_windows": args.volume_confirmed_momentum_windows,
+            "return_turnover_correlation_windows": args.return_turnover_correlation_windows,
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
             "entry_lag_bars": args.entry_lag_bars,
@@ -426,6 +461,14 @@ def _parse_args() -> argparse.Namespace:
             "bar_return",
             "liquidity_impact",
             "vwap_deviation",
+            "downside_volatility",
+            "return_skewness",
+            "money_flow",
+            "signed_turnover_imbalance",
+            "risk_adjusted_momentum",
+            "volume_confirmed_momentum",
+            "intraday_gap",
+            "return_turnover_correlation",
         ),
     )
     parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 3, 6])
@@ -442,6 +485,38 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--volume-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--turnover-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--vwap-deviation-windows", type=int, nargs="+", default=[48])
+    parser.add_argument(
+        "--downside-volatility-windows",
+        type=int,
+        nargs="+",
+        default=[12, 48],
+    )
+    parser.add_argument("--return-skewness-windows", type=int, nargs="+", default=[12, 48])
+    parser.add_argument("--money-flow-windows", type=int, nargs="+", default=[12, 48])
+    parser.add_argument(
+        "--signed-turnover-imbalance-windows",
+        type=int,
+        nargs="+",
+        default=[12, 48],
+    )
+    parser.add_argument(
+        "--risk-adjusted-momentum-windows",
+        type=int,
+        nargs="+",
+        default=[12, 48],
+    )
+    parser.add_argument(
+        "--volume-confirmed-momentum-windows",
+        type=int,
+        nargs="+",
+        default=[12, 48],
+    )
+    parser.add_argument(
+        "--return-turnover-correlation-windows",
+        type=int,
+        nargs="+",
+        default=[12, 48],
+    )
     parser.add_argument("--label-name", default="forward_return")
     parser.add_argument("--horizon-bars", type=int, default=48)
     parser.add_argument("--entry-lag-bars", type=int, default=1)
@@ -462,6 +537,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--partition", choices=("monthly", "yearly"), default="monthly")
     parser.add_argument("--padding-days", type=int, default=30)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--worker-memory-estimate-gb",
+        type=float,
+        default=10.0,
+        help="estimated peak memory per dataset worker; used to cap process concurrency",
+    )
+    parser.add_argument(
+        "--memory-budget-gb",
+        type=float,
+        default=0.0,
+        help=(
+            "memory budget for concurrent dataset workers; 0 auto-detects "
+            "available memory and uses a conservative fraction"
+        ),
+    )
     parser.add_argument("--write-components", action="store_true")
     parser.add_argument("--data-snapshot")
     args = parser.parse_args()
@@ -483,10 +573,28 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--turnover-windows values must be positive")
     if any(value <= 0 for value in args.vwap_deviation_windows):
         raise ValueError("--vwap-deviation-windows values must be positive")
+    if any(value <= 0 for value in args.downside_volatility_windows):
+        raise ValueError("--downside-volatility-windows values must be positive")
+    if any(value <= 0 for value in args.return_skewness_windows):
+        raise ValueError("--return-skewness-windows values must be positive")
+    if any(value <= 0 for value in args.money_flow_windows):
+        raise ValueError("--money-flow-windows values must be positive")
+    if any(value <= 0 for value in args.signed_turnover_imbalance_windows):
+        raise ValueError("--signed-turnover-imbalance-windows values must be positive")
+    if any(value <= 0 for value in args.risk_adjusted_momentum_windows):
+        raise ValueError("--risk-adjusted-momentum-windows values must be positive")
+    if any(value <= 0 for value in args.volume_confirmed_momentum_windows):
+        raise ValueError("--volume-confirmed-momentum-windows values must be positive")
+    if any(value <= 0 for value in args.return_turnover_correlation_windows):
+        raise ValueError("--return-turnover-correlation-windows values must be positive")
     if args.padding_days < 0:
         raise ValueError("--padding-days must be non-negative")
     if args.workers <= 0:
         raise ValueError("--workers must be positive")
+    if args.worker_memory_estimate_gb <= 0:
+        raise ValueError("--worker-memory-estimate-gb must be positive")
+    if args.memory_budget_gb < 0:
+        raise ValueError("--memory-budget-gb must be non-negative")
     if args.limit_up_bps <= 0:
         raise ValueError("--limit-up-bps must be positive")
     if args.limit_down_bps <= 0:
@@ -508,6 +616,19 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "volume_windows": list(args.volume_windows),
         "turnover_windows": list(args.turnover_windows),
         "vwap_deviation_windows": list(args.vwap_deviation_windows),
+        "downside_volatility_windows": list(args.downside_volatility_windows),
+        "return_skewness_windows": list(args.return_skewness_windows),
+        "money_flow_windows": list(args.money_flow_windows),
+        "signed_turnover_imbalance_windows": list(
+            args.signed_turnover_imbalance_windows
+        ),
+        "risk_adjusted_momentum_windows": list(args.risk_adjusted_momentum_windows),
+        "volume_confirmed_momentum_windows": list(
+            args.volume_confirmed_momentum_windows
+        ),
+        "return_turnover_correlation_windows": list(
+            args.return_turnover_correlation_windows
+        ),
         "label_name": args.label_name,
         "horizon_bars": args.horizon_bars,
         "entry_lag_bars": args.entry_lag_bars,
@@ -524,6 +645,10 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         },
         "partition": args.partition,
         "padding_days": args.padding_days,
+        "workers": args.workers,
+        "effective_workers": _effective_workers(args),
+        "worker_memory_estimate_gb": args.worker_memory_estimate_gb,
+        "memory_budget_gb": args.memory_budget_gb,
         "warmup_window": {
             "padding_days": args.padding_days,
             "max_lookback_bars": max(
@@ -537,6 +662,13 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.volume_windows,
                     *args.turnover_windows,
                     *args.vwap_deviation_windows,
+                    *args.downside_volatility_windows,
+                    *args.return_skewness_windows,
+                    *args.money_flow_windows,
+                    *args.signed_turnover_imbalance_windows,
+                    *args.risk_adjusted_momentum_windows,
+                    *args.volume_confirmed_momentum_windows,
+                    *args.return_turnover_correlation_windows,
                 ]
             ),
         },
@@ -547,6 +679,38 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
             "exit_price": "close_price",
         },
     }
+
+
+def _effective_workers(args: argparse.Namespace) -> int:
+    if args.workers <= 1:
+        return args.workers
+    budget = _effective_memory_budget_gb(args)
+    allowed = max(1, int(budget // args.worker_memory_estimate_gb))
+    return min(args.workers, allowed)
+
+
+def _effective_memory_budget_gb(args: argparse.Namespace) -> float:
+    if args.memory_budget_gb > 0:
+        return args.memory_budget_gb
+    available = _available_memory_gb()
+    if available is None:
+        return args.worker_memory_estimate_gb
+    return max(
+        min(available * 0.60, available - 2.0),
+        args.worker_memory_estimate_gb,
+    )
+
+
+def _available_memory_gb() -> float | None:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return None
+    for line in meminfo.read_text(encoding="utf-8").splitlines():
+        if line.startswith("MemAvailable:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                return float(parts[1]) / 1024.0 / 1024.0
+    return None
 
 
 if __name__ == "__main__":

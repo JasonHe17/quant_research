@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 import json
 import math
@@ -462,7 +462,7 @@ def _run_scenarios_with_budget(
     pending = list(scenarios)
     running: dict[Future[None], ValidationScenario] = {}
     running_memory_gb = 0.0
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         while pending or running:
             while pending and len(running) < max_workers:
                 scenario = pending[0]

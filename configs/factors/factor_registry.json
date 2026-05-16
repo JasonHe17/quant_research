@@ -714,6 +714,575 @@
         "intraday",
         "research"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar downside close-return semivolatility using only negative 5-minute returns.",
+      "display_name": "Intraday downside volatility, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_downside_volatility_5m_w48/factor_candidate_review.json",
+        "portfolio_validation": "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
+        "portfolio_validation_status": "negative_combo_no_promotion"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_downside_volatility_5m_w48",
+      "family": "volatility",
+      "feature_columns": [
+        "intraday_downside_volatility_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Downside-only realized volatility should be a cleaner long-only risk penalty than symmetric volatility because recent selling pressure worsens both selection quality and execution risk.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "downside_volatility_windows": [
+            48
+          ],
+          "factor_groups": [
+            "downside_volatility"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_16.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "runs/factor_candidate_reviews/intraday_downside_volatility_5m_w48/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "batch_2026_05_16",
+        "candidate",
+        "intraday",
+        "research",
+        "risk_penalty"
+      ],
+      "notes": "Formal 2023-2025 admission cleared all gates in inverted direction, but the equal two-factor candidate portfolio was negative after costs; keep as a candidate risk penalty pending isolated portfolio validation."
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar skewness of 5-minute close-to-close returns.",
+      "display_name": "Intraday return skewness, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_return_skewness_5m_w48/factor_candidate_review.json"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_return_skewness_5m_w48",
+      "family": "risk",
+      "feature_columns": [
+        "intraday_return_skewness_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Intraday return skewness can separate unstable lottery-like bursts from smoother accumulation; the direction should be learned or gated because positive skew may represent either attention chasing or genuine demand.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "return_skewness"
+          ],
+          "return_skewness_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_16.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "runs/factor_candidate_reviews/intraday_return_skewness_5m_w48/factor_candidate_review.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+          "runs/factor_candidate_reviews/intraday_return_skewness_5m_w48/factor_candidate_review.json",
+          "docs/strategy/factor_research_batch_2026_05_16.md"
+        ],
+        "negative_findings": "The 2023-2025 standard admission showed strong inverted rank IC, but the cost-adjusted top-minus-bottom spread was negative, so the factor is not economically admissible as a standalone signal.",
+        "retry_conditions": "Retry only as a tail-risk filter or after adding liquidity and turnover controls that turn annual cost-adjusted spread positive.",
+        "similar_to": [
+          "intraday_downside_volatility_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "batch_2026_05_16",
+        "watchlist",
+        "intraday",
+        "research",
+        "distribution_shape"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar Chaikin-style money-flow balance from close location within each 5-minute high-low range, weighted by volume.",
+      "display_name": "Intraday money flow, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "admission_status": "reject"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_money_flow_5m_w48",
+      "family": "volume",
+      "feature_columns": [
+        "intraday_money_flow_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Closes near intrabar highs on sustained volume should proxy net accumulation more directly than raw volume expansion and may improve attention signals after costs.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "money_flow"
+          ],
+          "money_flow_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_16.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "high_price",
+        "low_price",
+        "close_price",
+        "volume"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_hit_rate",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+          "docs/strategy/factor_research_batch_2026_05_16.md"
+        ],
+        "negative_findings": "The 48-bar money-flow factor was rejected in standard admission: coverage was below the hard threshold, directional hit rate was only 0.507, and only one annual slice had stable IC direction.",
+        "retry_conditions": "Retry only with a materially different accumulation transform, such as volume-decayed close-location value or liquidity-conditioned money flow, and require full coverage plus stable annual direction.",
+        "similar_to": [
+          "intraday_volume_ratio_5m_w48"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "batch_2026_05_16",
+        "intraday",
+        "research",
+        "volume_confirmed"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar signed turnover imbalance, using the sign of each 5-minute close-to-close return to classify turnover as up-pressure or down-pressure.",
+      "display_name": "Intraday signed turnover imbalance, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_signed_turnover_imbalance_5m_w48",
+      "family": "turnover",
+      "feature_columns": [
+        "intraday_signed_turnover_imbalance_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Turnover attached to upticks should be more informative than raw turnover shocks because it combines participation with directional pressure while remaining computable from standard bars.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "signed_turnover_imbalance"
+          ],
+          "signed_turnover_imbalance_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_16.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+          "docs/strategy/factor_research_batch_2026_05_16.md"
+        ],
+        "negative_findings": "The signed turnover imbalance only worked in inverted direction and failed the cost-adjusted spread gate despite passing basic IC and coverage checks.",
+        "retry_conditions": "Retry only after separating up-pressure and down-pressure legs or adding liquidity participation constraints that demonstrate positive cost-adjusted spread.",
+        "similar_to": [
+          "intraday_turnover_ratio_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "batch_2026_05_16",
+        "watchlist",
+        "intraday",
+        "research",
+        "turnover_confirmed"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar close momentum divided by realized 5-minute return volatility over the same window.",
+      "display_name": "Intraday risk-adjusted momentum, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_risk_adjusted_momentum_5m_w48",
+      "family": "momentum",
+      "feature_columns": [
+        "intraday_risk_adjusted_momentum_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Volatility-scaled intraday continuation may separate durable demand from noisy price jumps, reducing overlap with raw momentum signals that were unstable after costs.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "risk_adjusted_momentum"
+          ],
+          "risk_adjusted_momentum_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_16.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+          "docs/strategy/factor_research_batch_2026_05_16.md"
+        ],
+        "negative_findings": "Risk-adjusted momentum required inverted treatment, had only two stable annual IC slices, and failed the cost-adjusted spread gate in the standard 2023-2025 admission run.",
+        "retry_conditions": "Retry only as a reversal/overextension signal with explicit holding-period and liquidity controls, not as raw volatility-scaled continuation.",
+        "similar_to": [
+          "intraday_momentum_5m_lb12"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "batch_2026_05_16",
+        "watchlist",
+        "intraday",
+        "research",
+        "risk_adjusted"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar close momentum multiplied by current volume expansion versus the same-window rolling mean.",
+      "display_name": "Intraday volume-confirmed momentum, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_volume_confirmed_momentum_5m_w48/factor_candidate_review.json",
+        "portfolio_validation": "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
+        "portfolio_validation_status": "negative_combo_demoted"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_volume_confirmed_momentum_5m_w48",
+      "family": "momentum",
+      "feature_columns": [
+        "intraday_volume_confirmed_momentum_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Continuation confirmed by contemporaneous volume expansion should be more robust than raw momentum or raw volume because it requires both price direction and participation.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "volume_confirmed_momentum"
+          ],
+          "volume_confirmed_momentum_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_16.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "runs/factor_candidate_reviews/intraday_volume_confirmed_momentum_5m_w48/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "volume"
+      ],
+      "research_memory": {
+        "decision_reason": "portfolio_negative",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+          "runs/factor_candidate_reviews/intraday_volume_confirmed_momentum_5m_w48/factor_candidate_review.json",
+          "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
+          "docs/strategy/factor_research_batch_2026_05_16.md"
+        ],
+        "negative_findings": "The factor passed single-factor admission only in inverted direction, with weak IC and high top-N turnover; the registered two-factor candidate portfolio lost 11.3% after costs over 2023-2025.",
+        "retry_conditions": "Retry only with calibrated forecast scaling, stricter turnover gating, or as a conditional overlay with positive isolated and incremental portfolio contribution.",
+        "similar_to": [
+          "intraday_momentum_5m_lb12",
+          "intraday_volume_ratio_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "batch_2026_05_16",
+        "watchlist",
+        "intraday",
+        "research",
+        "volume_confirmed"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Current 5-minute open-to-previous-close gap.",
+      "display_name": "Intraday gap, 5-minute bar",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "admission_status": "reject"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_gap_5m",
+      "family": "event",
+      "feature_columns": [
+        "intraday_gap_5m"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Short interval gaps capture discrete repricing and temporary order-book imbalance; direction may differ across market regimes, so admission should evaluate both continuation and reversal use.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "intraday_gap"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 1,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_16.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_ic",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+          "docs/strategy/factor_research_batch_2026_05_16.md"
+        ],
+        "negative_findings": "The intraday gap factor was rejected: rank IC was effectively zero, t-stat and hit-rate gates failed, turnover was high, and cost-adjusted spread was negative.",
+        "retry_conditions": "Retry only as a redesigned event feature with overnight/session boundary separation, limit-event conditioning, or explicit reversal buckets.",
+        "similar_to": []
+      },
+      "status": "reject",
+      "tags": [
+        "batch_2026_05_16",
+        "intraday",
+        "research",
+        "event"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar correlation between 5-minute close returns and turnover.",
+      "display_name": "Intraday return-turnover correlation, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_return_turnover_corr_5m_w48/factor_candidate_review.json"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_return_turnover_corr_5m_w48",
+      "family": "turnover",
+      "feature_columns": [
+        "intraday_return_turnover_corr_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Positive return-turnover correlation indicates participation arriving on up moves rather than indiscriminate turnover spikes, which may be more durable than standalone turnover ratios.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "return_turnover_correlation"
+          ],
+          "return_turnover_correlation_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_16.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "runs/factor_candidate_reviews/intraday_return_turnover_corr_5m_w48/factor_candidate_review.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+          "runs/factor_candidate_reviews/intraday_return_turnover_corr_5m_w48/factor_candidate_review.json",
+          "docs/strategy/factor_research_batch_2026_05_16.md"
+        ],
+        "negative_findings": "Return-turnover correlation worked only in inverted direction, had two stable annual IC slices, and failed the cost-adjusted spread gate in the standard run.",
+        "retry_conditions": "Retry only after decomposing turnover participation into regime or liquidity buckets with positive after-cost spread in annual slices.",
+        "similar_to": [
+          "intraday_signed_turnover_imbalance_5m_w48",
+          "intraday_turnover_ratio_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "batch_2026_05_16",
+        "watchlist",
+        "intraday",
+        "research",
+        "turnover_confirmed"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -721,6 +1290,7 @@
     "docs/validation/factor_development_standard.md",
     "docs/validation/factor_admission.md",
     "docs/strategy/candidate_factor_portfolios.md",
+    "docs/strategy/factor_research_batch_2026_05_16.md",
     "https://academic.oup.com/rfs/article/29/1/5/1843824",
     "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253",
     "https://www.nber.org/papers/w20721",
@@ -729,6 +1299,6 @@
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-15",
-  "version": 1
+  "updated_at": "2026-05-16",
+  "version": 3
 }

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -473,7 +473,7 @@ def _run_backtest_jobs_with_budget(
     pending = list(jobs)
     running: dict[Future[None], BacktestJob] = {}
     running_memory_gb = 0.0
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         while pending or running:
             while pending and len(running) < max_workers:
                 job = pending[0]

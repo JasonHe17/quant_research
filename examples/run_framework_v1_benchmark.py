@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
@@ -47,6 +47,8 @@ class FrameworkV1BenchmarkConfig:
     streaming_chunk: str
     streaming_chunk_padding_days: int
     dataset_workers: int
+    dataset_worker_memory_estimate_gb: float
+    dataset_memory_budget_gb: float | None
     evaluation_workers: int
     evaluation_backend: str
     skip_feature_correlation: bool
@@ -212,6 +214,14 @@ def _benchmark_commands(
     ]
     if config.skip_feature_correlation:
         evaluation_command.append("--skip-feature-correlation")
+    if config.dataset_memory_budget_gb is not None:
+        dataset_command.extend(["--memory-budget-gb", str(config.dataset_memory_budget_gb)])
+    dataset_command.extend(
+        [
+            "--worker-memory-estimate-gb",
+            str(config.dataset_worker_memory_estimate_gb),
+        ]
+    )
     commands = {
         "dataset": dataset_command,
         "factor_evaluation": evaluation_command,
@@ -436,7 +446,7 @@ def _run_backtest_jobs_with_budget(
     pending = list(jobs)
     running: dict[Future[None], BacktestJob] = {}
     running_memory_gb = 0.0
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         while pending or running:
             while pending and len(running) < max_workers:
                 job = pending[0]
@@ -904,6 +914,12 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
         streaming_chunk=args.streaming_chunk,
         streaming_chunk_padding_days=args.streaming_chunk_padding_days,
         dataset_workers=args.dataset_workers,
+        dataset_worker_memory_estimate_gb=args.dataset_worker_memory_estimate_gb,
+        dataset_memory_budget_gb=(
+            args.dataset_memory_budget_gb
+            if args.dataset_memory_budget_gb > 0
+            else None
+        ),
         evaluation_workers=args.evaluation_workers,
         evaluation_backend=args.evaluation_backend,
         skip_feature_correlation=args.skip_feature_correlation,
@@ -979,10 +995,25 @@ def _parse_args() -> argparse.Namespace:
         help="Padding passed to fast_parquet streaming chunks.",
     )
     parser.add_argument("--dataset-workers", type=int, default=1)
+    parser.add_argument(
+        "--dataset-worker-memory-estimate-gb",
+        type=float,
+        default=10.0,
+        help="estimated memory footprint for each dataset build worker",
+    )
+    parser.add_argument(
+        "--dataset-memory-budget-gb",
+        type=float,
+        default=0.0,
+        help=(
+            "memory budget for concurrent dataset workers; 0 lets the dataset "
+            "builder auto-detect available memory"
+        ),
+    )
     parser.add_argument("--evaluation-workers", type=int, default=8)
     parser.add_argument(
         "--evaluation-backend",
-        choices=("thread", "process"),
+        choices=("process",),
         default="process",
     )
     parser.add_argument("--skip-feature-correlation", action="store_true")
@@ -1071,6 +1102,8 @@ def _validate_args(args: argparse.Namespace) -> None:
     if args.cost_stress_multiplier < 1:
         raise ValueError("--cost-stress-multiplier must be at least 1")
     for name in (
+        "dataset_memory_budget_gb",
+        "dataset_worker_memory_estimate_gb",
         "backtest_memory_budget_gb",
         "full_backtest_memory_gb",
         "yearly_backtest_memory_gb",

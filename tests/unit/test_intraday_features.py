@@ -35,6 +35,14 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "bar_return",
             "liquidity_impact",
             "vwap_deviation",
+            "downside_volatility",
+            "return_skewness",
+            "money_flow",
+            "signed_turnover_imbalance",
+            "risk_adjusted_momentum",
+            "volume_confirmed_momentum",
+            "intraday_gap",
+            "return_turnover_correlation",
         ),
         reversal_lookback_bars=(1,),
         momentum_lookback_bars=(2,),
@@ -45,6 +53,13 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         volume_windows=(3,),
         turnover_windows=(3,),
         vwap_deviation_windows=(3,),
+        downside_volatility_windows=(3,),
+        return_skewness_windows=(3,),
+        money_flow_windows=(3,),
+        signed_turnover_imbalance_windows=(3,),
+        risk_adjusted_momentum_windows=(3,),
+        volume_confirmed_momentum_windows=(3,),
+        return_turnover_correlation_windows=(3,),
     )
 
     features = build_intraday_feature_matrix(bars, config)
@@ -60,11 +75,28 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_bar_return_5m" in features
     assert "intraday_amihud_5m" in features
     assert "intraday_vwap_deviation_5m_w3" in features
+    assert "intraday_downside_volatility_5m_w3" in features
+    assert "intraday_return_skewness_5m_w3" in features
+    assert "intraday_money_flow_5m_w3" in features
+    assert "intraday_signed_turnover_imbalance_5m_w3" in features
+    assert "intraday_risk_adjusted_momentum_5m_w3" in features
+    assert "intraday_volume_confirmed_momentum_5m_w3" in features
+    assert "intraday_gap_5m" in features
+    assert "intraday_return_turnover_corr_5m_w3" in features
     assert features.loc[0, "intraday_bar_return_5m"] == pytest.approx(0.1)
     assert features["intraday_reversal_5m_lb1"].notna().sum() == 5
     assert features["intraday_range_position_5m_w3"].iloc[-1] == pytest.approx(0.5)
     assert features["intraday_efficiency_ratio_5m_w3"].iloc[-1] == pytest.approx(1.0)
     assert features["intraday_vwap_deviation_5m_w3"].notna().sum() == 4
+    assert features["intraday_downside_volatility_5m_w3"].iloc[-1] == pytest.approx(0.0)
+    assert features["intraday_money_flow_5m_w3"].iloc[-1] == pytest.approx(1.0)
+    assert features["intraday_signed_turnover_imbalance_5m_w3"].iloc[-1] == pytest.approx(
+        1.0
+    )
+    assert features["intraday_gap_5m"].iloc[-1] == pytest.approx(0.0)
+    assert features["intraday_risk_adjusted_momentum_5m_w3"].notna().sum() >= 1
+    assert features["intraday_volume_confirmed_momentum_5m_w3"].notna().sum() >= 1
+    assert features["intraday_return_turnover_corr_5m_w3"].notna().sum() >= 1
 
 
 def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
@@ -95,6 +127,14 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_efficiency_ratio_5m_w48" in features
     assert "intraday_turnover_ratio_5m_w48" in features
     assert "intraday_vwap_deviation_5m_w48" in features
+    assert "intraday_downside_volatility_5m_w48" in features
+    assert "intraday_return_skewness_5m_w48" in features
+    assert "intraday_money_flow_5m_w48" in features
+    assert "intraday_signed_turnover_imbalance_5m_w48" in features
+    assert "intraday_risk_adjusted_momentum_5m_w48" in features
+    assert "intraday_volume_confirmed_momentum_5m_w48" in features
+    assert "intraday_gap_5m" in features
+    assert "intraday_return_turnover_corr_5m_w48" in features
     assert not features.empty
 
 

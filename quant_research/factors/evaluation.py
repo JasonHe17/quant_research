@@ -379,7 +379,7 @@ def _rank_autocorrelation(
     shared = current.index.intersection(previous.index)
     if len(shared) < 2:
         return None
-    return _nullable_float(current.loc[shared].corr(previous.loc[shared]))
+    return _correlation(current.loc[shared], previous.loc[shared], method="pearson")
 
 
 def _label_ic_rows(
@@ -580,10 +580,18 @@ def _aggregate_optional_means(group: pd.DataFrame) -> dict[str, float | None]:
     return output
 
 
-def _correlation(left: pd.Series, right: pd.Series, *, method: str) -> float:
+def _correlation(left: pd.Series, right: pd.Series, *, method: str) -> float | None:
+    if len(left) < 2 or len(right) < 2:
+        return None
     if method == "spearman":
-        return float(left.rank(method="average").corr(right.rank(method="average")))
-    return float(left.corr(right))
+        left_values = left.rank(method="average")
+        right_values = right.rank(method="average")
+    else:
+        left_values = left.astype(float)
+        right_values = right.astype(float)
+    if left_values.nunique(dropna=True) < 2 or right_values.nunique(dropna=True) < 2:
+        return None
+    return _nullable_float(left_values.corr(right_values))
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

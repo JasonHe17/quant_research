@@ -243,6 +243,26 @@ def test_build_composite_scores_caps_row_level_factor_contributions() -> None:
     assert capped.iloc[0]["score"] < uncapped.iloc[0]["score"]
 
 
+def test_build_composite_scores_does_not_zero_single_factor_when_capped() -> None:
+    frame = pd.DataFrame(
+        [
+            {"timestamp": "t0", "instrument_id": "a", "alpha_a": 1.0},
+            {"timestamp": "t0", "instrument_id": "b", "alpha_a": 2.0},
+            {"timestamp": "t0", "instrument_id": "c", "alpha_a": 3.0},
+        ]
+    )
+
+    scores = build_composite_scores(
+        frame,
+        candidates=(CandidateFactor("alpha_a", 1, 0.02),),
+        weights={"alpha_a": 1.0},
+        max_factor_contribution_share=0.7,
+    )
+
+    assert scores["score"].abs().max() > 0.0
+    assert scores.iloc[0]["instrument_id"] == "c"
+
+
 def test_build_factor_health_schedule_uses_only_lagged_labels(tmp_path: Path) -> None:
     dataset_path = tmp_path / "dataset_2024_01.parquet"
     pd.DataFrame(

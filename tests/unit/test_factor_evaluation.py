@@ -106,6 +106,26 @@ def test_evaluate_single_factors_infers_feature_columns() -> None:
     assert list(result.feature_correlation.columns) == ["alpha_a", "alpha_b"]
 
 
+def test_evaluate_single_factors_returns_null_ic_for_constant_cross_section() -> None:
+    frame = pd.DataFrame(
+        {
+            "timestamp": ["t0", "t0", "t0"],
+            "instrument_id": ["a", "b", "c"],
+            "alpha": [1.0, 1.0, 1.0],
+            "forward_return": [0.01, 0.02, 0.03],
+        }
+    )
+
+    result = evaluate_single_factors(
+        frame,
+        SingleFactorEvaluationConfig(feature_columns=("alpha",), top_n=1),
+    )
+
+    row = result.by_timestamp.iloc[0]
+    assert pd.isna(row["pearson_ic"])
+    assert pd.isna(row["spearman_rank_ic"])
+
+
 def test_single_factor_evaluation_rejects_missing_label() -> None:
     frame = pd.DataFrame({"timestamp": ["t0"], "instrument_id": ["a"], "alpha": [1.0]})
 

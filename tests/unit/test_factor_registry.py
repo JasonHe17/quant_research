@@ -173,6 +173,49 @@ def test_factor_candidate_review_uses_registry_and_admission_report() -> None:
     assert review["single_factor_admission"]["rows"][0]["feature"] == "alpha_good_feature"
 
 
+def test_factor_candidate_review_summarizes_candidate_portfolio_backtest() -> None:
+    registry = FactorRegistry(
+        registry_name="test",
+        version=1,
+        entries=(_entry("alpha_good", "alpha_good_feature"),),
+    )
+    admission_report = {
+        "factors": [
+            {
+                "feature": "alpha_good_feature",
+                "admission_status": "candidate",
+                "direction": "long",
+            }
+        ],
+    }
+    portfolio_summary = {
+        "candidate_features": ["alpha_good_feature"],
+        "methods": {"equal": {"row_count": 3}},
+        "backtest_summary": [
+            {
+                "method": "equal",
+                "policy": "single",
+                "total_return": -0.10,
+                "max_drawdown": -0.20,
+                "gross_turnover": 12.0,
+            }
+        ],
+    }
+
+    review = build_factor_candidate_review(
+        registry,
+        factor_id="alpha_good",
+        admission_report=admission_report,
+        portfolio_validation=portfolio_summary,
+    )
+
+    summary = review["portfolio_validation"]
+    assert summary["summary_type"] == "candidate_factor_portfolio"
+    assert summary["overall_status"] == "fail"
+    assert summary["result_count"] == 1
+    assert summary["primary_result"]["total_return"] == -0.10
+
+
 def test_factor_registry_loader_reads_json() -> None:
     registry = load_factor_registry(Path("configs/factors/factor_registry.json"))
 

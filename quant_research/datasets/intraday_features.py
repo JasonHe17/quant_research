@@ -20,6 +20,14 @@ _VALID_GROUPS = {
     "bar_return",
     "liquidity_impact",
     "vwap_deviation",
+    "downside_volatility",
+    "return_skewness",
+    "money_flow",
+    "signed_turnover_imbalance",
+    "risk_adjusted_momentum",
+    "volume_confirmed_momentum",
+    "intraday_gap",
+    "return_turnover_correlation",
     "all",
 }
 
@@ -38,6 +46,13 @@ class IntradayFeatureConfig:
     volume_windows: tuple[int, ...] = (12, 48)
     turnover_windows: tuple[int, ...] = (12, 48)
     vwap_deviation_windows: tuple[int, ...] = (48,)
+    downside_volatility_windows: tuple[int, ...] = (12, 48)
+    return_skewness_windows: tuple[int, ...] = (12, 48)
+    money_flow_windows: tuple[int, ...] = (12, 48)
+    signed_turnover_imbalance_windows: tuple[int, ...] = (12, 48)
+    risk_adjusted_momentum_windows: tuple[int, ...] = (12, 48)
+    volume_confirmed_momentum_windows: tuple[int, ...] = (12, 48)
+    return_turnover_correlation_windows: tuple[int, ...] = (12, 48)
 
     def __post_init__(self) -> None:
         unknown = set(self.factor_groups) - _VALID_GROUPS
@@ -53,6 +68,19 @@ class IntradayFeatureConfig:
             ("volume_windows", self.volume_windows),
             ("turnover_windows", self.turnover_windows),
             ("vwap_deviation_windows", self.vwap_deviation_windows),
+            ("downside_volatility_windows", self.downside_volatility_windows),
+            ("return_skewness_windows", self.return_skewness_windows),
+            ("money_flow_windows", self.money_flow_windows),
+            (
+                "signed_turnover_imbalance_windows",
+                self.signed_turnover_imbalance_windows,
+            ),
+            ("risk_adjusted_momentum_windows", self.risk_adjusted_momentum_windows),
+            ("volume_confirmed_momentum_windows", self.volume_confirmed_momentum_windows),
+            (
+                "return_turnover_correlation_windows",
+                self.return_turnover_correlation_windows,
+            ),
         ):
             if any(value <= 0 for value in values):
                 raise ValueError(f"{name} values must be positive")
@@ -67,13 +95,17 @@ def build_intraday_feature_matrix(
     config = config or IntradayFeatureConfig()
     groups = _expanded_groups(config.factor_groups)
     required = ["instrument_id", "bar_end_time", "close_price"]
-    if groups & {"bar_return", "liquidity_impact"}:
+    if groups & {"bar_return", "liquidity_impact", "intraday_gap"}:
         required.append("open_price")
     if groups & {"price_position", "range_volatility"}:
         required.extend(["high_price", "low_price"])
-    if "volume" in groups:
+    if groups & {"volume", "volume_confirmed_momentum"}:
         required.append("volume")
+    if "money_flow" in groups:
+        required.extend(["high_price", "low_price", "volume"])
     if groups & {"turnover", "liquidity_impact", "vwap_deviation"}:
+        required.append("turnover")
+    if groups & {"signed_turnover_imbalance", "return_turnover_correlation"}:
         required.append("turnover")
     if groups & {"vwap_deviation"}:
         required.append("volume")
@@ -101,11 +133,49 @@ def build_intraday_feature_matrix(
             column = f"intraday_momentum_5m_lb{lookback_bars}"
             output[column] = grouped["close_price"].pct_change(periods=lookback_bars)
             feature_columns.append(column)
+    if "risk_adjusted_momentum" in groups:
+        for window in config.risk_adjusted_momentum_windows:
+            momentum = grouped["close_price"].pct_change(periods=window)
+            volatility = one_bar_return.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).std()
+            )
+            column = f"intraday_risk_adjusted_momentum_5m_w{window}"
+            output[column] = momentum / volatility.where(volatility != 0.0)
+            feature_columns.append(column)
+    if "volume_confirmed_momentum" in groups:
+        frame["volume"] = frame["volume"].astype(float)
+        volume_grouped = frame.groupby("instrument_id", sort=False)["volume"]
+        for window in config.volume_confirmed_momentum_windows:
+            momentum = grouped["close_price"].pct_change(periods=window)
+            volume_mean = volume_grouped.transform(
+                lambda values: values.rolling(window, min_periods=window).mean()
+            )
+            volume_ratio = frame["volume"] / volume_mean.where(volume_mean != 0.0) - 1.0
+            column = f"intraday_volume_confirmed_momentum_5m_w{window}"
+            output[column] = momentum * volume_ratio
+            feature_columns.append(column)
     if "volatility" in groups:
         for window in config.volatility_windows:
             column = f"intraday_volatility_5m_w{window}"
             output[column] = one_bar_return.groupby(frame["instrument_id"]).transform(
                 lambda values: values.rolling(window, min_periods=window).std()
+            )
+            feature_columns.append(column)
+    if "downside_volatility" in groups:
+        downside_return = one_bar_return.clip(upper=0.0)
+        for window in config.downside_volatility_windows:
+            column = f"intraday_downside_volatility_5m_w{window}"
+            output[column] = downside_return.groupby(frame["instrument_id"]).transform(
+                lambda values: (
+                    values.pow(2).rolling(window, min_periods=window).mean()
+                ).pow(0.5)
+            )
+            feature_columns.append(column)
+    if "return_skewness" in groups:
+        for window in config.return_skewness_windows:
+            column = f"intraday_return_skewness_5m_w{window}"
+            output[column] = one_bar_return.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).skew()
             )
             feature_columns.append(column)
     if "price_position" in groups:
@@ -181,6 +251,14 @@ def build_intraday_feature_matrix(
         column = "intraday_amihud_5m"
         output[column] = one_bar_return.abs() / frame["turnover"].replace(0.0, pd.NA)
         feature_columns.append(column)
+    if "intraday_gap" in groups:
+        frame["open_price"] = frame["open_price"].astype(float)
+        previous_close = grouped["close_price"].shift(1)
+        column = "intraday_gap_5m"
+        output[column] = frame["open_price"] / previous_close.where(
+            previous_close != 0.0
+        ) - 1.0
+        feature_columns.append(column)
     if "vwap_deviation" in groups:
         frame["turnover"] = frame["turnover"].astype(float)
         frame["volume"] = frame["volume"].astype(float)
@@ -196,6 +274,54 @@ def build_intraday_feature_matrix(
             rolling_vwap = rolling_turnover / rolling_volume.where(rolling_volume != 0.0)
             column = f"intraday_vwap_deviation_5m_w{window}"
             output[column] = frame["close_price"] / rolling_vwap - 1.0
+            feature_columns.append(column)
+    if "money_flow" in groups:
+        frame["high_price"] = frame["high_price"].astype(float)
+        frame["low_price"] = frame["low_price"].astype(float)
+        frame["volume"] = frame["volume"].astype(float)
+        bar_range = frame["high_price"] - frame["low_price"]
+        close_location = (
+            (2.0 * frame["close_price"] - frame["high_price"] - frame["low_price"])
+            / bar_range.where(bar_range != 0.0)
+        )
+        signed_volume = close_location * frame["volume"]
+        for window in config.money_flow_windows:
+            rolling_signed_volume = signed_volume.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).sum()
+            )
+            rolling_volume = frame.groupby("instrument_id", sort=False)["volume"].transform(
+                lambda values: values.rolling(window, min_periods=window).sum()
+            )
+            column = f"intraday_money_flow_5m_w{window}"
+            output[column] = rolling_signed_volume / rolling_volume.where(
+                rolling_volume != 0.0
+            )
+            feature_columns.append(column)
+    if "signed_turnover_imbalance" in groups:
+        frame["turnover"] = frame["turnover"].astype(float)
+        signed_turnover = np.sign(one_bar_return) * frame["turnover"]
+        turnover_grouped = frame.groupby("instrument_id", sort=False)["turnover"]
+        for window in config.signed_turnover_imbalance_windows:
+            rolling_signed_turnover = signed_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_turnover = turnover_grouped.transform(
+                lambda values: values.rolling(window, min_periods=window).sum()
+            )
+            column = f"intraday_signed_turnover_imbalance_5m_w{window}"
+            output[column] = rolling_signed_turnover / rolling_turnover.where(
+                rolling_turnover != 0.0
+            )
+            feature_columns.append(column)
+    if "return_turnover_correlation" in groups:
+        frame["turnover"] = frame["turnover"].astype(float)
+        for window in config.return_turnover_correlation_windows:
+            column = f"intraday_return_turnover_corr_5m_w{window}"
+            output[column] = one_bar_return.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).corr(
+                    frame.loc[values.index, "turnover"]
+                )
+            )
             feature_columns.append(column)
     return output.loc[output[feature_columns].notna().any(axis=1)].reset_index(
         drop=True

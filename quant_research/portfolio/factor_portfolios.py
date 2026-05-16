@@ -616,7 +616,7 @@ def _cap_factor_contributions(
     *,
     max_share: float | None,
 ) -> pd.DataFrame:
-    if max_share is None:
+    if max_share is None or contributions.shape[1] <= 1:
         return contributions
     if not 0 < max_share <= 1:
         raise ValueError("max_share must be in (0, 1]")

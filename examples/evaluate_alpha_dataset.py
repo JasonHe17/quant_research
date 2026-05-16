@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -129,10 +129,9 @@ def _evaluate_dataset_paths(
             if partition.correlation is not None:
                 corr_stats = _merge_correlation_stats(corr_stats, partition.correlation)
     else:
-        executor_class = (
-            ProcessPoolExecutor if backend == "process" else ThreadPoolExecutor
-        )
-        with executor_class(max_workers=workers) as executor:
+        if backend != "process":
+            raise ValueError("only process backend is supported")
+        with ProcessPoolExecutor(max_workers=workers) as executor:
             futures = [
                 executor.submit(
                     _evaluate_dataset_path,
@@ -406,7 +405,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument(
         "--backend",
-        choices=("thread", "process"),
+        choices=("process",),
         default="process",
         help="parallel execution backend used when --workers is greater than 1",
     )
