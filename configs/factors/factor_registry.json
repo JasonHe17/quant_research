@@ -1546,6 +1546,65 @@
         "limit_pressure",
         "resilience"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar downside turnover absorption ratio.",
+      "display_name": "Intraday sell-pressure absorption, 48-bar window",
+      "evaluation": {
+        "admission_status": "candidate"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_sell_pressure_absorption_5m_w48",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_sell_pressure_absorption_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Names that trade more turnover per unit downside return should absorb sell pressure better than names with the same raw trend but weaker downside execution support.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "sell_pressure_absorption"
+          ],
+          "sell_pressure_absorption_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "This is not a plain turnover ratio or a market beta proxy. It measures downside-only turnover absorption: the amount of turnover available per unit of cumulative negative return over the same rolling window. The intent is to isolate whether selling pressure is being absorbed rather than simply whether turnover is high.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_absorption.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {},
+      "status": "candidate",
+      "tags": [
+        "batch_2026_05_17_sell_pressure_absorption",
+        "candidate",
+        "intraday",
+        "liquidity",
+        "sell_pressure",
+        "absorption"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -1564,5 +1623,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-17",
-  "version": 8
+  "version": 9
 }
