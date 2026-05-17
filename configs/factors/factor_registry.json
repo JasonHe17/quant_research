@@ -1557,16 +1557,26 @@
       "description": "Rolling 48-bar downside turnover absorption ratio.",
       "display_name": "Intraday sell-pressure absorption, 48-bar window",
       "evaluation": {
-        "admission_status": "candidate"
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_absorption/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_sell_pressure_absorption_5m_w48/factor_candidate_review.json",
+        "portfolio_validation": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/validation_summary.json",
+        "portfolio_validation_status": "standalone_validated_drawdown_watch",
+        "portfolio_validation_full_base": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/full_base/summary.json",
+        "portfolio_validation_high_cost": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/full_high_cost/summary.json",
+        "portfolio_validation_year_2023": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/year_2023_base/summary.json",
+        "portfolio_validation_year_2024": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/year_2024_base/summary.json",
+        "portfolio_validation_year_2025": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/year_2025_base/summary.json"
       },
-      "expected_direction": "long",
+      "expected_direction": "invert",
       "factor_id": "intraday_sell_pressure_absorption_5m_w48",
       "family": "liquidity",
       "feature_columns": [
         "intraday_sell_pressure_absorption_5m_w48"
       ],
       "frequency": "5m",
-      "hypothesis": "Names that trade more turnover per unit downside return should absorb sell pressure better than names with the same raw trend but weaker downside execution support.",
+      "hypothesis": "Names with unusually high turnover per unit downside return may reflect crowded selling or distribution under pressure; lower downside turnover absorption should be cleaner for long-only selection.",
       "implementation": {
         "builder": "build_intraday_feature_matrix",
         "module": "quant_research.datasets.intraday_features",
@@ -1582,12 +1592,15 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 48,
-      "notes": "This is not a plain turnover ratio or a market beta proxy. It measures downside-only turnover absorption: the amount of turnover available per unit of cumulative negative return over the same rolling window. The intent is to isolate whether selling pressure is being absorbed rather than simply whether turnover is high.",
+      "notes": "This is not a plain turnover ratio or a market beta proxy. It measures downside-only turnover per unit of cumulative negative return over the same rolling window. The standard admission run found a strong inverted direction, suggesting high turnover during downside bars behaves more like crowded distribution than healthy absorption. Standalone decorrelated portfolio validation was positive in full-window, high-cost, and all annual slices, but 2024 max drawdown remained high enough to keep this as a drawdown-watch candidate rather than an immediate promoted factor.",
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_development_standard.md",
         "docs/validation/factor_admission.md",
-        "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_absorption.md"
+        "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_absorption.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_absorption/factor_admission/factor_admission_report.json",
+        "runs/factor_candidate_reviews/intraday_sell_pressure_absorption_5m_w48/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1623,5 +1636,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-17",
-  "version": 9
+  "version": 10
 }
