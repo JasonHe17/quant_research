@@ -67,6 +67,7 @@ def test_candidate_factor_portfolios_example_has_cli_help() -> None:
     assert "--factor-max-weight" in result.stdout
     assert "--factor-max-contribution-share" in result.stdout
     assert "--forecast-calibration-mode" in result.stdout
+    assert "--include-features" in result.stdout
 
 
 def test_candidate_policy_validation_example_has_cli_help() -> None:

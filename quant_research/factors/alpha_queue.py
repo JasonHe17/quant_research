@@ -97,7 +97,7 @@ def render_candidate_alpha_queue_review_markdown(review: dict[str, Any]) -> str:
         f"- Needs validation: `{summary['status_counts'].get('needs_portfolio_validation', 0)}`",
         f"- Validated/watch: `{summary['status_counts'].get('portfolio_validated_watch', 0)}`",
         f"- Promotion review: `{summary['status_counts'].get('candidate_for_promotion_review', 0)}`",
-        f"- Blocked: `{summary['status_counts'].get('needs_single_feature_admission_or_include_filter', 0)}`",
+        f"- Shared admission commands: `{summary['status_counts'].get('needs_shared_admission_filtered_validation', 0)}`",
         "",
         "## Queue",
         "",
@@ -154,6 +154,7 @@ def _queue_row(
         portfolio_artifacts=portfolio_artifacts,
         admission_is_single_feature=admission_is_single_feature,
     )
+    include_features = () if admission_is_single_feature else entry.feature_columns
     return {
         "factor_id": entry.factor_id,
         "feature_columns": list(entry.feature_columns),
@@ -167,6 +168,7 @@ def _queue_row(
         "admission_report": evaluation.get("admission_report"),
         "dataset_dir": dataset_dir,
         "admission_is_single_feature": admission_is_single_feature,
+        "requires_include_feature_filter": not admission_is_single_feature,
         "queue_status": queue_status,
         "next_step": _next_step(queue_status),
         "recommended_command": _recommended_command(
@@ -174,6 +176,7 @@ def _queue_row(
             admission_report=evaluation.get("admission_report"),
             dataset_dir=dataset_dir,
             output_dir=f"{output_root}/{entry.factor_id}_validation",
+            include_features=include_features,
         ),
     }
 
@@ -193,14 +196,14 @@ def _queue_status(
     if portfolio_artifacts:
         return "portfolio_evidence_needs_review"
     if not admission_is_single_feature:
-        return "needs_single_feature_admission_or_include_filter"
+        return "needs_shared_admission_filtered_validation"
     return "needs_portfolio_validation"
 
 
 def _next_step(queue_status: str) -> str:
     return {
         "needs_portfolio_validation": "Run standard decorrelated portfolio validation for this single-factor admission dataset.",
-        "needs_single_feature_admission_or_include_filter": "Create a single-feature admission artifact or add an include-feature filter before running portfolio validation.",
+        "needs_shared_admission_filtered_validation": "Run standard decorrelated portfolio validation with an explicit include-feature allowlist.",
         "portfolio_validated_watch": "Review drawdown and annual-slice issues before promotion; do not rerun blindly.",
         "candidate_for_promotion_review": "Open promotion review against current promoted policy and risk gates.",
         "portfolio_failed": "Keep out of promotion queue; use diagnostics only.",
@@ -214,18 +217,26 @@ def _recommended_command(
     admission_report: object,
     dataset_dir: str | None,
     output_dir: str,
+    include_features: tuple[str, ...] = (),
 ) -> str:
-    if queue_status != "needs_portfolio_validation" or not admission_report or not dataset_dir:
+    if queue_status not in {
+        "needs_portfolio_validation",
+        "needs_shared_admission_filtered_validation",
+    } or not admission_report or not dataset_dir:
         return ""
-    return " ".join(
+    command = [
+        "conda run -n quant python examples/run_candidate_factor_portfolios.py",
+        f"--dataset-dir {dataset_dir}",
+        f"--admission-report {admission_report}",
+        f"--output-dir {output_dir}",
+        "--methods decorrelated",
+        "--statuses candidate",
+        "--registry-statuses candidate",
+    ]
+    if include_features:
+        command.append("--include-features " + " ".join(include_features))
+    command.extend(
         [
-            "conda run -n quant python examples/run_candidate_factor_portfolios.py",
-            f"--dataset-dir {dataset_dir}",
-            f"--admission-report {admission_report}",
-            f"--output-dir {output_dir}",
-            "--methods decorrelated",
-            "--statuses candidate",
-            "--registry-statuses candidate",
             "--run-backtests",
             "--backtest-policy-set single",
             "--trade-policy cost_aware_optimizer",
@@ -242,6 +253,7 @@ def _recommended_command(
             "--resume-existing",
         ]
     )
+    return " ".join(command)
 
 
 def _portfolio_artifacts(evaluation: dict[str, Any], *, base_dir: Path) -> list[str]:
@@ -297,12 +309,12 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _recommendations(rows: list[dict[str, Any]]) -> list[str]:
     recommendations = [
-        "Validate only single-feature or explicitly filtered candidates; broad admission reports can accidentally test a basket.",
+        "Validate shared admission candidates only with explicit include-feature allowlists; broad reports can accidentally test a basket.",
         "Treat drawdown-watch candidates as research follow-ups, not immediate promotion candidates.",
     ]
-    if any(row["queue_status"] == "needs_single_feature_admission_or_include_filter" for row in rows):
+    if any(row["queue_status"] == "needs_shared_admission_filtered_validation" for row in rows):
         recommendations.append(
-            "Add an include-feature filter to portfolio validation or generate single-feature admission reports for shared standard datasets."
+            "Use the generated include-feature validation commands for shared standard datasets."
         )
     if any(row["queue_status"] == "needs_portfolio_validation" for row in rows):
         recommendations.append(
@@ -314,7 +326,7 @@ def _recommendations(rows: list[dict[str, Any]]) -> list[str]:
 def _queue_rank(status: str) -> int:
     ranks = {
         "needs_portfolio_validation": 0,
-        "needs_single_feature_admission_or_include_filter": 1,
+        "needs_shared_admission_filtered_validation": 1,
         "portfolio_validated_watch": 2,
         "portfolio_evidence_needs_review": 3,
         "candidate_for_promotion_review": 4,

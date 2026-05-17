@@ -76,7 +76,7 @@ def test_candidate_alpha_queue_review_identifies_validation_gaps(tmp_path: Path)
 
     assert statuses == {
         "single": "needs_portfolio_validation",
-        "shared": "needs_single_feature_admission_or_include_filter",
+        "shared": "needs_shared_admission_filtered_validation",
         "validated": "portfolio_validated_watch",
     }
     single = next(row for row in review["queue"] if row["factor_id"] == "single")
@@ -84,6 +84,9 @@ def test_candidate_alpha_queue_review_identifies_validation_gaps(tmp_path: Path)
     assert "--admission-report single/factor_admission/factor_admission_report.json" in (
         single["recommended_command"]
     )
+    shared = next(row for row in review["queue"] if row["factor_id"] == "shared")
+    assert shared["requires_include_feature_filter"] is True
+    assert "--include-features shared_feature" in shared["recommended_command"]
 
 
 def test_candidate_alpha_queue_outputs_json_csv_and_markdown(tmp_path: Path) -> None:

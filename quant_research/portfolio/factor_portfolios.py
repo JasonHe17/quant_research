@@ -68,23 +68,31 @@ def load_candidate_factors(
     admission_report_path: Path,
     *,
     statuses: tuple[str, ...] = ("candidate",),
+    include_features: tuple[str, ...] = (),
 ) -> tuple[CandidateFactor, ...]:
     """Load candidate factors from a factor admission report."""
 
     report = json.loads(admission_report_path.read_text(encoding="utf-8"))
+    include_set = set(include_features)
     factors = []
     for row in report.get("factors", []):
+        feature = str(row["feature"])
+        if include_set and feature not in include_set:
+            continue
         if row.get("admission_status") not in statuses:
             continue
         factors.append(
             CandidateFactor(
-                feature=str(row["feature"]),
+                feature=feature,
                 direction=-1 if row.get("direction") == "invert" else 1,
                 rank_ic_mean=float(row.get("spearman_rank_ic_mean") or 0.0),
             )
         )
     if not factors:
-        raise ValueError(f"no factors found for statuses: {statuses}")
+        message = f"no factors found for statuses: {statuses}"
+        if include_set:
+            message += f", include_features: {sorted(include_set)}"
+        raise ValueError(message)
     return tuple(factors)
 
 

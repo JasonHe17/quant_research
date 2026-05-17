@@ -83,6 +83,7 @@ def main() -> None:
     candidates = load_candidate_factors(
         Path(args.admission_report),
         statuses=tuple(args.statuses),
+        include_features=tuple(args.include_features),
     )
     registry_filter = _registry_filter_summary(args, candidates)
     candidates = registry_filter["candidates"]
@@ -174,6 +175,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
         "factor_correlation": args.factor_correlation,
         "methods": args.methods,
         "statuses": args.statuses,
+        "include_features": args.include_features,
         "max_partitions": args.max_partitions,
         "partition_start": args.partition_start,
         "partition_end": args.partition_end,
@@ -938,6 +940,12 @@ def _parse_args() -> argparse.Namespace:
         default=["equal", "ic_weighted", "decorrelated"],
     )
     parser.add_argument("--statuses", nargs="+", default=["candidate"])
+    parser.add_argument(
+        "--include-features",
+        nargs="+",
+        default=[],
+        help="optional factor feature allowlist for shared admission reports",
+    )
     parser.add_argument("--max-partitions", type=int)
     parser.add_argument(
         "--partition-start",

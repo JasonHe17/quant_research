@@ -61,6 +61,37 @@ def test_load_candidate_factors_uses_admission_direction(tmp_path: Path) -> None
     assert factors == (CandidateFactor("alpha_a", -1, -0.02),)
 
 
+def test_load_candidate_factors_can_filter_shared_admission_features(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "admission.json"
+    path.write_text(
+        json.dumps(
+            {
+                "factors": [
+                    {
+                        "feature": "alpha_a",
+                        "admission_status": "candidate",
+                        "direction": "long",
+                        "spearman_rank_ic_mean": 0.02,
+                    },
+                    {
+                        "feature": "alpha_b",
+                        "admission_status": "candidate",
+                        "direction": "invert",
+                        "spearman_rank_ic_mean": -0.01,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    factors = load_candidate_factors(path, include_features=("alpha_b",))
+
+    assert factors == (CandidateFactor("alpha_b", -1, -0.01),)
+
+
 def test_candidate_factor_registry_filter_excludes_unregistered_and_rejected(
     tmp_path: Path,
 ) -> None:
@@ -737,6 +768,7 @@ def _portfolio_args(**overrides: object) -> object:
         "factor_correlation": "correlation.csv",
         "methods": ["decorrelated"],
         "statuses": ["candidate"],
+        "include_features": [],
         "max_partitions": None,
         "partition_start": None,
         "partition_end": None,
