@@ -1711,6 +1711,86 @@
         "sell_pressure",
         "decay"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar price recovery after sell pressure, confirmed by upside turnover participation.",
+      "display_name": "Intraday sell-pressure recovery, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json",
+        "admission_status": "pending",
+        "long_only_top_bucket_health_status": "failed_two_of_three_years_positive_top_bucket",
+        "research_memory_check": "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_sell_pressure_recovery_5m_w48",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_sell_pressure_recovery_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Names that recover more positive return per unit of recent downside return, with recovery confirmed by upside turnover participation, should be better long-only candidates after sell pressure than names that merely avoid the worst downside bucket.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "sell_pressure_recovery"
+          ],
+          "sell_pressure_recovery_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "This was explicitly designed as a long-only top-bucket quality signal after the downside-turnover-decay diagnosis. It is not a raw VWAP deviation, reversal transform, sell-pressure absorption ratio, or downside turnover decay. The research-memory check matched the rejected VWAP-deviation factor, but that rejection allows retry with a liquidity-conditioned recovery hypothesis; this factor qualified by using rolling positive-return recovery over downside-return damage and confirming recovery with upside turnover participation. The standard admission run put the factor on watchlist: direction flipped to invert, cost-adjusted spread was -16.56 bps, and the long-only top-bucket health check failed because the highest quantile had negative average forward labels in 2023 and 2024.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_recovery.md",
+        "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json",
+          "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json",
+          "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_recovery.md"
+        ],
+        "negative_findings": "The recovery transform did not behave as a long-only quality signal. Admission selected the inverted direction, cost-adjusted spread was negative, and the highest quantile had negative average forward labels in 2023 and 2024. Strong apparent sell-pressure recovery likely marks short-horizon exhaustion or overextension rather than a robust next-day long entry.",
+        "retry_conditions": "Retry only with a materially different recovery definition that separates early rebound from late overextension, or after adding an explicit pullback/entry-price condition. Do not rerun this plain recovery ratio as a standalone long-only factor.",
+        "similar_to": [
+          "intraday_downside_turnover_decay_5m_w48",
+          "intraday_vwap_deviation_5m_w48",
+          "intraday_sell_pressure_absorption_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "batch_2026_05_17_sell_pressure_recovery",
+        "watchlist",
+        "intraday",
+        "liquidity",
+        "sell_pressure",
+        "recovery",
+        "long_only_quality"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -1729,5 +1809,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-17",
-  "version": 15
+  "version": 17
 }

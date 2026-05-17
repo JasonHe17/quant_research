@@ -197,6 +197,9 @@ def _build_partition_dataset(
             downside_turnover_decay_windows=tuple(
                 args.downside_turnover_decay_windows
             ),
+            sell_pressure_recovery_windows=tuple(
+                args.sell_pressure_recovery_windows
+            ),
             market_downside_beta_windows=tuple(args.market_downside_beta_windows),
             limit_pressure_resilience_windows=tuple(
                 args.limit_pressure_resilience_windows
@@ -493,6 +496,7 @@ def _parse_args() -> argparse.Namespace:
             "negative_return_persistence",
             "sell_pressure_absorption",
             "downside_turnover_decay",
+            "sell_pressure_recovery",
         ),
     )
     parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 3, 6])
@@ -555,6 +559,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--downside-turnover-decay-windows",
+        type=int,
+        nargs="+",
+        default=[48],
+    )
+    parser.add_argument(
+        "--sell-pressure-recovery-windows",
         type=int,
         nargs="+",
         default=[48],
@@ -639,6 +649,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--sell-pressure-absorption-windows values must be positive")
     if any(value <= 1 for value in args.downside_turnover_decay_windows):
         raise ValueError("--downside-turnover-decay-windows values must be at least 2")
+    if any(value <= 0 for value in args.sell_pressure_recovery_windows):
+        raise ValueError("--sell-pressure-recovery-windows values must be positive")
     if any(value <= 0 for value in args.market_downside_beta_windows):
         raise ValueError("--market-downside-beta-windows values must be positive")
     if any(value <= 0 for value in args.limit_pressure_resilience_windows):
@@ -690,6 +702,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         ),
         "sell_pressure_absorption_windows": list(args.sell_pressure_absorption_windows),
         "downside_turnover_decay_windows": list(args.downside_turnover_decay_windows),
+        "sell_pressure_recovery_windows": list(args.sell_pressure_recovery_windows),
         "label_name": args.label_name,
         "horizon_bars": args.horizon_bars,
         "entry_lag_bars": args.entry_lag_bars,
@@ -733,6 +746,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.negative_return_persistence_windows,
                     *args.sell_pressure_absorption_windows,
                     *args.downside_turnover_decay_windows,
+                    *args.sell_pressure_recovery_windows,
                     *args.market_downside_beta_windows,
                     *args.limit_pressure_resilience_windows,
                 ]

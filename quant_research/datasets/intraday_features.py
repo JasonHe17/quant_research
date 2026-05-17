@@ -33,6 +33,7 @@ _VALID_GROUPS = {
     "negative_return_persistence",
     "sell_pressure_absorption",
     "downside_turnover_decay",
+    "sell_pressure_recovery",
     "all",
 }
 
@@ -61,6 +62,7 @@ class IntradayFeatureConfig:
     negative_return_persistence_windows: tuple[int, ...] = (48,)
     sell_pressure_absorption_windows: tuple[int, ...] = (48,)
     downside_turnover_decay_windows: tuple[int, ...] = (48,)
+    sell_pressure_recovery_windows: tuple[int, ...] = (48,)
     market_downside_beta_windows: tuple[int, ...] = (48,)
     limit_pressure_resilience_windows: tuple[int, ...] = (48,)
 
@@ -97,6 +99,7 @@ class IntradayFeatureConfig:
             ),
             ("sell_pressure_absorption_windows", self.sell_pressure_absorption_windows),
             ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
+            ("sell_pressure_recovery_windows", self.sell_pressure_recovery_windows),
             ("market_downside_beta_windows", self.market_downside_beta_windows),
             (
                 "limit_pressure_resilience_windows",
@@ -131,6 +134,7 @@ def build_intraday_feature_matrix(
         "return_turnover_correlation",
         "sell_pressure_absorption",
         "downside_turnover_decay",
+        "sell_pressure_recovery",
     }:
         required.append("turnover")
     if groups & {"vwap_deviation"}:
@@ -253,6 +257,35 @@ def build_intraday_feature_matrix(
             output[column] = (
                 previous_downside_turnover - recent_downside_turnover
             ) / total_downside_turnover.where(total_downside_turnover != 0.0)
+            feature_columns.append(column)
+    if "sell_pressure_recovery" in groups:
+        positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
+        downside_return = one_bar_return.clip(upper=0.0).abs().where(
+            one_bar_return.notna()
+        )
+        turnover = frame["turnover"].astype(float).where(one_bar_return.notna())
+        upside_turnover = turnover.where(one_bar_return.gt(0.0), 0.0)
+        for window in config.sell_pressure_recovery_windows:
+            rolling_positive_return = positive_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_downside_return = downside_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_upside_turnover = upside_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_turnover = turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).sum()
+            )
+            recovery_ratio = rolling_positive_return / rolling_downside_return.where(
+                rolling_downside_return != 0.0
+            )
+            upside_participation = rolling_upside_turnover / rolling_turnover.where(
+                rolling_turnover != 0.0
+            )
+            column = f"intraday_sell_pressure_recovery_5m_w{window}"
+            output[column] = recovery_ratio * upside_participation
             feature_columns.append(column)
     if "market_downside_beta" in groups:
         market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")
