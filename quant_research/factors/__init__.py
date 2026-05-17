@@ -30,6 +30,11 @@ from quant_research.factors.atlas import (
     render_factor_failure_atlas_markdown,
     write_factor_failure_atlas_outputs,
 )
+from quant_research.factors.opportunity import (
+    build_factor_opportunity_map,
+    render_factor_opportunity_map_markdown,
+    write_factor_opportunity_map_outputs,
+)
 
 __all__ = [
     "Factor",
@@ -56,4 +61,7 @@ __all__ = [
     "build_factor_failure_atlas",
     "render_factor_failure_atlas_markdown",
     "write_factor_failure_atlas_outputs",
+    "build_factor_opportunity_map",
+    "render_factor_opportunity_map_markdown",
+    "write_factor_opportunity_map_outputs",
 ]
