@@ -42,6 +42,7 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     args = _validation_args(
         output_dir=str(tmp_path),
         methods=["decorrelated", "equal"],
+        include_features=["alpha_a"],
         backtest_memory_budget_gb=12.0,
         factor_max_weight=0.4,
         factor_max_contribution_share=0.5,
@@ -58,6 +59,8 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
         "equal",
     ]
     assert command[command.index("--partition-start") + 1] == "2023_01"
+    assert command[command.index("--include-features") + 1] == "alpha_a"
+    assert command.index("--include-features") < command.index("--run-backtests")
     assert command[command.index("--policy-gross-exposure-scale") + 1] == "1.0"
     assert command[command.index("--backtest-memory-budget-gb") + 1] == "12.0"
     assert command[command.index("--factor-max-weight") + 1] == "0.4"
@@ -394,6 +397,7 @@ def _validation_args(**overrides: object) -> object:
         "profile": "standard",
         "years": None,
         "methods": ["decorrelated", "equal", "ic_weighted"],
+        "include_features": [],
         "primary_method": "decorrelated",
         "backtest_policy_set": "comparison",
         "policy": "partial_rebalance_daily",

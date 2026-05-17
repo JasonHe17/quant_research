@@ -266,6 +266,11 @@ def _scenario_command(
         scenario.partition_start,
         "--partition-end",
         scenario.partition_end,
+    ]
+    if args.include_features:
+        command.extend(["--include-features", *args.include_features])
+    command.extend(
+        [
         "--run-backtests",
         "--start",
         scenario.start,
@@ -351,7 +356,8 @@ def _scenario_command(
         str(args.backtest_memory_budget_gb),
         "--backtest-memory-estimate-gb",
         str(scenario.memory_estimate_gb),
-    ]
+        ]
+    )
     if args.enforce_registry:
         command.append("--enforce-registry")
     else:
@@ -1175,6 +1181,12 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         choices=("equal", "ic_weighted", "decorrelated"),
         default=["decorrelated", "equal", "ic_weighted"],
+    )
+    parser.add_argument(
+        "--include-features",
+        nargs="+",
+        default=[],
+        help="optional feature allowlist passed to candidate-factor portfolio runs",
     )
     parser.add_argument("--primary-method", default="decorrelated")
     parser.add_argument("--policy", default="partial_rebalance_daily")

@@ -87,6 +87,7 @@ def test_candidate_policy_validation_example_has_cli_help() -> None:
     assert "--forecast-calibration-mode" in result.stdout
     assert "--factor-risk-gate-feature" in result.stdout
     assert "--scenario-workers" in result.stdout
+    assert "--include-features" in result.stdout
 
 
 def test_factor_registry_validation_example_has_cli_help() -> None:
