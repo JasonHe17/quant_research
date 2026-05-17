@@ -49,6 +49,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "return_turnover_correlation",
             "negative_return_persistence",
             "sell_pressure_absorption",
+            "downside_turnover_decay",
         ),
         reversal_lookback_bars=(1,),
         momentum_lookback_bars=(2,),
@@ -68,6 +69,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         return_turnover_correlation_windows=(3,),
         negative_return_persistence_windows=(3,),
         sell_pressure_absorption_windows=(3,),
+        downside_turnover_decay_windows=(4,),
         market_downside_beta_windows=(3,),
         limit_pressure_resilience_windows=(3,),
     )
@@ -97,6 +99,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_return_turnover_corr_5m_w3" in features
     assert "intraday_negative_return_persistence_5m_w3" in features
     assert "intraday_sell_pressure_absorption_5m_w3" in features
+    assert "intraday_downside_turnover_decay_5m_w4" in features
     assert features.loc[0, "intraday_bar_return_5m"] == pytest.approx(0.1)
     assert features["intraday_reversal_5m_lb1"].notna().sum() == 5
     assert features["intraday_range_position_5m_w3"].iloc[-1] == pytest.approx(0.5)
@@ -158,6 +161,7 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_return_turnover_corr_5m_w48" in features
     assert "intraday_negative_return_persistence_5m_w48" in features
     assert "intraday_sell_pressure_absorption_5m_w48" in features
+    assert "intraday_downside_turnover_decay_5m_w48" in features
     assert not features.empty
 
 
@@ -216,6 +220,38 @@ def test_sell_pressure_absorption_uses_downside_turnover_per_loss() -> None:
 
     assert features[column].iloc[-1] == pytest.approx(
         expected_downside_turnover / expected_downside_return
+    )
+
+
+def test_downside_turnover_decay_compares_previous_and_recent_sell_pressure() -> None:
+    closes = [10.0, 9.0, 8.8, 8.7, 8.6]
+    turnovers = [100.0, 500.0, 300.0, 100.0, 50.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+                "turnover": turnover,
+            }
+            for i, (close, turnover) in enumerate(zip(closes, turnovers))
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("downside_turnover_decay",),
+            downside_turnover_decay_windows=(4,),
+        ),
+    )
+
+    column = "intraday_downside_turnover_decay_5m_w4"
+    expected_previous = 500.0 + 300.0
+    expected_recent = 100.0 + 50.0
+
+    assert features[column].iloc[-1] == pytest.approx(
+        (expected_previous - expected_recent) / (expected_previous + expected_recent)
     )
 
 

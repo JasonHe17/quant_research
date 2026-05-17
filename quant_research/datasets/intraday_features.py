@@ -32,6 +32,7 @@ _VALID_GROUPS = {
     "return_turnover_correlation",
     "negative_return_persistence",
     "sell_pressure_absorption",
+    "downside_turnover_decay",
     "all",
 }
 
@@ -59,6 +60,7 @@ class IntradayFeatureConfig:
     return_turnover_correlation_windows: tuple[int, ...] = (12, 48)
     negative_return_persistence_windows: tuple[int, ...] = (48,)
     sell_pressure_absorption_windows: tuple[int, ...] = (48,)
+    downside_turnover_decay_windows: tuple[int, ...] = (48,)
     market_downside_beta_windows: tuple[int, ...] = (48,)
     limit_pressure_resilience_windows: tuple[int, ...] = (48,)
 
@@ -94,6 +96,7 @@ class IntradayFeatureConfig:
                 self.negative_return_persistence_windows,
             ),
             ("sell_pressure_absorption_windows", self.sell_pressure_absorption_windows),
+            ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
             ("market_downside_beta_windows", self.market_downside_beta_windows),
             (
                 "limit_pressure_resilience_windows",
@@ -123,7 +126,12 @@ def build_intraday_feature_matrix(
         required.extend(["high_price", "low_price", "volume"])
     if groups & {"turnover", "liquidity_impact", "vwap_deviation"}:
         required.append("turnover")
-    if groups & {"signed_turnover_imbalance", "return_turnover_correlation", "sell_pressure_absorption"}:
+    if groups & {
+        "signed_turnover_imbalance",
+        "return_turnover_correlation",
+        "sell_pressure_absorption",
+        "downside_turnover_decay",
+    }:
         required.append("turnover")
     if groups & {"vwap_deviation"}:
         required.append("volume")
@@ -221,6 +229,30 @@ def build_intraday_feature_matrix(
             output[column] = rolling_turnover / rolling_downside_return.where(
                 rolling_downside_return != 0.0
             )
+            feature_columns.append(column)
+    if "downside_turnover_decay" in groups:
+        downside_turnover = frame["turnover"].astype(float).where(
+            one_bar_return.lt(0.0), 0.0
+        ).where(one_bar_return.notna())
+        for window in config.downside_turnover_decay_windows:
+            half_window = window // 2
+            if half_window <= 0:
+                raise ValueError("downside_turnover_decay_windows values must be at least 2")
+            recent_downside_turnover = downside_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(half_window, min_periods=half_window).sum()
+            )
+            previous_downside_turnover = recent_downside_turnover.groupby(
+                frame["instrument_id"]
+            ).shift(half_window)
+            total_downside_turnover = (
+                previous_downside_turnover + recent_downside_turnover
+            )
+            column = f"intraday_downside_turnover_decay_5m_w{window}"
+            output[column] = (
+                previous_downside_turnover - recent_downside_turnover
+            ) / total_downside_turnover.where(total_downside_turnover != 0.0)
             feature_columns.append(column)
     if "market_downside_beta" in groups:
         market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")

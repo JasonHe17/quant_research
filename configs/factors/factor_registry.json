@@ -1626,6 +1626,72 @@
         "sell_pressure",
         "absorption"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar decay of downside turnover between earlier and recent half-windows.",
+      "display_name": "Intraday downside-turnover decay, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_downside_turnover_decay_5m_w48",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_downside_turnover_decay_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Names whose downside turnover has faded across the recent intraday window may reflect seller exhaustion, while names with downside turnover concentrated in the recent half may face intensifying distribution pressure.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "downside_turnover_decay_windows": [
+            48
+          ],
+          "factor_groups": [
+            "downside_turnover_decay"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "This is not a total turnover, signed turnover imbalance, negative-return persistence, sell-pressure absorption, or VWAP-deviation reversal transform. The research-memory check matched the rejected VWAP-deviation factor, but that rejection permits retry under a materially different microstructure hypothesis. This factor satisfies that condition by comparing the earlier and recent halves of the rolling window using only turnover on negative-return bars, so it measures the time profile of downside trading pressure rather than price deviation from a volume-weighted anchor. Standard admission passed in the long direction with full coverage, 0.00688 rank IC, 13.93 t-stat, 53.39% directional hit rate, three stable years, 15.64 bps cost-adjusted spread, and 27.79% top-N turnover.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_17_downside_turnover_decay.md",
+        "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
+        "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {},
+      "status": "candidate",
+      "tags": [
+        "batch_2026_05_17_downside_turnover_decay",
+        "candidate",
+        "intraday",
+        "liquidity",
+        "sell_pressure",
+        "decay"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -1644,5 +1710,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-17",
-  "version": 13
+  "version": 14
 }
