@@ -35,6 +35,11 @@ from quant_research.factors.opportunity import (
     render_factor_opportunity_map_markdown,
     write_factor_opportunity_map_outputs,
 )
+from quant_research.factors.alpha_queue import (
+    build_candidate_alpha_queue_review,
+    render_candidate_alpha_queue_review_markdown,
+    write_candidate_alpha_queue_review_outputs,
+)
 
 __all__ = [
     "Factor",
@@ -64,4 +69,7 @@ __all__ = [
     "build_factor_opportunity_map",
     "render_factor_opportunity_map_markdown",
     "write_factor_opportunity_map_outputs",
+    "build_candidate_alpha_queue_review",
+    "render_candidate_alpha_queue_review_markdown",
+    "write_candidate_alpha_queue_review_outputs",
 ]

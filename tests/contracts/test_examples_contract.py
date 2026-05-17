@@ -164,6 +164,21 @@ def test_factor_opportunity_map_example_has_cli_help() -> None:
     assert "--min-positive-years" in result.stdout
 
 
+def test_candidate_alpha_queue_review_example_has_cli_help() -> None:
+    script = Path("examples/review_candidate_alpha_queue.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--opportunity-map" in result.stdout
+    assert "--validation-output-root" in result.stdout
+
+
 def test_candidate_policy_regime_analysis_example_has_cli_help() -> None:
     script = Path("examples/analyze_candidate_policy_regime.py")
 
