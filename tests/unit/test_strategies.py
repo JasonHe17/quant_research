@@ -23,7 +23,9 @@ from examples.run_tree_score_backtest import (
     _build_tree_score_executions,
     _build_target_weights,
     _load_ranked_score_signals,
+    _next_segment_end,
     _score_rank_limit,
+    _run_tree_score_backtest_streaming,
 )
 import examples.run_baseline_a_real_backtest as baseline_backtest
 
@@ -1162,3 +1164,53 @@ def test_streaming_work_units_support_week_chunks(monkeypatch: pytest.MonkeyPatc
         "2024-01-08T23:59:59+08:00",
         "2024-01-12T15:00:00+08:00",
     ]
+
+
+def test_next_segment_end_prefers_next_signal() -> None:
+    assert _next_segment_end(
+        "2024-01-02T09:35:00+08:00",
+        next_signal_time="2024-01-02T14:55:00+08:00",
+        bar_times=["2024-01-02T09:35:00+08:00", "2024-01-02T09:40:00+08:00"],
+    ) == "2024-01-02T14:55:00+08:00"
+
+
+def test_streaming_with_drawdown_brake_dispatches_rebalance_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    params = _tree_score_params(tmp_path)
+    params = replace(
+        params,
+        policy_drawdown_brake_threshold=-0.07,
+        output_dir=tmp_path,
+    )
+    backtest_params = baseline_backtest.BacktestParams(
+        catalog_path=Path("catalog.json"),
+        start="2024-01-02T09:30:00+08:00",
+        end="2024-01-03T15:00:00+08:00",
+        top_n=1,
+        initial_cash=1_000_000.0,
+        lookback_bars=1,
+        min_avg_turnover=None,
+        liquidity_window_bars=1,
+        commission_bps=0.0,
+        slippage_bps=0.0,
+        lot_size=100,
+        max_symbols=None,
+        output_dir=tmp_path,
+        data_access_mode="fast_parquet",
+        streaming_chunk="month",
+        streaming_chunk_padding_days=0,
+    )
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "examples.run_tree_score_backtest._run_tree_score_backtest_streaming_rebalance_drawdown",
+        lambda *args, **kwargs: calls.append("rebalance") or {"summary": {}, "metrics": {}, "trades": pd.DataFrame(), "equity_curve": pd.DataFrame(), "final_positions": pd.DataFrame()},
+    )
+
+    result = _run_tree_score_backtest_streaming(params, backtest_params)
+
+    assert calls == ["rebalance"]
+    assert result["summary"] == {}

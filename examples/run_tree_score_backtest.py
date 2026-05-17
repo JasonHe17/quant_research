@@ -265,6 +265,11 @@ def _run_tree_score_backtest_streaming(
 ) -> dict[str, object]:
     if params.hold_rank_buffer is not None and params.trade_policy == "naive_top_n":
         raise ValueError("streaming score backtests do not support hold-rank buffer yet")
+    if params.policy_drawdown_brake_threshold is not None:
+        return _run_tree_score_backtest_streaming_rebalance_drawdown(
+            params,
+            backtest_params,
+        )
     state = SimulationState(
         cash=float(params.initial_cash),
         lots={},
@@ -282,15 +287,7 @@ def _run_tree_score_backtest_streaming(
     policy_state = empty_portfolio_state()
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
-    peak_equity = float(params.initial_cash)
     for work_unit in _streaming_work_units(backtest_params):
-        current_equity = float(equity_values[-1])
-        peak_equity = max(peak_equity, current_equity)
-        drawdown_brake_scale = _drawdown_brake_scale(
-            params,
-            current_equity=current_equity,
-            peak_equity=peak_equity,
-        )
         bars = _load_bars_from_files(
             backtest_params,
             work_unit.files,
@@ -318,7 +315,6 @@ def _run_tree_score_backtest_streaming(
             params,
             policy_state=policy_state,
             budget_state=budget_state,
-            gross_exposure_scale_cap=drawdown_brake_scale,
         )
         signals = target_build.target_weights
         policy_state = target_build.policy_state
@@ -374,6 +370,176 @@ def _run_tree_score_backtest_streaming(
         execution_constraint_counts=execution_constraint_counts,
         instrument_count=len(instruments),
         policy_diagnostics=_summarize_policy_diagnostics(_concat_policy_diagnostics(policy_diagnostics)),
+        metrics=metrics,
+    )
+    return {
+        "summary": summary,
+        "metrics": metrics,
+        "trades": pd.DataFrame(),
+        "equity_curve": pd.DataFrame(),
+        "final_positions": final_positions,
+    }
+
+
+def _run_tree_score_backtest_streaming_rebalance_drawdown(
+    params: TreeScoreBacktestParams,
+    backtest_params: BacktestParams,
+) -> dict[str, object]:
+    state = SimulationState(
+        cash=float(params.initial_cash),
+        lots={},
+        previous_date=None,
+        last_prices={},
+    )
+    equity_values = [params.initial_cash]
+    trade_count = 0
+    trade_metric_totals = _empty_trade_metric_totals()
+    execution_constraint_counts = _empty_execution_constraint_counts()
+    total_bars = 0
+    total_signals = 0
+    total_executions = 0
+    instruments: set[str] = set()
+    policy_state = empty_portfolio_state()
+    budget_state = _initial_policy_budget_state(params)
+    policy_diagnostics: list[pd.DataFrame] = []
+    peak_equity = float(params.initial_cash)
+    last_simulated_time: object | None = None
+    scale_by_timestamp = _load_policy_gross_exposure_schedule(params)
+
+    def run_execution_batch(executions: pd.DataFrame) -> None:
+        nonlocal state, trade_count, total_executions
+        if executions.empty:
+            return
+        total_executions += len(executions)
+        _merge_execution_constraint_counts(
+            execution_constraint_counts,
+            _execution_constraint_counts(executions),
+        )
+        period_trades, period_equity, _, state = _simulate(
+            executions,
+            backtest_params,
+            state=state,
+        )
+        if not period_trades.empty:
+            trade_count += len(period_trades)
+            _merge_trade_metric_totals(
+                trade_metric_totals,
+                _trade_metric_totals(period_trades),
+            )
+            _append_frame_csv(period_trades, params.output_dir / "trades.csv")
+        if not period_equity.empty:
+            equity_values.extend(period_equity["equity"].astype(float).tolist())
+            _append_frame_csv(period_equity, params.output_dir / "equity_curve.csv")
+
+    for work_unit in _streaming_work_units(backtest_params):
+        bars = _load_bars_from_files(
+            backtest_params,
+            work_unit.files,
+            start=work_unit.load_start,
+            end=work_unit.load_end,
+        )
+        if bars.empty:
+            continue
+        in_signal_window = (
+            (bars["bar_end_time"] >= work_unit.signal_start)
+            & (bars["bar_end_time"] <= work_unit.signal_end)
+        )
+        total_bars += int(in_signal_window.sum())
+        instruments.update(
+            str(value)
+            for value in bars.loc[in_signal_window, "instrument_id"].unique()
+        )
+        ranked_signals = _load_ranked_score_signals(
+            params,
+            start=work_unit.signal_start,
+            end=work_unit.signal_end,
+        )
+        if ranked_signals.empty:
+            continue
+        grouped_signals = list(ranked_signals.groupby("signal_time", sort=True))
+        bar_times = sorted(bars["bar_end_time"].unique().tolist())
+        for index, (signal_time, group) in enumerate(grouped_signals):
+            mark_rows = _price_execution_rows(
+                bars,
+                tracked_instruments=set(state.lots),
+                start_exclusive=last_simulated_time,
+                end_inclusive=signal_time,
+            )
+            run_execution_batch(mark_rows)
+            if not mark_rows.empty:
+                last_simulated_time = mark_rows["exec_time"].max()
+
+            current_equity = float(equity_values[-1])
+            peak_equity = max(peak_equity, current_equity)
+            drawdown_brake_scale = _drawdown_brake_scale(
+                params,
+                current_equity=current_equity,
+                peak_equity=peak_equity,
+            )
+            target_build = _build_target_weights(
+                group,
+                params,
+                policy_state=policy_state,
+                budget_state=budget_state,
+                gross_exposure_scale_cap=drawdown_brake_scale,
+                scale_by_timestamp=scale_by_timestamp,
+            )
+            signals = target_build.target_weights
+            policy_state = target_build.policy_state
+            budget_state = target_build.budget_state
+            if not target_build.diagnostics.empty:
+                policy_diagnostics.append(target_build.diagnostics)
+            total_signals += len(signals)
+
+            next_signal_time = (
+                grouped_signals[index + 1][0]
+                if index + 1 < len(grouped_signals)
+                else None
+            )
+            segment_end = _next_segment_end(
+                signal_time,
+                next_signal_time=next_signal_time,
+                bar_times=bar_times,
+            )
+            executions = _build_tree_score_executions(
+                bars,
+                signals,
+                tracked_instruments=set(state.lots),
+                sparse=True,
+            )
+            if segment_end is None:
+                executions = executions.iloc[0:0].copy()
+            else:
+                executions = executions.loc[
+                    (executions["exec_time"] > signal_time)
+                    & (executions["exec_time"] <= segment_end)
+                ].copy()
+            run_execution_batch(executions)
+            if not executions.empty:
+                last_simulated_time = executions["exec_time"].max()
+        del bars, ranked_signals
+
+    if len(equity_values) == 1:
+        raise ValueError("no executable score signals after next-bar shift")
+    final_positions = _final_positions(state.lots)
+    final_positions.to_csv(params.output_dir / "final_positions.csv", index=False)
+    metrics = {
+        "total_return": total_return(params.initial_cash, equity_values[-1]),
+        "max_drawdown": max_drawdown(equity_values),
+        "trade_count": float(trade_count),
+        "final_equity": float(equity_values[-1]),
+    }
+    metrics.update(_trade_metrics_from_totals(trade_metric_totals, equity_values))
+    summary = _summary_payload(
+        params,
+        bar_count=total_bars,
+        signal_count=total_signals,
+        execution_row_count=total_executions,
+        execution_constraint_counts=execution_constraint_counts,
+        instrument_count=len(instruments),
+        policy_diagnostics=_summarize_policy_diagnostics(
+            _concat_policy_diagnostics(policy_diagnostics)
+        ),
         metrics=metrics,
     )
     return {
@@ -513,6 +679,7 @@ def _build_target_weights(
     policy_state: pd.DataFrame | None = None,
     budget_state: PolicyBudgetState | None = None,
     gross_exposure_scale_cap: float | None = None,
+    scale_by_timestamp: dict[str, float] | None = None,
 ) -> TargetWeightBuildResult:
     if params.trade_policy == "naive_top_n":
         return TargetWeightBuildResult(
@@ -527,7 +694,8 @@ def _build_target_weights(
         )
     if params.trade_policy not in {"rank_buffer_drop", "cost_aware_optimizer"}:
         raise ValueError(f"unsupported trade policy: {params.trade_policy}")
-    scale_by_timestamp = _load_policy_gross_exposure_schedule(params)
+    if scale_by_timestamp is None:
+        scale_by_timestamp = _load_policy_gross_exposure_schedule(params)
     base_scale = _effective_gross_exposure_scale(
         params.policy_gross_exposure_scale,
         gross_exposure_scale_cap,
@@ -1323,6 +1491,62 @@ def _build_tree_score_executions(
         ["exec_time", "instrument_id", "target_weight"],
     ].copy()
     return prices.merge(target_weights, on=["exec_time", "instrument_id"], how="left")
+
+
+def _price_execution_rows(
+    bars: pd.DataFrame,
+    *,
+    tracked_instruments: set[str],
+    start_exclusive: object | None,
+    end_inclusive: object,
+) -> pd.DataFrame:
+    if not tracked_instruments:
+        return pd.DataFrame(
+            columns=[
+                "exec_time",
+                "instrument_id",
+                "canonical_code",
+                "open_price",
+                "close_price",
+                "turnover",
+                "tradable_bar",
+                "limit_up_open",
+                "limit_down_open",
+                "target_weight",
+            ]
+        )
+    mask = bars["bar_end_time"] <= end_inclusive
+    if start_exclusive is not None:
+        mask &= bars["bar_end_time"] > start_exclusive
+    prices = bars.loc[
+        mask & bars["instrument_id"].astype(str).isin(tracked_instruments),
+        [
+            "bar_end_time",
+            "instrument_id",
+            "canonical_code",
+            "open_price",
+            "close_price",
+            "turnover",
+            "tradable_bar",
+            "limit_up_open",
+            "limit_down_open",
+        ],
+    ].rename(columns={"bar_end_time": "exec_time"})
+    return prices.assign(target_weight=pd.NA)
+
+
+def _next_segment_end(
+    signal_time: object,
+    *,
+    next_signal_time: object | None,
+    bar_times: list[object],
+) -> object | None:
+    if next_signal_time is not None:
+        return next_signal_time
+    for bar_time in bar_times:
+        if bar_time > signal_time:
+            return bar_time
+    return None
 
 
 def _write_outputs(result: dict[str, object], params: TreeScoreBacktestParams) -> None:
