@@ -18,6 +18,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
                 "close_price": float(10 + i + 1),
                 "volume": float(100 + i * 10),
                 "turnover": float((100 + i * 10) * (10 + i + 1)),
+                "limit_up_open": False,
+                "limit_down_open": False,
             }
             for i in range(6)
         ]
@@ -42,6 +44,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "risk_adjusted_momentum",
             "volume_confirmed_momentum",
             "intraday_gap",
+            "market_downside_beta",
+            "limit_pressure_resilience",
             "return_turnover_correlation",
             "negative_return_persistence",
         ),
@@ -62,6 +66,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         volume_confirmed_momentum_windows=(3,),
         return_turnover_correlation_windows=(3,),
         negative_return_persistence_windows=(3,),
+        market_downside_beta_windows=(3,),
+        limit_pressure_resilience_windows=(3,),
     )
 
     features = build_intraday_feature_matrix(bars, config)
@@ -84,6 +90,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_risk_adjusted_momentum_5m_w3" in features
     assert "intraday_volume_confirmed_momentum_5m_w3" in features
     assert "intraday_gap_5m" in features
+    assert "intraday_market_downside_beta_5m_w3" in features
+    assert "intraday_limit_pressure_resilience_5m_w3" in features
     assert "intraday_return_turnover_corr_5m_w3" in features
     assert "intraday_negative_return_persistence_5m_w3" in features
     assert features.loc[0, "intraday_bar_return_5m"] == pytest.approx(0.1)
@@ -117,6 +125,8 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
                 "close_price": float(11 + i),
                 "volume": float(100 + i),
                 "turnover": float((100 + i) * (11 + i)),
+                "limit_up_open": False,
+                "limit_down_open": False,
             }
             for i in range(50)
         ]
@@ -140,6 +150,8 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_risk_adjusted_momentum_5m_w48" in features
     assert "intraday_volume_confirmed_momentum_5m_w48" in features
     assert "intraday_gap_5m" in features
+    assert "intraday_market_downside_beta_5m_w48" in features
+    assert "intraday_limit_pressure_resilience_5m_w48" in features
     assert "intraday_return_turnover_corr_5m_w48" in features
     assert "intraday_negative_return_persistence_5m_w48" in features
     assert not features.empty
@@ -169,6 +181,96 @@ def test_negative_return_persistence_counts_only_past_intraday_losses() -> None:
     assert features["intraday_negative_return_persistence_5m_w3"].tolist() == pytest.approx(
         [2.0 / 3.0, 2.0 / 3.0]
     )
+
+
+def test_market_downside_beta_uses_cross_sectional_down_market_returns() -> None:
+    rows = [
+        {"instrument_id": "a", "bar_end_time": "t0", "close_price": 10.0},
+        {"instrument_id": "b", "bar_end_time": "t0", "close_price": 20.0},
+        {"instrument_id": "a", "bar_end_time": "t1", "close_price": 9.0},
+        {"instrument_id": "b", "bar_end_time": "t1", "close_price": 19.0},
+        {"instrument_id": "a", "bar_end_time": "t2", "close_price": 9.5},
+        {"instrument_id": "b", "bar_end_time": "t2", "close_price": 19.2},
+    ]
+    bars = pd.DataFrame(
+        rows
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("market_downside_beta",),
+            market_downside_beta_windows=(1,),
+        ),
+    )
+    column = "intraday_market_downside_beta_5m_w1"
+    values = features.set_index("instrument_id")[column]
+
+    assert values.loc["a"] == pytest.approx(4.0 / 3.0)
+    assert values.loc["b"] == pytest.approx(2.0 / 3.0)
+
+
+def test_limit_pressure_resilience_uses_limit_pressure_state() -> None:
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "a",
+                "bar_end_time": "t0",
+                "close_price": 10.0,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "b",
+                "bar_end_time": "t0",
+                "close_price": 20.0,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "a",
+                "bar_end_time": "t1",
+                "close_price": 9.0,
+                "limit_up_open": False,
+                "limit_down_open": True,
+            },
+            {
+                "instrument_id": "b",
+                "bar_end_time": "t1",
+                "close_price": 19.0,
+                "limit_up_open": False,
+                "limit_down_open": True,
+            },
+            {
+                "instrument_id": "a",
+                "bar_end_time": "t2",
+                "close_price": 9.5,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "b",
+                "bar_end_time": "t2",
+                "close_price": 19.2,
+                "limit_up_open": True,
+                "limit_down_open": False,
+            },
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("limit_pressure_resilience",),
+            limit_pressure_resilience_windows=(1,),
+        ),
+    )
+
+    column = "intraday_limit_pressure_resilience_5m_w1"
+    values = features.set_index(["instrument_id", "timestamp"])[column]
+
+    assert values.loc[("a", "t1")] == pytest.approx(-0.1)
+    assert values.loc[("b", "t1")] == pytest.approx(-0.05)
 
 
 def test_intraday_feature_config_rejects_unknown_group() -> None:

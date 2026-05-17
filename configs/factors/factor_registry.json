@@ -1386,6 +1386,166 @@
         "risk_penalty",
         "persistence"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar downside beta against the cross-sectional median market return.",
+      "display_name": "Intraday market downside beta, 48-bar window",
+      "evaluation": {
+        "admission_status": "reject",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_market_downside_beta/factor_admission/factor_admission_report.json",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_market_downside_beta_5m_w48/factor_candidate_review.json"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_market_downside_beta_5m_w48",
+      "family": "risk",
+      "feature_columns": [
+        "intraday_market_downside_beta_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Names that are more exposed to market-wide downside bars should be penalized in a long-only book because they amplify losses during weak tape regimes even when their own volatility is not extreme.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "market_downside_beta"
+          ],
+          "market_downside_beta_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "This factor is designed as a cross-sectional downside-risk penalty rather than a reversal transform. It uses the market-wide median 5m return at each timestamp and measures each name's sensitivity only when the market is down, which is materially different from own-return persistence, volatility, or gap response features. The standard single-factor admission rejected it because rank IC strength, t-stat, directional hit rate, and annual stability were all below threshold despite acceptable coverage and turnover.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_17_market_downside_beta.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_ic",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_17_market_downside_beta/factor_admission/factor_admission_report.json",
+          "runs/factor_candidate_reviews/intraday_market_downside_beta_5m_w48/factor_candidate_review.json",
+          "docs/strategy/factor_research_batch_2026_05_17_market_downside_beta.md"
+        ],
+        "negative_findings": "The factor had full coverage and low turnover, but its absolute rank IC, t-stat, directional hit rate, and stable-year count all failed the admission gate. The yearly profile was mixed with 2024 negative and only one stable year, so the market-downside sensitivity signal was not strong enough to survive the standard alpha screen.",
+        "retry_conditions": "Retry only with a materially different market-state construction, such as sector-relative downside beta or an explicit regime split that conditions on market breadth and limit-up/limit-down pressure.",
+        "similar_to": [
+          "intraday_downside_volatility_5m_w48",
+          "intraday_return_skewness_5m_w48",
+          "intraday_negative_return_persistence_5m_w48"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "batch_2026_05_17_market_downside_beta",
+        "reject",
+        "intraday",
+        "risk",
+        "downside",
+        "market"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar resilience of returns during market limit-pressure states.",
+      "display_name": "Intraday limit-pressure resilience, 48-bar window",
+      "evaluation": {
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_limit_pressure_resilience/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_limit_pressure_resilience_5m_w48/factor_candidate_review.json",
+        "portfolio_validation": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/full_base/summary.json",
+        "portfolio_validation_status": "watchlist_portfolio_unstable",
+        "portfolio_validation_high_cost": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/full_high_cost/summary.json",
+        "portfolio_validation_year_2023": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2023_base/summary.json",
+        "portfolio_validation_year_2024": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2024_base/summary.json",
+        "portfolio_validation_year_2025": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2025_base/summary.json",
+        "diagnostic_summary": "runs/factor_diagnostics/intraday_limit_pressure_resilience_5m_w48/diagnostic_summary.json"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_limit_pressure_resilience_5m_w48",
+      "family": "market_regime",
+      "feature_columns": [
+        "intraday_limit_pressure_resilience_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Names that hold up better when limit-down opens dominate the tape should be more robust long-only holdings than names that simply track the market beta or own volatility.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "limit_pressure_resilience"
+          ],
+          "limit_pressure_resilience_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "This factor is materially different from market beta because it conditions on explicit limit-pressure stress using live-open limit flags. It is not an own-path reversal or volatility transform. The first implementation uses a market-wide pressure proxy computed from the same timestamp's limit-up and limit-down open rates. It should be evaluated as a market-state resilience penalty for long-only selection.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_17_limit_pressure_resilience.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "limit_up_open",
+        "limit_down_open"
+      ],
+      "research_memory": {
+        "decision_reason": "unstable_years",
+        "evidence_artifacts": [
+          "runs/framework_v1_acceptance/factor_batch_2026_05_17_limit_pressure_resilience/factor_admission/factor_admission_report.json",
+          "runs/factor_candidate_reviews/intraday_limit_pressure_resilience_5m_w48/factor_candidate_review.json",
+          "runs/factor_diagnostics/intraday_limit_pressure_resilience_5m_w48/diagnostic_summary.json",
+          "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/full_base/summary.json",
+          "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/full_high_cost/summary.json",
+          "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2023_base/summary.json",
+          "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2024_base/summary.json",
+          "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2025_base/summary.json"
+        ],
+        "negative_findings": "Single-factor evidence was strong and full-window portfolio validation was positive, but standalone annual portfolio slices were negative in 2023 and 2024 while positive only in the 2025 bull market.",
+        "retry_conditions": "Retry as a conditional regime input or exposure gate only after adding non-bull-market controls that improve 2023 and 2024 annual portfolio slices without relying on 2025 bull-market upside.",
+        "similar_to": [
+          "intraday_market_downside_beta_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "batch_2026_05_17_limit_pressure_resilience",
+        "watchlist",
+        "intraday",
+        "market_regime",
+        "limit_pressure",
+        "resilience"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -1404,5 +1564,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-17",
-  "version": 4
+  "version": 8
 }

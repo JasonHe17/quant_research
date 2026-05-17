@@ -27,6 +27,8 @@ _VALID_GROUPS = {
     "risk_adjusted_momentum",
     "volume_confirmed_momentum",
     "intraday_gap",
+    "market_downside_beta",
+    "limit_pressure_resilience",
     "return_turnover_correlation",
     "negative_return_persistence",
     "all",
@@ -55,6 +57,8 @@ class IntradayFeatureConfig:
     volume_confirmed_momentum_windows: tuple[int, ...] = (12, 48)
     return_turnover_correlation_windows: tuple[int, ...] = (12, 48)
     negative_return_persistence_windows: tuple[int, ...] = (48,)
+    market_downside_beta_windows: tuple[int, ...] = (48,)
+    limit_pressure_resilience_windows: tuple[int, ...] = (48,)
 
     def __post_init__(self) -> None:
         unknown = set(self.factor_groups) - _VALID_GROUPS
@@ -87,6 +91,11 @@ class IntradayFeatureConfig:
                 "negative_return_persistence_windows",
                 self.negative_return_persistence_windows,
             ),
+            ("market_downside_beta_windows", self.market_downside_beta_windows),
+            (
+                "limit_pressure_resilience_windows",
+                self.limit_pressure_resilience_windows,
+            ),
         ):
             if any(value <= 0 for value in values):
                 raise ValueError(f"{name} values must be positive")
@@ -115,6 +124,8 @@ def build_intraday_feature_matrix(
         required.append("turnover")
     if groups & {"vwap_deviation"}:
         required.append("volume")
+    if "limit_pressure_resilience" in groups:
+        required.extend(["limit_up_open", "limit_down_open"])
     _require_columns(bars, tuple(required))
     frame = bars.sort_values(["instrument_id", "bar_end_time"]).copy()
     frame["close_price"] = frame["close_price"].astype(float)
@@ -185,6 +196,44 @@ def build_intraday_feature_matrix(
             column = f"intraday_negative_return_persistence_5m_w{window}"
             output[column] = negative_return.groupby(frame["instrument_id"]).transform(
                 lambda values: values.rolling(window, min_periods=window).mean()
+            )
+            feature_columns.append(column)
+    if "market_downside_beta" in groups:
+        market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")
+        downside_market_return = market_return.where(market_return < 0.0, 0.0)
+        downside_covariance = one_bar_return * downside_market_return
+        downside_variance = downside_market_return.pow(2)
+        for window in config.market_downside_beta_windows:
+            rolling_covariance = downside_covariance.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_variance = downside_variance.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            column = f"intraday_market_downside_beta_5m_w{window}"
+            output[column] = rolling_covariance / rolling_variance.where(
+                rolling_variance != 0.0
+            )
+            feature_columns.append(column)
+    if "limit_pressure_resilience" in groups:
+        limit_up_rate = frame["limit_up_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_down_rate = frame["limit_down_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_pressure = (limit_down_rate - limit_up_rate).clip(lower=0.0)
+        pressure_weighted_return = one_bar_return * limit_pressure
+        for window in config.limit_pressure_resilience_windows:
+            rolling_weighted_return = pressure_weighted_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_pressure = limit_pressure.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).sum()
+            )
+            column = f"intraday_limit_pressure_resilience_5m_w{window}"
+            output[column] = rolling_weighted_return / rolling_pressure.where(
+                rolling_pressure != 0.0
             )
             feature_columns.append(column)
     if "return_skewness" in groups:

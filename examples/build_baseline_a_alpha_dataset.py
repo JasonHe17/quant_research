@@ -191,6 +191,10 @@ def _build_partition_dataset(
             negative_return_persistence_windows=tuple(
                 args.negative_return_persistence_windows
             ),
+            market_downside_beta_windows=tuple(args.market_downside_beta_windows),
+            limit_pressure_resilience_windows=tuple(
+                args.limit_pressure_resilience_windows
+            ),
         ),
     )
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
@@ -417,6 +421,8 @@ def _write_summary(
             "negative_return_persistence_windows": (
                 args.negative_return_persistence_windows
             ),
+            "market_downside_beta_windows": args.market_downside_beta_windows,
+            "limit_pressure_resilience_windows": args.limit_pressure_resilience_windows,
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
             "entry_lag_bars": args.entry_lag_bars,
@@ -474,6 +480,8 @@ def _parse_args() -> argparse.Namespace:
             "risk_adjusted_momentum",
             "volume_confirmed_momentum",
             "intraday_gap",
+            "market_downside_beta",
+            "limit_pressure_resilience",
             "return_turnover_correlation",
             "negative_return_persistence",
         ),
@@ -529,6 +537,10 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         nargs="+",
         default=[48],
+    )
+    parser.add_argument("--market-downside-beta-windows", type=int, nargs="+", default=[48])
+    parser.add_argument(
+        "--limit-pressure-resilience-windows", type=int, nargs="+", default=[48]
     )
     parser.add_argument("--label-name", default="forward_return")
     parser.add_argument("--horizon-bars", type=int, default=48)
@@ -602,6 +614,10 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--return-turnover-correlation-windows values must be positive")
     if any(value <= 0 for value in args.negative_return_persistence_windows):
         raise ValueError("--negative-return-persistence-windows values must be positive")
+    if any(value <= 0 for value in args.market_downside_beta_windows):
+        raise ValueError("--market-downside-beta-windows values must be positive")
+    if any(value <= 0 for value in args.limit_pressure_resilience_windows):
+        raise ValueError("--limit-pressure-resilience-windows values must be positive")
     if args.padding_days < 0:
         raise ValueError("--padding-days must be non-negative")
     if args.workers <= 0:
@@ -688,6 +704,8 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.volume_confirmed_momentum_windows,
                     *args.return_turnover_correlation_windows,
                     *args.negative_return_persistence_windows,
+                    *args.market_downside_beta_windows,
+                    *args.limit_pressure_resilience_windows,
                 ]
             ),
         },
