@@ -1554,6 +1554,82 @@
         "st_aware": true,
         "t_plus_one_safe": true
       },
+      "description": "Rolling 48-bar resilience of returns during weak market breadth states.",
+      "display_name": "Intraday breadth resilience, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_breadth_resilience/factor_admission/factor_admission_report.json",
+        "admission_status": "reject"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_breadth_resilience_5m_w48",
+      "family": "market_regime",
+      "feature_columns": [
+        "intraday_breadth_resilience_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Names that hold up better when the cross-sectional advance-decline ratio is weak should be more robust long-only holdings than names that rely on broad-market participation.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "breadth_resilience_windows": [
+            48
+          ],
+          "factor_groups": [
+            "breadth_resilience"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "This factor is intentionally different from the rejected market-downside beta family. It uses cross-sectional advance-decline breadth, not median market return, and therefore satisfies the retry condition that called for a materially different market-state construction based on breadth. Standard single-factor admission selected the inverted direction but rejected the factor because directional IC hit rate and stable-year count failed.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_17_market_downside_beta.md",
+        "docs/strategy/factor_research_batch_2026_05_17_breadth_resilience.md",
+        "runs/factor_research_memory/intraday_breadth_resilience_5m_w48/factor_research_memory_check.json",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_17_breadth_resilience/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_hit_rate",
+        "evidence_artifacts": [
+          "runs/factor_research_memory/intraday_breadth_resilience_5m_w48/factor_research_memory_check.json",
+          "runs/framework_v1_acceptance/factor_batch_2026_05_17_breadth_resilience/factor_admission/factor_admission_report.json",
+          "docs/strategy/factor_research_batch_2026_05_17_breadth_resilience.md"
+        ],
+        "negative_findings": "The factor had full coverage and passed absolute rank IC, t-stat, cost-adjusted spread, and turnover checks only in the inverted direction, but failed the directional IC hit-rate gate at 49.81% and had only one stable annual IC slice. Yearly rank IC signs were mixed: mildly positive in 2023 and 2024, strongly negative in 2025.",
+        "retry_conditions": "Retry only with a materially different breadth construction, such as sector-relative breadth, breadth shock persistence, or an explicit non-bull-market regime split that improves 2023 and 2024 without relying on 2025 inversion.",
+        "similar_to": [
+          "intraday_market_downside_beta_5m_w48",
+          "intraday_limit_pressure_resilience_5m_w48"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "batch_2026_05_17",
+        "reject",
+        "intraday",
+        "market_regime",
+        "breadth",
+        "advance_decline"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
       "description": "Rolling 48-bar downside turnover absorption ratio.",
       "display_name": "Intraday sell-pressure absorption, 48-bar window",
       "evaluation": {

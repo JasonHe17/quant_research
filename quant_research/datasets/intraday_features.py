@@ -28,6 +28,7 @@ _VALID_GROUPS = {
     "volume_confirmed_momentum",
     "intraday_gap",
     "market_downside_beta",
+    "breadth_resilience",
     "limit_pressure_resilience",
     "return_turnover_correlation",
     "negative_return_persistence",
@@ -64,6 +65,7 @@ class IntradayFeatureConfig:
     downside_turnover_decay_windows: tuple[int, ...] = (48,)
     sell_pressure_recovery_windows: tuple[int, ...] = (48,)
     market_downside_beta_windows: tuple[int, ...] = (48,)
+    breadth_resilience_windows: tuple[int, ...] = (48,)
     limit_pressure_resilience_windows: tuple[int, ...] = (48,)
 
     def __post_init__(self) -> None:
@@ -101,6 +103,7 @@ class IntradayFeatureConfig:
             ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
             ("sell_pressure_recovery_windows", self.sell_pressure_recovery_windows),
             ("market_downside_beta_windows", self.market_downside_beta_windows),
+            ("breadth_resilience_windows", self.breadth_resilience_windows),
             (
                 "limit_pressure_resilience_windows",
                 self.limit_pressure_resilience_windows,
@@ -302,6 +305,24 @@ def build_intraday_feature_matrix(
             column = f"intraday_market_downside_beta_5m_w{window}"
             output[column] = rolling_covariance / rolling_variance.where(
                 rolling_variance != 0.0
+            )
+            feature_columns.append(column)
+    if "breadth_resilience" in groups:
+        up_rate = one_bar_return.gt(0.0).where(one_bar_return.notna()).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        weak_breadth_pressure = (0.5 - up_rate).clip(lower=0.0)
+        pressure_weighted_return = one_bar_return * weak_breadth_pressure
+        for window in config.breadth_resilience_windows:
+            rolling_weighted_return = pressure_weighted_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_pressure = weak_breadth_pressure.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            column = f"intraday_breadth_resilience_5m_w{window}"
+            output[column] = rolling_weighted_return / rolling_pressure.where(
+                rolling_pressure != 0.0
             )
             feature_columns.append(column)
     if "limit_pressure_resilience" in groups:
