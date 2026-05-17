@@ -30,7 +30,7 @@ volatility transform:
 ## Registry
 
 - Registry version: 14
-- Status: `candidate`
+- Status: `watchlist`
 - Expected direction: `long`
 
 ## Research Memory
@@ -56,7 +56,14 @@ direction:
 
 ## Next Step
 
-Run the standard portfolio validation path next. The factor cleared admission
-with positive annual IC in 2023, 2024, and 2025, so the remaining question is
-whether it adds enough post-cost portfolio value to be useful beyond a raw
-candidate signal.
+Do not continue standalone portfolio validation for the current specification.
+The factor should only be retried as a conditional overlay or interaction
+feature, for example gated by broader market drawdown, downside volatility, or
+liquidity state.
+
+## Portfolio Validation Result
+
+The standard standalone decorrelated validation was stopped after `full_base`
+because the first scenario failed economically. The 2023-2025 full-base equity
+curve ended at -14.43% total return with -34.29% max drawdown. This is a
+portfolio-negative result despite the clean single-factor admission profile.

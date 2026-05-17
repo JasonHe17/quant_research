@@ -1641,6 +1641,8 @@
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
         "admission_status": "candidate",
         "candidate_review": "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
+        "portfolio_validation_full_base_equity": "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv",
+        "portfolio_validation_status": "full_base_failed_portfolio_negative",
         "research_memory_check": "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json"
       },
       "expected_direction": "long",
@@ -1666,7 +1668,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 48,
-      "notes": "This is not a total turnover, signed turnover imbalance, negative-return persistence, sell-pressure absorption, or VWAP-deviation reversal transform. The research-memory check matched the rejected VWAP-deviation factor, but that rejection permits retry under a materially different microstructure hypothesis. This factor satisfies that condition by comparing the earlier and recent halves of the rolling window using only turnover on negative-return bars, so it measures the time profile of downside trading pressure rather than price deviation from a volume-weighted anchor. Standard admission passed in the long direction with full coverage, 0.00688 rank IC, 13.93 t-stat, 53.39% directional hit rate, three stable years, 15.64 bps cost-adjusted spread, and 27.79% top-N turnover.",
+      "notes": "This is not a total turnover, signed turnover imbalance, negative-return persistence, sell-pressure absorption, or VWAP-deviation reversal transform. The research-memory check matched the rejected VWAP-deviation factor, but that rejection permits retry under a materially different microstructure hypothesis. This factor satisfies that condition by comparing the earlier and recent halves of the rolling window using only turnover on negative-return bars, so it measures the time profile of downside trading pressure rather than price deviation from a volume-weighted anchor. Standard admission passed in the long direction with full coverage, 0.00688 rank IC, 13.93 t-stat, 53.39% directional hit rate, three stable years, 15.64 bps cost-adjusted spread, and 27.79% top-N turnover. Standard portfolio validation was stopped after full_base evidence because the standalone decorrelated policy lost 14.43% with -34.29% max drawdown, so the factor is not promotion-ready as a standalone alpha.",
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_development_standard.md",
@@ -1674,7 +1676,8 @@
         "docs/strategy/factor_research_batch_2026_05_17_downside_turnover_decay.md",
         "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json",
         "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
-        "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json"
+        "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1682,11 +1685,27 @@
         "close_price",
         "turnover"
       ],
-      "research_memory": {},
-      "status": "candidate",
+      "research_memory": {
+        "decision_reason": "portfolio_negative",
+        "evidence_artifacts": [
+          "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json",
+          "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
+          "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
+          "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv"
+        ],
+        "negative_findings": "The factor passed single-factor admission but failed the first standard portfolio validation gate. The standalone decorrelated full_base policy returned -14.43% over 2023-2025 with -34.29% max drawdown, so high nominal single-factor spread did not translate into usable long-only portfolio behavior.",
+        "retry_conditions": "Retry only as a conditional overlay or interaction feature, for example gated by broader market drawdown, downside volatility, or liquidity state. Do not rerun the same standalone decay factor without a materially different portfolio construction rule.",
+        "similar_to": [
+          "intraday_signed_turnover_imbalance_5m_w48",
+          "intraday_return_turnover_corr_5m_w48",
+          "intraday_vwap_deviation_5m_w48",
+          "intraday_sell_pressure_absorption_5m_w48"
+        ]
+      },
+      "status": "watchlist",
       "tags": [
         "batch_2026_05_17_downside_turnover_decay",
-        "candidate",
+        "watchlist",
         "intraday",
         "liquidity",
         "sell_pressure",
@@ -1710,5 +1729,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-17",
-  "version": 14
+  "version": 15
 }
