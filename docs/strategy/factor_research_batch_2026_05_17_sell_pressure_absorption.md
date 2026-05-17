@@ -35,3 +35,12 @@ beta, reversal, or simple turnover expansion:
 
 Run the standard single-factor pipeline for the new group only, then decide
 whether the factor belongs in `candidate`, `watchlist`, or `reject`.
+
+## Standard Validation Result
+
+The downside-volatility state gate was useful in the 2024 quick slice, but it
+did not survive the standard full-window check. The 2023-2025 full-base run
+finished at 39.69% return with -30.27% max drawdown, versus the standalone
+decorrelated baseline at 60.79% return with -31.84% max drawdown. That is not
+an acceptable tradeoff, so this gate path is recorded as a failed validation
+for the current factor.
