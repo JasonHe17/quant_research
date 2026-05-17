@@ -1592,7 +1592,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 48,
-      "notes": "This is not a plain turnover ratio or a market beta proxy. It measures downside-only turnover per unit of cumulative negative return over the same rolling window. The standard admission run found a strong inverted direction, suggesting high turnover during downside bars behaves more like crowded distribution than healthy absorption. Standalone decorrelated portfolio validation was positive in full-window, high-cost, and all annual slices, but 2024 max drawdown remained high enough to keep this as a drawdown-watch candidate rather than an immediate promoted factor.",
+      "notes": "This is not a plain turnover ratio or a market beta proxy. It measures downside-only turnover per unit of cumulative negative return over the same rolling window. The standard admission run found a strong inverted direction, suggesting high turnover during downside bars behaves more like crowded distribution than healthy absorption. Standalone decorrelated portfolio validation was positive in full-window, high-cost, and all annual slices, but 2024 max drawdown remained high enough to keep this as a drawdown-watch candidate rather than an immediate promoted factor. A simple -7% drawdown brake with 0.5x exposure reduced full-window drawdown from -31.84% to -20.76%, but lowered full-window return from 60.79% to 33.70% and made 2024 annual return negative, so it is not the preferred risk-control path.",
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_development_standard.md",
@@ -1600,7 +1600,9 @@
         "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_absorption.md",
         "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_absorption/factor_admission/factor_admission_report.json",
         "runs/factor_candidate_reviews/intraday_sell_pressure_absorption_5m_w48/factor_candidate_review.json",
-        "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/validation_summary.json"
+        "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/validation_summary.json",
+        "runs/candidate_factor_portfolios/sell_pressure_absorption_drawdown_brake_7pct/full_base/summary.json",
+        "runs/candidate_factor_portfolios/sell_pressure_absorption_drawdown_brake_7pct/year_2024_base/summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1636,5 +1638,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-17",
-  "version": 10
+  "version": 11
 }
