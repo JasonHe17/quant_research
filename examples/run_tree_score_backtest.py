@@ -77,6 +77,8 @@ class TreeScoreBacktestParams:
     policy_turnover_budget_pacing: float
     policy_gross_exposure_scale: float
     policy_gross_exposure_scale_path: Path | None
+    policy_drawdown_brake_threshold: float | None
+    policy_drawdown_brake_reduced_scale: float
     optimizer_candidate_rank: int | None
     optimizer_score_to_edge_bps: float
     optimizer_min_net_edge_bps: float
@@ -153,6 +155,8 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             path.unlink()
     if params.data_access_mode == "fast_parquet":
         return _run_tree_score_backtest_streaming(params, backtest_params)
+    if params.policy_drawdown_brake_threshold is not None:
+        raise ValueError("drawdown brake requires --data-access-mode fast_parquet")
 
     ranked_signals = _load_ranked_score_signals(params)
     target_build = _build_target_weights(ranked_signals, params)
@@ -216,6 +220,10 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
                 if params.policy_gross_exposure_scale_path is not None
                 else None
             ),
+            "policy_drawdown_brake_threshold": params.policy_drawdown_brake_threshold,
+            "policy_drawdown_brake_reduced_scale": (
+                params.policy_drawdown_brake_reduced_scale
+            ),
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
             "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
@@ -274,7 +282,15 @@ def _run_tree_score_backtest_streaming(
     policy_state = empty_portfolio_state()
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
+    peak_equity = float(params.initial_cash)
     for work_unit in _streaming_work_units(backtest_params):
+        current_equity = float(equity_values[-1])
+        peak_equity = max(peak_equity, current_equity)
+        drawdown_brake_scale = _drawdown_brake_scale(
+            params,
+            current_equity=current_equity,
+            peak_equity=peak_equity,
+        )
         bars = _load_bars_from_files(
             backtest_params,
             work_unit.files,
@@ -302,6 +318,7 @@ def _run_tree_score_backtest_streaming(
             params,
             policy_state=policy_state,
             budget_state=budget_state,
+            gross_exposure_scale_cap=drawdown_brake_scale,
         )
         signals = target_build.target_weights
         policy_state = target_build.policy_state
@@ -495,6 +512,7 @@ def _build_target_weights(
     *,
     policy_state: pd.DataFrame | None = None,
     budget_state: PolicyBudgetState | None = None,
+    gross_exposure_scale_cap: float | None = None,
 ) -> TargetWeightBuildResult:
     if params.trade_policy == "naive_top_n":
         return TargetWeightBuildResult(
@@ -510,7 +528,11 @@ def _build_target_weights(
     if params.trade_policy not in {"rank_buffer_drop", "cost_aware_optimizer"}:
         raise ValueError(f"unsupported trade policy: {params.trade_policy}")
     scale_by_timestamp = _load_policy_gross_exposure_schedule(params)
-    default_policy = _policy_for_params(params)
+    base_scale = _effective_gross_exposure_scale(
+        params.policy_gross_exposure_scale,
+        gross_exposure_scale_cap,
+    )
+    default_policy = _policy_for_params(params, gross_exposure_scale=base_scale)
     diagnostics: list[pd.DataFrame] = []
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
@@ -545,13 +567,18 @@ def _build_target_weights(
                 _timestamp_key(signal_time),
                 params.policy_gross_exposure_scale,
             )
+            scale = _effective_gross_exposure_scale(scale, gross_exposure_scale_cap)
             policy = _policy_for_params(
                 params,
                 gross_exposure_scale=scale,
                 turnover_cap=policy_turnover_cap,
             )
         elif policy_turnover_cap != params.policy_max_gross_turnover_per_rebalance:
-            policy = _policy_for_params(params, turnover_cap=policy_turnover_cap)
+            policy = _policy_for_params(
+                params,
+                gross_exposure_scale=base_scale,
+                turnover_cap=policy_turnover_cap,
+            )
         forecast_frame = group.rename(columns={"signal_time": "timestamp"})
         forecast_columns = [
             column
@@ -585,6 +612,11 @@ def _build_target_weights(
             diagnostics_frame["turnover_path_budget_after"] = remaining_turnover_budget
             diagnostics_frame["turnover_budget_period"] = params.policy_turnover_budget_period
             diagnostics_frame["turnover_budget_period_key"] = budget_period_key
+        if gross_exposure_scale_cap is not None:
+            diagnostics_frame["drawdown_brake_scale"] = float(gross_exposure_scale_cap)
+            diagnostics_frame["drawdown_brake_active"] = bool(
+                gross_exposure_scale_cap < 1.0
+            )
         diagnostics.append(diagnostics_frame)
         target = result.portfolio_intent.loc[
             result.portfolio_intent["policy_target_weight"].astype(float) > 0,
@@ -631,6 +663,32 @@ def _build_target_weights(
         ),
         diagnostics=_concat_policy_diagnostics(diagnostics),
     )
+
+
+def _effective_gross_exposure_scale(
+    configured_scale: float,
+    cap: float | None,
+) -> float:
+    if cap is None:
+        return configured_scale
+    return min(configured_scale, cap)
+
+
+def _drawdown_brake_scale(
+    params: TreeScoreBacktestParams,
+    *,
+    current_equity: float,
+    peak_equity: float,
+) -> float | None:
+    threshold = params.policy_drawdown_brake_threshold
+    if threshold is None:
+        return None
+    if peak_equity <= 0:
+        return params.policy_drawdown_brake_reduced_scale
+    drawdown = current_equity / peak_equity - 1.0
+    if drawdown <= threshold:
+        return params.policy_drawdown_brake_reduced_scale
+    return 1.0
 
 
 def _policy_for_params(
@@ -975,6 +1033,9 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             "average_target_gross_exposure": 0.0,
             "average_dynamic_turnover_cap": 0.0,
             "min_dynamic_turnover_cap": 0.0,
+            "drawdown_brake_active_count": 0,
+            "average_drawdown_brake_scale": 0.0,
+            "min_drawdown_brake_scale": 0.0,
             "turnover_budget_period_count": 0,
             "turnover_path_budget_remaining": 0.0,
         }
@@ -997,6 +1058,16 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
         diagnostics["turnover_path_budget_after"]
         if "turnover_path_budget_after" in diagnostics.columns
         else pd.Series(dtype=float)
+    )
+    drawdown_brake_scale = (
+        diagnostics["drawdown_brake_scale"]
+        if "drawdown_brake_scale" in diagnostics.columns
+        else pd.Series(dtype=float)
+    )
+    drawdown_brake_active = (
+        diagnostics["drawdown_brake_active"]
+        if "drawdown_brake_active" in diagnostics.columns
+        else pd.Series(dtype=bool)
     )
     return {
         "decision_timestamp_count": int(len(diagnostics)),
@@ -1032,6 +1103,21 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             float(dynamic_cap.mean()) if not dynamic_cap.empty else 0.0
         ),
         "min_dynamic_turnover_cap": float(dynamic_cap.min()) if not dynamic_cap.empty else 0.0,
+        "drawdown_brake_active_count": (
+            int(drawdown_brake_active.astype(bool).sum())
+            if not drawdown_brake_active.empty
+            else 0
+        ),
+        "average_drawdown_brake_scale": (
+            float(drawdown_brake_scale.astype(float).mean())
+            if not drawdown_brake_scale.empty
+            else 0.0
+        ),
+        "min_drawdown_brake_scale": (
+            float(drawdown_brake_scale.astype(float).min())
+            if not drawdown_brake_scale.empty
+            else 0.0
+        ),
         "turnover_budget_period_count": (
             int(period_key.dropna().nunique()) if not period_key.empty else 0
         ),
@@ -1086,6 +1172,10 @@ def _summary_payload(
                 str(params.policy_gross_exposure_scale_path)
                 if params.policy_gross_exposure_scale_path is not None
                 else None
+            ),
+            "policy_drawdown_brake_threshold": params.policy_drawdown_brake_threshold,
+            "policy_drawdown_brake_reduced_scale": (
+                params.policy_drawdown_brake_reduced_scale
             ),
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
@@ -1285,6 +1375,8 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")
+    parser.add_argument("--policy-drawdown-brake-threshold", type=float)
+    parser.add_argument("--policy-drawdown-brake-reduced-scale", type=float, default=0.5)
     parser.add_argument("--optimizer-candidate-rank", type=int)
     parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
     parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
@@ -1308,7 +1400,7 @@ def _parse_args() -> TreeScoreBacktestParams:
     )
     parser.add_argument(
         "--streaming-chunk",
-        choices=("year", "month"),
+        choices=("year", "month", "week", "day"),
         default="month",
     )
     parser.add_argument("--streaming-chunk-padding-days", type=int, default=10)
@@ -1365,6 +1457,13 @@ def _parse_args() -> TreeScoreBacktestParams:
         raise ValueError("--policy-turnover-budget-pacing must be non-negative")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
         raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
+    if (
+        args.policy_drawdown_brake_threshold is not None
+        and not -1 < args.policy_drawdown_brake_threshold < 0
+    ):
+        raise ValueError("--policy-drawdown-brake-threshold must be in (-1, 0)")
+    if not 0 <= args.policy_drawdown_brake_reduced_scale <= 1:
+        raise ValueError("--policy-drawdown-brake-reduced-scale must be in [0, 1]")
     if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:
         raise ValueError("--optimizer-candidate-rank must be positive")
     if args.optimizer_score_to_edge_bps < 0:
@@ -1437,6 +1536,8 @@ def _parse_args() -> TreeScoreBacktestParams:
             if args.policy_gross_exposure_scale_path
             else None
         ),
+        policy_drawdown_brake_threshold=args.policy_drawdown_brake_threshold,
+        policy_drawdown_brake_reduced_scale=args.policy_drawdown_brake_reduced_scale,
         optimizer_candidate_rank=args.optimizer_candidate_rank,
         optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,
         optimizer_min_net_edge_bps=args.optimizer_min_net_edge_bps,

@@ -28,6 +28,7 @@ _VALID_GROUPS = {
     "volume_confirmed_momentum",
     "intraday_gap",
     "return_turnover_correlation",
+    "negative_return_persistence",
     "all",
 }
 
@@ -53,6 +54,7 @@ class IntradayFeatureConfig:
     risk_adjusted_momentum_windows: tuple[int, ...] = (12, 48)
     volume_confirmed_momentum_windows: tuple[int, ...] = (12, 48)
     return_turnover_correlation_windows: tuple[int, ...] = (12, 48)
+    negative_return_persistence_windows: tuple[int, ...] = (48,)
 
     def __post_init__(self) -> None:
         unknown = set(self.factor_groups) - _VALID_GROUPS
@@ -80,6 +82,10 @@ class IntradayFeatureConfig:
             (
                 "return_turnover_correlation_windows",
                 self.return_turnover_correlation_windows,
+            ),
+            (
+                "negative_return_persistence_windows",
+                self.negative_return_persistence_windows,
             ),
         ):
             if any(value <= 0 for value in values):
@@ -169,6 +175,16 @@ def build_intraday_feature_matrix(
                 lambda values: (
                     values.pow(2).rolling(window, min_periods=window).mean()
                 ).pow(0.5)
+            )
+            feature_columns.append(column)
+    if "negative_return_persistence" in groups:
+        negative_return = one_bar_return.lt(0.0).astype(float).where(
+            one_bar_return.notna()
+        )
+        for window in config.negative_return_persistence_windows:
+            column = f"intraday_negative_return_persistence_5m_w{window}"
+            output[column] = negative_return.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).mean()
             )
             feature_columns.append(column)
     if "return_skewness" in groups:

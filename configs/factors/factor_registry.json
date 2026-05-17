@@ -1287,6 +1287,103 @@
         "research",
         "turnover_confirmed"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar share of 5-minute close-to-close returns that are negative.",
+      "display_name": "Intraday negative-return persistence, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_negative_return_persistence/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_negative_return_persistence_5m_w48/factor_candidate_review.json",
+        "portfolio_validation_status": "risk_gate_incremental_watchlist",
+        "risk_gate_schedule": "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1/gross_exposure_schedule.csv",
+        "risk_gate_validation": "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_promoted_standard/validation_summary.json"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_negative_return_persistence_5m_w48",
+      "family": "risk",
+      "feature_columns": [
+        "intraday_negative_return_persistence_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "A high fraction of recent negative 5-minute returns indicates persistent intraday selling pressure and weak tape quality. Unlike downside volatility or skewness, the transform intentionally ignores return magnitude and turnover so it can test whether loss persistence alone adds a cleaner risk penalty.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "negative_return_persistence"
+          ],
+          "negative_return_persistence_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Pre-development research-memory check produced only watchlist warnings, chiefly intraday_return_skewness_5m_w48 and intraday_risk_adjusted_momentum_5m_w48. The material difference is that this factor uses only the frequency of negative bars, not return magnitude, skewness, volatility scaling, or turnover participation. As a gross-exposure overlay, it improved the standard promoted policy only when combined with the downside-volatility gate, raising full-window return from 38.77% to 40.73% and high-cost return from 27.31% to 29.19%, but with worse full-window drawdown. A policy drawdown brake evaluated on week streaming chunks improved the combined-gate full-window result to 41.75% return and -6.49% max drawdown, while day chunks were too slow for practical standard validation.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/strategy/factor_research_batch_2026_05_17.md",
+        "runs/factor_research_memory/intraday_negative_return_persistence_5m_w48/factor_research_memory_check.json",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_17_negative_return_persistence/factor_admission/factor_admission_report.json",
+        "runs/factor_candidate_reviews/intraday_negative_return_persistence_5m_w48/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_risk_gate_v1/summary.json",
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_risk_gate_v1_promoted_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1/summary.json",
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_promoted_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v2_drawdown_guard/summary.json",
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v2_drawdown_guard_promoted_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/budget_deadband_regime_gate_promoted_standard_recheck/validation_summary.json",
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_drawdown_brake_7pct_promoted_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_drawdown_brake_7pct_week_chunk_quick/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/factor_research_memory/intraday_negative_return_persistence_5m_w48/factor_research_memory_check.json",
+          "runs/framework_v1_acceptance/factor_batch_2026_05_17_negative_return_persistence/factor_admission/factor_admission_report.json",
+          "runs/factor_candidate_reviews/intraday_negative_return_persistence_5m_w48/factor_candidate_review.json",
+          "runs/candidate_factor_portfolios/negative_return_persistence_w48_risk_gate_v1_promoted_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_promoted_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v2_drawdown_guard_promoted_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/budget_deadband_regime_gate_promoted_standard_recheck/validation_summary.json",
+          "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_drawdown_brake_7pct_promoted_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_drawdown_brake_7pct_week_chunk_quick/validation_summary.json",
+          "docs/strategy/factor_research_batch_2026_05_17.md"
+        ],
+        "negative_findings": "The factor passed hard statistical gates with full coverage, strong inverted rank IC, stable direction in 2023-2025, and moderate top-N turnover, but failed the economic gate because inverted top-minus-bottom spread was negative after the 13 bps cost proxy. A lagged standalone risk gate improved the promoted policy versus the ungated baseline but underperformed the existing downside-volatility gate. The combined negative-return-persistence plus downside-volatility gate passed validation and improved full-window and high-cost returns, but worsened drawdown versus the downside-volatility gate alone. A stricter drawdown-guard parameterization passed validation but reduced full-window return to 39.26%, high-cost return to 27.88%, and worsened max drawdown to -8.31%. The existing score-health budget-deadband regime gate passed validation but reproduced the ungated promoted baseline, so it did not replace the factor gate or improve drawdown. A policy-native monthly-chunk drawdown brake interface was added and validated, but the -7% to 0.5x configuration reproduced the v1 gate path because the relevant drawdown happens within a streaming chunk. Week chunks improved full-window drawdown to -6.49%; day chunks were too slow for routine validation.",
+        "retry_conditions": "Retry only with a rebalance-level drawdown brake or liquidity/execution condition. Do not rerun simple negative-return-persistence quantile-threshold tightening, the existing budget-deadband regime schedule, monthly-chunk drawdown braking, or day-chunk validation, and do not promote as standalone alpha without a positive cost-adjusted spread.",
+        "similar_to": [
+          "intraday_return_skewness_5m_w48",
+          "intraday_downside_volatility_5m_w48",
+          "intraday_risk_adjusted_momentum_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "batch_2026_05_17",
+        "watchlist",
+        "intraday",
+        "research",
+        "risk_penalty",
+        "persistence"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -1295,6 +1392,7 @@
     "docs/validation/factor_admission.md",
     "docs/strategy/candidate_factor_portfolios.md",
     "docs/strategy/factor_research_batch_2026_05_16.md",
+    "docs/strategy/factor_research_batch_2026_05_17.md",
     "https://academic.oup.com/rfs/article/29/1/5/1843824",
     "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253",
     "https://www.nber.org/papers/w20721",
@@ -1303,6 +1401,6 @@
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-16",
-  "version": 3
+  "updated_at": "2026-05-17",
+  "version": 4
 }

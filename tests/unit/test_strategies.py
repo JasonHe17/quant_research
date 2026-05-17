@@ -25,6 +25,7 @@ from examples.run_tree_score_backtest import (
     _load_ranked_score_signals,
     _score_rank_limit,
 )
+import examples.run_baseline_a_real_backtest as baseline_backtest
 
 
 def test_five_minute_cross_sectional_strategy_selects_top_signals_and_applies_t1() -> None:
@@ -707,6 +708,62 @@ def test_tree_score_target_builder_applies_timestamp_gross_exposure_schedule(
     assert result.diagnostics["gross_exposure_scaled_count"].sum() == 4
 
 
+def test_tree_score_target_builder_applies_drawdown_brake_scale_cap(tmp_path) -> None:
+    ranked = pd.DataFrame(
+        [
+            {"signal_time": "t0", "instrument_id": "inst-a", "score": 0.9, "rank": 1},
+            {"signal_time": "t0", "instrument_id": "inst-b", "score": 0.8, "rank": 2},
+        ]
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        top_n=2,
+        policy_entry_rank=2,
+        policy_exit_rank=2,
+    )
+
+    result = _build_target_weights(
+        ranked,
+        params,
+        gross_exposure_scale_cap=0.4,
+    )
+
+    assert result.target_weights["target_weight"].sum() == pytest.approx(0.4)
+    assert result.diagnostics.loc[0, "drawdown_brake_scale"] == pytest.approx(0.4)
+    assert bool(result.diagnostics.loc[0, "drawdown_brake_active"]) is True
+
+
+def test_tree_score_target_builder_uses_min_of_schedule_and_drawdown_brake(
+    tmp_path,
+) -> None:
+    ranked = pd.DataFrame(
+        [
+            {"signal_time": "t0", "instrument_id": "inst-a", "score": 0.9, "rank": 1},
+            {"signal_time": "t0", "instrument_id": "inst-b", "score": 0.8, "rank": 2},
+        ]
+    )
+    schedule_path = tmp_path / "gross_exposure_schedule.csv"
+    pd.DataFrame([{"timestamp": "t0", "gross_exposure_scale": 0.7}]).to_csv(
+        schedule_path,
+        index=False,
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        top_n=2,
+        policy_entry_rank=2,
+        policy_exit_rank=2,
+        policy_gross_exposure_scale_path=schedule_path,
+    )
+
+    result = _build_target_weights(
+        ranked,
+        params,
+        gross_exposure_scale_cap=0.4,
+    )
+
+    assert result.target_weights["target_weight"].sum() == pytest.approx(0.4)
+
+
 def test_tree_score_target_builder_supports_cost_aware_optimizer(tmp_path) -> None:
     ranked = pd.DataFrame(
         [
@@ -996,6 +1053,8 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         policy_turnover_budget_pacing=0.0,
         policy_gross_exposure_scale=1.0,
         policy_gross_exposure_scale_path=None,
+        policy_drawdown_brake_threshold=None,
+        policy_drawdown_brake_reduced_scale=0.5,
         optimizer_candidate_rank=None,
         optimizer_score_to_edge_bps=100.0,
         optimizer_min_net_edge_bps=0.0,
@@ -1027,3 +1086,79 @@ def _bar(timestamp: str, instrument_id: str) -> dict[str, object]:
         "limit_up_open": False,
         "limit_down_open": False,
     }
+
+
+def test_streaming_work_units_support_day_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    params = baseline_backtest.BacktestParams(
+        catalog_path=Path("catalog.json"),
+        start="2024-01-02T09:30:00+08:00",
+        end="2024-01-03T15:00:00+08:00",
+        top_n=1,
+        initial_cash=1_000_000.0,
+        lookback_bars=1,
+        min_avg_turnover=None,
+        liquidity_window_bars=1,
+        commission_bps=0.0,
+        slippage_bps=0.0,
+        lot_size=100,
+        max_symbols=None,
+        output_dir=None,
+        data_access_mode="fast_parquet",
+        streaming_chunk="day",
+        streaming_chunk_padding_days=0,
+    )
+
+    monkeypatch.setattr(
+        baseline_backtest,
+        "_minute_bar_files_for_range",
+        lambda *_args, **_kwargs: [Path("bars.parquet")],
+    )
+
+    units = baseline_backtest._streaming_work_units(params)
+
+    assert [unit.signal_start for unit in units] == [
+        "2024-01-02T09:30:00+08:00",
+        "2024-01-03T00:00:00+08:00",
+    ]
+    assert [unit.signal_end for unit in units] == [
+        "2024-01-02T23:59:59+08:00",
+        "2024-01-03T15:00:00+08:00",
+    ]
+
+
+def test_streaming_work_units_support_week_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    params = baseline_backtest.BacktestParams(
+        catalog_path=Path("catalog.json"),
+        start="2024-01-02T09:30:00+08:00",
+        end="2024-01-12T15:00:00+08:00",
+        top_n=1,
+        initial_cash=1_000_000.0,
+        lookback_bars=1,
+        min_avg_turnover=None,
+        liquidity_window_bars=1,
+        commission_bps=0.0,
+        slippage_bps=0.0,
+        lot_size=100,
+        max_symbols=None,
+        output_dir=None,
+        data_access_mode="fast_parquet",
+        streaming_chunk="week",
+        streaming_chunk_padding_days=0,
+    )
+
+    monkeypatch.setattr(
+        baseline_backtest,
+        "_minute_bar_files_for_range",
+        lambda *_args, **_kwargs: [Path("bars.parquet")],
+    )
+
+    units = baseline_backtest._streaming_work_units(params)
+
+    assert [unit.signal_start for unit in units] == [
+        "2024-01-02T09:30:00+08:00",
+        "2024-01-09T00:00:00+08:00",
+    ]
+    assert [unit.signal_end for unit in units] == [
+        "2024-01-08T23:59:59+08:00",
+        "2024-01-12T15:00:00+08:00",
+    ]

@@ -51,6 +51,8 @@ class BacktestPolicySpec:
     policy_turnover_budget_pacing: float = 0.0
     policy_gross_exposure_scale: float = 1.0
     policy_gross_exposure_scale_path: str | None = None
+    policy_drawdown_brake_threshold: float | None = None
+    policy_drawdown_brake_reduced_scale: float = 0.5
     optimizer_candidate_rank: int | None = None
     optimizer_score_to_edge_bps: float = 100.0
     optimizer_min_net_edge_bps: float = 0.0
@@ -659,6 +661,10 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
                 policy_turnover_budget_pacing=args.policy_turnover_budget_pacing,
                 policy_gross_exposure_scale=args.policy_gross_exposure_scale,
                 policy_gross_exposure_scale_path=args.policy_gross_exposure_scale_path,
+                policy_drawdown_brake_threshold=args.policy_drawdown_brake_threshold,
+                policy_drawdown_brake_reduced_scale=(
+                    args.policy_drawdown_brake_reduced_scale
+                ),
                 optimizer_candidate_rank=args.optimizer_candidate_rank,
                 optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,
                 optimizer_min_net_edge_bps=args.optimizer_min_net_edge_bps,
@@ -694,6 +700,8 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
         "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
         "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
         "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
+        "policy_drawdown_brake_threshold": args.policy_drawdown_brake_threshold,
+        "policy_drawdown_brake_reduced_scale": args.policy_drawdown_brake_reduced_scale,
         "optimizer_candidate_rank": args.optimizer_candidate_rank,
         "optimizer_score_to_edge_bps": args.optimizer_score_to_edge_bps,
         "optimizer_min_net_edge_bps": args.optimizer_min_net_edge_bps,
@@ -846,6 +854,19 @@ def _backtest_command(
                 spec.policy_gross_exposure_scale_path,
             ]
         )
+    if spec.policy_drawdown_brake_threshold is not None:
+        command.extend(
+            [
+                "--policy-drawdown-brake-threshold",
+                str(spec.policy_drawdown_brake_threshold),
+            ]
+        )
+    command.extend(
+        [
+            "--policy-drawdown-brake-reduced-scale",
+            str(spec.policy_drawdown_brake_reduced_scale),
+        ]
+    )
     command.extend(["--policy-turnover-budget-period", args.policy_turnover_budget_period])
     if spec.optimizer_candidate_rank is not None:
         command.extend(["--optimizer-candidate-rank", str(spec.optimizer_candidate_rank)])
@@ -1009,6 +1030,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")
+    parser.add_argument("--policy-drawdown-brake-threshold", type=float)
+    parser.add_argument("--policy-drawdown-brake-reduced-scale", type=float, default=0.5)
     parser.add_argument("--optimizer-candidate-rank", type=int)
     parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
     parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
@@ -1077,7 +1100,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--streaming-chunk",
-        choices=("year", "month"),
+        choices=("year", "month", "week", "day"),
         default="month",
     )
     parser.add_argument("--streaming-chunk-padding-days", type=int, default=10)
@@ -1190,6 +1213,13 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--policy-turnover-budget-pacing must be non-negative")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
         raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
+    if (
+        args.policy_drawdown_brake_threshold is not None
+        and not -1 < args.policy_drawdown_brake_threshold < 0
+    ):
+        raise ValueError("--policy-drawdown-brake-threshold must be in (-1, 0)")
+    if not 0 <= args.policy_drawdown_brake_reduced_scale <= 1:
+        raise ValueError("--policy-drawdown-brake-reduced-scale must be in [0, 1]")
     if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:
         raise ValueError("--optimizer-candidate-rank must be positive")
     if args.optimizer_score_to_edge_bps < 0:

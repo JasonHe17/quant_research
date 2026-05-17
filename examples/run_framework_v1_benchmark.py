@@ -984,7 +984,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--streaming-chunk",
-        choices=("year", "month"),
+        choices=("year", "month", "week", "day"),
         default="month",
         help="Chunk size passed to fast_parquet streaming backtests.",
     )

@@ -451,6 +451,8 @@ def _validation_args(**overrides: object) -> object:
         "policy_set_partial_rebalance_rate": 0.5,
         "policy_gross_exposure_scale": 1.0,
         "policy_gross_exposure_scale_path": None,
+        "policy_drawdown_brake_threshold": None,
+        "policy_drawdown_brake_reduced_scale": 0.5,
         "factor_risk_gate_feature": None,
         "factor_risk_gate_dataset_dir": None,
         "factor_risk_gate_output_dir": None,

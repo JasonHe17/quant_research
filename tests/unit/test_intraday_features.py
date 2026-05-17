@@ -43,6 +43,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "volume_confirmed_momentum",
             "intraday_gap",
             "return_turnover_correlation",
+            "negative_return_persistence",
         ),
         reversal_lookback_bars=(1,),
         momentum_lookback_bars=(2,),
@@ -60,6 +61,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         risk_adjusted_momentum_windows=(3,),
         volume_confirmed_momentum_windows=(3,),
         return_turnover_correlation_windows=(3,),
+        negative_return_persistence_windows=(3,),
     )
 
     features = build_intraday_feature_matrix(bars, config)
@@ -83,6 +85,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_volume_confirmed_momentum_5m_w3" in features
     assert "intraday_gap_5m" in features
     assert "intraday_return_turnover_corr_5m_w3" in features
+    assert "intraday_negative_return_persistence_5m_w3" in features
     assert features.loc[0, "intraday_bar_return_5m"] == pytest.approx(0.1)
     assert features["intraday_reversal_5m_lb1"].notna().sum() == 5
     assert features["intraday_range_position_5m_w3"].iloc[-1] == pytest.approx(0.5)
@@ -97,6 +100,9 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert features["intraday_risk_adjusted_momentum_5m_w3"].notna().sum() >= 1
     assert features["intraday_volume_confirmed_momentum_5m_w3"].notna().sum() >= 1
     assert features["intraday_return_turnover_corr_5m_w3"].notna().sum() >= 1
+    assert features["intraday_negative_return_persistence_5m_w3"].iloc[-1] == pytest.approx(
+        0.0
+    )
 
 
 def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
@@ -135,7 +141,34 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_volume_confirmed_momentum_5m_w48" in features
     assert "intraday_gap_5m" in features
     assert "intraday_return_turnover_corr_5m_w48" in features
+    assert "intraday_negative_return_persistence_5m_w48" in features
     assert not features.empty
+
+
+def test_negative_return_persistence_counts_only_past_intraday_losses() -> None:
+    closes = [10.0, 9.0, 9.5, 9.0, 8.8]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+            }
+            for i, close in enumerate(closes)
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("negative_return_persistence",),
+            negative_return_persistence_windows=(3,),
+        ),
+    )
+
+    assert features["intraday_negative_return_persistence_5m_w3"].tolist() == pytest.approx(
+        [2.0 / 3.0, 2.0 / 3.0]
+    )
 
 
 def test_intraday_feature_config_rejects_unknown_group() -> None:

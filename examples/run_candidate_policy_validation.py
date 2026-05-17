@@ -438,6 +438,19 @@ def _scenario_command(
                 args.policy_gross_exposure_scale_path,
             ]
         )
+    if args.policy_drawdown_brake_threshold is not None:
+        command.extend(
+            [
+                "--policy-drawdown-brake-threshold",
+                str(args.policy_drawdown_brake_threshold),
+            ]
+        )
+    command.extend(
+        [
+            "--policy-drawdown-brake-reduced-scale",
+            str(args.policy_drawdown_brake_reduced_scale),
+        ]
+    )
     if args.resume_existing:
         command.append("--resume-existing")
     return command
@@ -840,6 +853,10 @@ def _validation_summary(
             ),
             "policy_gross_exposure_scale": args.policy_gross_exposure_scale,
             "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
+            "policy_drawdown_brake_threshold": args.policy_drawdown_brake_threshold,
+            "policy_drawdown_brake_reduced_scale": (
+                args.policy_drawdown_brake_reduced_scale
+            ),
             "factor_risk_gate_feature": args.factor_risk_gate_feature,
             "factor_risk_gate_dataset_dir": args.factor_risk_gate_dataset_dir,
             "factor_risk_gate_output_dir": args.factor_risk_gate_output_dir,
@@ -1247,6 +1264,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-set-partial-rebalance-rate", type=float, default=0.5)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")
+    parser.add_argument("--policy-drawdown-brake-threshold", type=float)
+    parser.add_argument("--policy-drawdown-brake-reduced-scale", type=float, default=0.5)
     parser.add_argument(
         "--factor-risk-gate-feature",
         help=(
@@ -1307,7 +1326,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--streaming-chunk",
-        choices=("year", "month"),
+        choices=("year", "month", "week", "day"),
         default="month",
     )
     parser.add_argument("--streaming-chunk-padding-days", type=int, default=10)
@@ -1439,6 +1458,13 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--policy-set-partial-rebalance-rate must be in (0, 1]")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
         raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
+    if (
+        args.policy_drawdown_brake_threshold is not None
+        and not -1 < args.policy_drawdown_brake_threshold < 0
+    ):
+        raise ValueError("--policy-drawdown-brake-threshold must be in (-1, 0)")
+    if not 0 <= args.policy_drawdown_brake_reduced_scale <= 1:
+        raise ValueError("--policy-drawdown-brake-reduced-scale must be in [0, 1]")
     if not 0 < args.factor_risk_gate_aggregate_quantile < 1:
         raise ValueError("--factor-risk-gate-aggregate-quantile must be in (0, 1)")
     if args.factor_risk_gate_lookback_windows <= 0:

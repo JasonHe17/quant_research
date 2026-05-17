@@ -188,6 +188,9 @@ def _build_partition_dataset(
             return_turnover_correlation_windows=tuple(
                 args.return_turnover_correlation_windows
             ),
+            negative_return_persistence_windows=tuple(
+                args.negative_return_persistence_windows
+            ),
         ),
     )
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
@@ -411,6 +414,9 @@ def _write_summary(
             "risk_adjusted_momentum_windows": args.risk_adjusted_momentum_windows,
             "volume_confirmed_momentum_windows": args.volume_confirmed_momentum_windows,
             "return_turnover_correlation_windows": args.return_turnover_correlation_windows,
+            "negative_return_persistence_windows": (
+                args.negative_return_persistence_windows
+            ),
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
             "entry_lag_bars": args.entry_lag_bars,
@@ -469,6 +475,7 @@ def _parse_args() -> argparse.Namespace:
             "volume_confirmed_momentum",
             "intraday_gap",
             "return_turnover_correlation",
+            "negative_return_persistence",
         ),
     )
     parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 3, 6])
@@ -516,6 +523,12 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         nargs="+",
         default=[12, 48],
+    )
+    parser.add_argument(
+        "--negative-return-persistence-windows",
+        type=int,
+        nargs="+",
+        default=[48],
     )
     parser.add_argument("--label-name", default="forward_return")
     parser.add_argument("--horizon-bars", type=int, default=48)
@@ -587,6 +600,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--volume-confirmed-momentum-windows values must be positive")
     if any(value <= 0 for value in args.return_turnover_correlation_windows):
         raise ValueError("--return-turnover-correlation-windows values must be positive")
+    if any(value <= 0 for value in args.negative_return_persistence_windows):
+        raise ValueError("--negative-return-persistence-windows values must be positive")
     if args.padding_days < 0:
         raise ValueError("--padding-days must be non-negative")
     if args.workers <= 0:
@@ -629,6 +644,9 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "return_turnover_correlation_windows": list(
             args.return_turnover_correlation_windows
         ),
+        "negative_return_persistence_windows": list(
+            args.negative_return_persistence_windows
+        ),
         "label_name": args.label_name,
         "horizon_bars": args.horizon_bars,
         "entry_lag_bars": args.entry_lag_bars,
@@ -669,6 +687,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.risk_adjusted_momentum_windows,
                     *args.volume_confirmed_momentum_windows,
                     *args.return_turnover_correlation_windows,
+                    *args.negative_return_persistence_windows,
                 ]
             ),
         },

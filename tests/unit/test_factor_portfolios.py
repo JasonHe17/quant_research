@@ -552,6 +552,8 @@ def test_candidate_factor_backtest_command_includes_policy_args(tmp_path: Path) 
         policy_partial_rebalance_rate=0.5,
         policy_gross_exposure_scale=0.75,
         policy_gross_exposure_scale_path="gate.csv",
+        policy_drawdown_brake_threshold=-0.07,
+        policy_drawdown_brake_reduced_scale=0.4,
     )
 
     command = _backtest_command(args, "scores/*.parquet", tmp_path / "bt", spec)
@@ -564,6 +566,8 @@ def test_candidate_factor_backtest_command_includes_policy_args(tmp_path: Path) 
     assert command[command.index("--policy-partial-rebalance-rate") + 1] == "0.5"
     assert command[command.index("--policy-gross-exposure-scale") + 1] == "0.75"
     assert command[command.index("--policy-gross-exposure-scale-path") + 1] == "gate.csv"
+    assert command[command.index("--policy-drawdown-brake-threshold") + 1] == "-0.07"
+    assert command[command.index("--policy-drawdown-brake-reduced-scale") + 1] == "0.4"
     assert command[command.index("--policy-total-gross-turnover-budget") + 1] == "120.0"
     assert command[command.index("--policy-turnover-budget-period") + 1] == "month"
     assert command[command.index("--policy-turnover-budget-pacing") + 1] == "1.25"
@@ -778,6 +782,8 @@ def _portfolio_args(**overrides: object) -> object:
         "policy_turnover_budget_pacing": 0.0,
         "policy_gross_exposure_scale": 1.0,
         "policy_gross_exposure_scale_path": None,
+        "policy_drawdown_brake_threshold": None,
+        "policy_drawdown_brake_reduced_scale": 0.5,
         "optimizer_candidate_rank": None,
         "optimizer_score_to_edge_bps": 100.0,
         "optimizer_min_net_edge_bps": 0.0,

@@ -448,18 +448,27 @@ def _streaming_work_units(params: BacktestParams) -> list[StreamingWorkUnit]:
                     )
                 )
         return units
-    if params.streaming_chunk != "month":
+    if params.streaming_chunk not in {"month", "week", "day"}:
         raise ValueError(f"unsupported streaming chunk: {params.streaming_chunk}")
 
     start_dt = datetime.fromisoformat(params.start)
     end_dt = datetime.fromisoformat(params.end)
-    month_start = start_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    chunk_start = (
+        start_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if params.streaming_chunk == "month"
+        else start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    )
     units = []
-    while month_start <= end_dt:
-        next_month = _add_month(month_start)
-        month_end = next_month - timedelta(seconds=1)
-        signal_start_dt = max(start_dt, month_start)
-        signal_end_dt = min(end_dt, month_end)
+    while chunk_start <= end_dt:
+        next_chunk = (
+            _add_month(chunk_start)
+            if params.streaming_chunk == "month"
+            else chunk_start
+            + timedelta(days=7 if params.streaming_chunk == "week" else 1)
+        )
+        chunk_end = next_chunk - timedelta(seconds=1)
+        signal_start_dt = max(start_dt, chunk_start)
+        signal_end_dt = min(end_dt, chunk_end)
         load_start_dt = signal_start_dt - timedelta(
             days=max(0, params.streaming_chunk_padding_days)
         )
@@ -480,7 +489,7 @@ def _streaming_work_units(params: BacktestParams) -> list[StreamingWorkUnit]:
                     signal_end=_format_datetime(signal_end_dt),
                 )
             )
-        month_start = next_month
+        chunk_start = next_chunk
     return units
 
 
@@ -911,7 +920,7 @@ def _parse_args() -> BacktestParams:
     )
     parser.add_argument(
         "--streaming-chunk",
-        choices=("year", "month"),
+        choices=("year", "month", "week", "day"),
         default="year",
         help="Chunk size used by fast_parquet streaming backtests.",
     )
