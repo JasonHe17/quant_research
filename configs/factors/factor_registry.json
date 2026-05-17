@@ -1642,7 +1642,7 @@
         "admission_status": "candidate",
         "candidate_review": "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
         "portfolio_validation_full_base_equity": "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv",
-        "portfolio_validation_status": "full_base_failed_portfolio_negative",
+        "portfolio_validation_status": "full_base_failed_risk_reward",
         "research_memory_check": "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json"
       },
       "expected_direction": "long",
@@ -1668,7 +1668,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 48,
-      "notes": "This is not a total turnover, signed turnover imbalance, negative-return persistence, sell-pressure absorption, or VWAP-deviation reversal transform. The research-memory check matched the rejected VWAP-deviation factor, but that rejection permits retry under a materially different microstructure hypothesis. This factor satisfies that condition by comparing the earlier and recent halves of the rolling window using only turnover on negative-return bars, so it measures the time profile of downside trading pressure rather than price deviation from a volume-weighted anchor. Standard admission passed in the long direction with full coverage, 0.00688 rank IC, 13.93 t-stat, 53.39% directional hit rate, three stable years, 15.64 bps cost-adjusted spread, and 27.79% top-N turnover. Standard portfolio validation was stopped after full_base evidence because the standalone decorrelated policy lost 14.43% with -34.29% max drawdown, so the factor is not promotion-ready as a standalone alpha.",
+      "notes": "This is not a total turnover, signed turnover imbalance, negative-return persistence, sell-pressure absorption, or VWAP-deviation reversal transform. The research-memory check matched the rejected VWAP-deviation factor, but that rejection permits retry under a materially different microstructure hypothesis. This factor satisfies that condition by comparing the earlier and recent halves of the rolling window using only turnover on negative-return bars, so it measures the time profile of downside trading pressure rather than price deviation from a volume-weighted anchor. Standard admission passed in the long direction with full coverage, 0.00688 rank IC, 13.93 t-stat, 53.39% directional hit rate, three stable years, 15.64 bps cost-adjusted spread, and 27.79% top-N turnover. Standard portfolio validation was stopped after full_base evidence because the standalone decorrelated policy returned only 0.73% with -34.29% max drawdown; diagnostics show the long-only top-score basket had negative average forward labels in 2023, 2024, and 2025, so the factor's positive spread came mainly from avoiding even weaker bottom names rather than selecting strong long names.",
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_development_standard.md",
@@ -1686,14 +1686,14 @@
         "turnover"
       ],
       "research_memory": {
-        "decision_reason": "portfolio_negative",
+        "decision_reason": "other",
         "evidence_artifacts": [
           "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json",
           "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
           "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
           "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv"
         ],
-        "negative_findings": "The factor passed single-factor admission but failed the first standard portfolio validation gate. The standalone decorrelated full_base policy returned -14.43% over 2023-2025 with -34.29% max drawdown, so high nominal single-factor spread did not translate into usable long-only portfolio behavior.",
+        "negative_findings": "The factor passed single-factor admission but failed the first standard portfolio validation gate. The standalone decorrelated full_base policy returned only 0.73% over 2023-2025 with -34.29% max drawdown. Score diagnostics show annual average top-score forward labels were negative in 2023, 2024, and 2025, so the positive admission spread mostly came from bottom names being worse rather than top names being good long-only buys.",
         "retry_conditions": "Retry only as a conditional overlay or interaction feature, for example gated by broader market drawdown, downside volatility, or liquidity state. Do not rerun the same standalone decay factor without a materially different portfolio construction rule.",
         "similar_to": [
           "intraday_signed_turnover_imbalance_5m_w48",

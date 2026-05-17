@@ -64,6 +64,24 @@ liquidity state.
 ## Portfolio Validation Result
 
 The standard standalone decorrelated validation was stopped after `full_base`
-because the first scenario failed economically. The 2023-2025 full-base equity
-curve ended at -14.43% total return with -34.29% max drawdown. This is a
-portfolio-negative result despite the clean single-factor admission profile.
+because the first scenario failed the risk-reward check. The 2023-2025
+full-base equity curve ended at 0.73% total return with -34.29% max drawdown.
+The result is not an outright negative final return, but it is economically
+unusable as a standalone long-only signal despite the clean single-factor
+admission profile.
+
+## Failure Diagnosis
+
+The main issue is long-only selection quality. The factor passed admission
+because top-minus-bottom spread was positive, but score diagnostics show the
+top-score basket itself had negative average forward labels in all three years:
+
+- 2023 top-score mean label: `-0.00068`
+- 2024 top-score mean label: `-0.00221`
+- 2025 top-score mean label: `-0.00102`
+
+This means the factor mostly identified names to avoid in the bottom bucket,
+not names that were strong enough to buy. Transaction costs were not the
+primary failure driver: total cost was about 15.27% of initial capital, while
+pre-cost return was only about 16.0%, far below sell-pressure absorption's
+roughly 78.1% pre-cost return over the comparable full-base run.
