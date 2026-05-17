@@ -230,6 +230,8 @@ def _recommended_command(
         f"--admission-report {admission_report}",
         f"--output-dir {output_dir}",
         "--methods decorrelated",
+        "--partition-start 2023_01",
+        "--partition-end 2025_12",
         "--statuses candidate",
         "--registry-statuses candidate",
     ]
@@ -238,6 +240,8 @@ def _recommended_command(
     command.extend(
         [
             "--run-backtests",
+            "--start 2023-01-01T00:00:00+08:00",
+            "--end 2025-12-31T23:59:59+08:00",
             "--backtest-policy-set single",
             "--trade-policy cost_aware_optimizer",
             "--rebalance-every-n-bars 48",
@@ -245,7 +249,7 @@ def _recommended_command(
             "--policy-total-gross-turnover-budget 52",
             "--policy-turnover-budget-period path",
             "--optimizer-candidate-rank 150",
-            "--optimizer-score-to-edge-bps 0",
+            "--optimizer-score-to-edge-bps 100",
             "--optimizer-min-net-edge-bps 1",
             "--optimizer-risk-penalty-multiplier 0",
             "--optimizer-weighting equal",

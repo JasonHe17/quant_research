@@ -84,6 +84,11 @@ def test_candidate_alpha_queue_review_identifies_validation_gaps(tmp_path: Path)
     assert "--admission-report single/factor_admission/factor_admission_report.json" in (
         single["recommended_command"]
     )
+    assert "--partition-start 2023_01" in single["recommended_command"]
+    assert "--partition-end 2025_12" in single["recommended_command"]
+    assert "--start 2023-01-01T00:00:00+08:00" in single["recommended_command"]
+    assert "--end 2025-12-31T23:59:59+08:00" in single["recommended_command"]
+    assert "--optimizer-score-to-edge-bps 100" in single["recommended_command"]
     shared = next(row for row in review["queue"] if row["factor_id"] == "shared")
     assert shared["requires_include_feature_filter"] is True
     assert "--include-features shared_feature" in shared["recommended_command"]
