@@ -134,6 +134,21 @@ def test_factor_research_memory_check_example_has_cli_help() -> None:
     assert "--enforce-no-blocking" in result.stdout
 
 
+def test_factor_failure_atlas_example_has_cli_help() -> None:
+    script = Path("examples/build_factor_failure_atlas.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--registry" in result.stdout
+    assert "--output-dir" in result.stdout
+
+
 def test_candidate_policy_regime_analysis_example_has_cli_help() -> None:
     script = Path("examples/analyze_candidate_policy_regime.py")
 

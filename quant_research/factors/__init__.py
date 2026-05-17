@@ -25,6 +25,11 @@ from quant_research.factors.review import (
     render_factor_candidate_review_markdown,
     write_factor_candidate_review,
 )
+from quant_research.factors.atlas import (
+    build_factor_failure_atlas,
+    render_factor_failure_atlas_markdown,
+    write_factor_failure_atlas_outputs,
+)
 
 __all__ = [
     "Factor",
@@ -48,4 +53,7 @@ __all__ = [
     "load_optional_json",
     "render_factor_candidate_review_markdown",
     "write_factor_candidate_review",
+    "build_factor_failure_atlas",
+    "render_factor_failure_atlas_markdown",
+    "write_factor_failure_atlas_outputs",
 ]
