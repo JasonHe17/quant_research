@@ -76,6 +76,7 @@ The standalone negative-return-persistence gate produced 34,799 schedule observa
 | Budget-deadband regime gate recheck | 32.21% | -8.49% | 156.37 | 20.31% | 7.97% | 12.18% | 5.10% |
 | V1 gate + policy drawdown brake, -7% to 0.5x | 40.73% | -8.00% | 147.87 | 29.19% | 9.12% | 16.47% | 9.15% |
 | V1 gate + policy drawdown brake, -7% to 0.5x, week chunks | 41.75% | -6.49% | 147.29 | 28.46% | 9.89% | 16.47% | 9.15% |
+| V1 gate + policy drawdown brake, -7% to 0.5x, rebalance-level | 40.61% | -6.49% | 147.67 | 27.54% | 8.63% | 17.69% | 9.06% |
 
 Interpretation: the new gate is not better than the downside-volatility gate by itself. As a second-stage overlay combined by minimum gross-exposure scale, it adds return in the full and high-cost scenarios and improves 2024-2025 results, but gives up drawdown control and underperforms downside volatility in 2023. This is useful interaction evidence, not enough to promote the factor as standalone alpha.
 
@@ -86,6 +87,8 @@ A score-health budget-deadband regime gate was also rechecked as a different mec
 A policy-native drawdown brake was then added to the score backtest path and validation CLI. It computes realized path drawdown from prior streaming chunks and caps gross exposure when the drawdown is below a configured threshold. The first validation used the v1 combined gate plus `policy_drawdown_brake_threshold=-0.07` and `policy_drawdown_brake_reduced_scale=0.5`. It passed all validation checks, but produced exactly the same path as the v1 gate because the current implementation updates the brake at monthly streaming-chunk boundaries and the relevant drawdown happens inside the month. This validates the interface but not the risk-control objective; the next retry must make the brake decision at rebalance timestamps or daily chunks.
 
 To probe that limitation, the streaming backtest path was extended to support `week` chunks. A 2023-2025 standard validation with `--streaming-chunk week --streaming-chunk-padding-days 0` passed all checks and improved the combined-gate drawdown to -6.49% while keeping gross turnover at 147.29. The same setup also passed the high-cost stress test with 28.46% return and -7.64% max drawdown. The day-chunk path was also prototyped, but it was too slow to use as a practical validation route.
+
+The final framework fix moved the drawdown brake to rebalance-level updates while keeping month chunk loading. A 2023-2025 standard validation with `--streaming-chunk month --streaming-chunk-padding-days 1` passed all checks and reproduced the same -6.49% max drawdown at lower operational complexity than day chunking. Full-window return was 40.61% and high-cost return was 27.54%. This is the preferred production shape because it matches decision timing instead of chunk boundaries.
 
 ## Final Governance Decision
 
