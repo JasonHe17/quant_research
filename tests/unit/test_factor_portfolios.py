@@ -557,6 +557,7 @@ def test_candidate_factor_policy_set_builds_standard_comparison_specs() -> None:
     assert top_k_drop.policy_exit_rank == 50
     assert top_k_drop.policy_max_entries_per_rebalance == 10
     assert top_k_drop.policy_max_exits_per_rebalance == 10
+    assert top_k_drop.policy_estimated_cost_bps == pytest.approx(13.0)
     buffered = specs[3]
     assert buffered.policy_exit_rank == 150
     assert buffered.policy_no_trade_weight_band == pytest.approx(0.002)
@@ -840,7 +841,7 @@ def _portfolio_args(**overrides: object) -> object:
         "policy_max_exits_per_rebalance": None,
         "policy_min_hold_bars": 0,
         "policy_min_expected_edge_bps": None,
-        "policy_estimated_cost_bps": 0.0,
+        "policy_estimated_cost_bps": None,
         "policy_no_trade_weight_band": 0.0,
         "policy_partial_rebalance_rate": 1.0,
         "policy_max_gross_turnover_per_rebalance": None,

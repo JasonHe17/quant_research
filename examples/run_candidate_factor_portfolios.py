@@ -234,7 +234,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             "policy_max_exits_per_rebalance": args.policy_max_exits_per_rebalance,
             "policy_min_hold_bars": args.policy_min_hold_bars,
             "policy_min_expected_edge_bps": args.policy_min_expected_edge_bps,
-            "policy_estimated_cost_bps": args.policy_estimated_cost_bps,
+            "policy_estimated_cost_bps": _resolved_policy_estimated_cost_bps(args),
             "policy_no_trade_weight_band": args.policy_no_trade_weight_band,
             "policy_partial_rebalance_rate": args.policy_partial_rebalance_rate,
             "policy_max_gross_turnover_per_rebalance": (
@@ -643,6 +643,7 @@ def _write_backtest_summary_csv(
 
 
 def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]:
+    policy_estimated_cost_bps = _resolved_policy_estimated_cost_bps(args)
     if args.backtest_policy_set == "single":
         specs = [
             BacktestPolicySpec(
@@ -656,7 +657,7 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
                 policy_max_exits_per_rebalance=args.policy_max_exits_per_rebalance,
                 policy_min_hold_bars=args.policy_min_hold_bars,
                 policy_min_expected_edge_bps=args.policy_min_expected_edge_bps,
-                policy_estimated_cost_bps=args.policy_estimated_cost_bps,
+                policy_estimated_cost_bps=policy_estimated_cost_bps,
                 policy_no_trade_weight_band=args.policy_no_trade_weight_band,
                 policy_partial_rebalance_rate=args.policy_partial_rebalance_rate,
                 policy_max_gross_turnover_per_rebalance=(
@@ -696,7 +697,7 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
         "policy_max_exits_per_rebalance": drop_count,
         "policy_min_hold_bars": args.policy_min_hold_bars,
         "policy_min_expected_edge_bps": args.policy_min_expected_edge_bps,
-        "policy_estimated_cost_bps": args.policy_estimated_cost_bps,
+        "policy_estimated_cost_bps": policy_estimated_cost_bps,
         "policy_no_trade_weight_band": args.policy_no_trade_weight_band,
         "policy_max_gross_turnover_per_rebalance": (
             args.policy_max_gross_turnover_per_rebalance
@@ -783,6 +784,25 @@ def _filter_backtest_policy_specs(
         )
     selected_names = set(selected)
     return [spec for spec in specs if spec.name in selected_names]
+
+
+def _resolved_policy_estimated_cost_bps(args: argparse.Namespace) -> float:
+    if args.policy_estimated_cost_bps is not None:
+        return float(args.policy_estimated_cost_bps)
+    return _estimated_round_trip_cost_bps(
+        commission_bps=args.commission_bps,
+        slippage_bps=args.slippage_bps,
+        sell_stamp_tax_bps=args.sell_stamp_tax_bps,
+    )
+
+
+def _estimated_round_trip_cost_bps(
+    *,
+    commission_bps: float,
+    slippage_bps: float,
+    sell_stamp_tax_bps: float,
+) -> float:
+    return float(2.0 * commission_bps + 2.0 * slippage_bps + sell_stamp_tax_bps)
 
 
 def _backtest_command(
@@ -1044,7 +1064,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-max-exits-per-rebalance", type=int)
     parser.add_argument("--policy-min-hold-bars", type=int, default=0)
     parser.add_argument("--policy-min-expected-edge-bps", type=float)
-    parser.add_argument("--policy-estimated-cost-bps", type=float, default=0.0)
+    parser.add_argument("--policy-estimated-cost-bps", type=float)
     parser.add_argument("--policy-no-trade-weight-band", type=float, default=0.0)
     parser.add_argument("--policy-partial-rebalance-rate", type=float, default=1.0)
     parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
@@ -1230,7 +1250,7 @@ def _parse_args() -> argparse.Namespace:
         and args.policy_min_expected_edge_bps < 0
     ):
         raise ValueError("--policy-min-expected-edge-bps must be non-negative")
-    if args.policy_estimated_cost_bps < 0:
+    if args.policy_estimated_cost_bps is not None and args.policy_estimated_cost_bps < 0:
         raise ValueError("--policy-estimated-cost-bps must be non-negative")
     if args.policy_no_trade_weight_band < 0:
         raise ValueError("--policy-no-trade-weight-band must be non-negative")

@@ -63,6 +63,7 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     assert command[command.index("--include-features") + 1] == "alpha_a"
     assert command.index("--include-features") < command.index("--run-backtests")
     assert command[command.index("--policy-gross-exposure-scale") + 1] == "1.0"
+    assert command[command.index("--policy-estimated-cost-bps") + 1] == "13.0"
     assert command[command.index("--backtest-memory-budget-gb") + 1] == "12.0"
     assert command[command.index("--factor-max-weight") + 1] == "0.4"
     assert command[command.index("--factor-max-contribution-share") + 1] == "0.5"
@@ -466,7 +467,7 @@ def _validation_args(**overrides: object) -> object:
         "policy_max_exits_per_rebalance": None,
         "policy_min_hold_bars": 0,
         "policy_min_expected_edge_bps": None,
-        "policy_estimated_cost_bps": 0.0,
+        "policy_estimated_cost_bps": None,
         "policy_no_trade_weight_band": 0.002,
         "policy_partial_rebalance_rate": 1.0,
         "policy_max_gross_turnover_per_rebalance": None,
