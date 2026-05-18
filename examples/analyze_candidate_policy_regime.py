@@ -58,6 +58,7 @@ def analyze_candidate_policy_regime(args: argparse.Namespace) -> dict[str, Any]:
             candidates=candidates,
             weights=weights,
             top_n=args.top_n,
+            label_column=args.label_column,
         )
         for dataset_path in _dataset_paths(args)
     ]
@@ -96,6 +97,7 @@ def analyze_candidate_policy_regime(args: argparse.Namespace) -> dict[str, Any]:
             "method": args.method,
             "policy": args.policy,
             "year": args.year,
+            "label_column": args.label_column,
             "top_n": args.top_n,
             "include_features": args.include_features,
         },
@@ -150,14 +152,17 @@ def _diagnose_month(
     candidates: tuple[CandidateFactor, ...],
     weights: dict[str, float],
     top_n: int,
+    label_column: str,
 ) -> MonthlyDiagnostics:
+    if not label_column:
+        raise ValueError("label_column must be non-empty")
     feature_columns = [candidate.feature for candidate in candidates]
     dataset = pd.read_parquet(
         dataset_path,
         columns=[
             "timestamp",
             "instrument_id",
-            "forward_return",
+            label_column,
             "entry_tradable_bar",
             "entry_limit_up_open",
             "entry_limit_down_open",
@@ -180,13 +185,14 @@ def _diagnose_month(
             candidates=candidates,
             weights=weights,
             top_n=top_n,
+            label_column=label_column,
         )
         composite_rows.append(timestamp_diag["composite"])
         for row in timestamp_diag["factor_rows"]:
             factor_rows_by_feature[row["feature"]].append(row)
         for row in timestamp_diag["exposure_rows"]:
             exposure_rows_by_feature[row["feature"]].append(row)
-    composite = _summarize_composite(month, composite_rows, frame)
+    composite = _summarize_composite(month, composite_rows, frame, label_column)
     factor_rows = [
         _summarize_factor(month, feature, rows)
         for feature, rows in factor_rows_by_feature.items()
@@ -210,19 +216,22 @@ def _timestamp_diagnostics(
     candidates: tuple[CandidateFactor, ...],
     weights: dict[str, float],
     top_n: int,
+    label_column: str = "forward_return",
 ) -> dict[str, Any]:
-    valid_score = group.dropna(subset=["score", "forward_return"])
+    if not label_column:
+        raise ValueError("label_column must be non-empty")
+    valid_score = group.dropna(subset=["score", label_column])
     n = min(top_n, len(valid_score))
     top_score = valid_score.nlargest(n, "score") if n else valid_score
     bottom_score = valid_score.nsmallest(n, "score") if n else valid_score
     composite = {
         "sample_count": len(valid_score),
-        "score_rank_ic": _correlation(valid_score["score"], valid_score["forward_return"]),
-        "score_top_n_mean_label": _mean(top_score["forward_return"]),
-        "score_bottom_n_mean_label": _mean(bottom_score["forward_return"]),
+        "score_rank_ic": _correlation(valid_score["score"], valid_score[label_column]),
+        "score_top_n_mean_label": _mean(top_score[label_column]),
+        "score_bottom_n_mean_label": _mean(bottom_score[label_column]),
         "score_top_minus_bottom_label": (
-            _mean(top_score["forward_return"])
-            - _mean(bottom_score["forward_return"])
+            _mean(top_score[label_column])
+            - _mean(bottom_score[label_column])
         ),
     }
     factor_rows: list[dict[str, Any]] = []
@@ -230,7 +239,7 @@ def _timestamp_diagnostics(
     contribution_by_feature: dict[str, pd.Series] = {}
     oriented_rank_by_feature: dict[str, pd.Series] = {}
     for candidate in candidates:
-        valid = group.dropna(subset=[candidate.feature, "forward_return"])
+        valid = group.dropna(subset=[candidate.feature, label_column])
         if valid.empty:
             continue
         raw_rank = valid[candidate.feature].rank(method="average", pct=True)
@@ -244,13 +253,13 @@ def _timestamp_diagnostics(
                 "direction": candidate.direction,
                 "directional_rank_ic": _correlation(
                     oriented_rank,
-                    valid["forward_return"],
+                    valid[label_column],
                 ),
-                "top_n_mean_label": _mean(factor_top["forward_return"]),
-                "bottom_n_mean_label": _mean(factor_bottom["forward_return"]),
+                "top_n_mean_label": _mean(factor_top[label_column]),
+                "bottom_n_mean_label": _mean(factor_bottom[label_column]),
                 "top_minus_bottom_label": (
-                    _mean(factor_top["forward_return"])
-                    - _mean(factor_bottom["forward_return"])
+                    _mean(factor_top[label_column])
+                    - _mean(factor_bottom[label_column])
                 ),
             }
         )
@@ -291,6 +300,7 @@ def _summarize_composite(
     month: str,
     rows: list[dict[str, Any]],
     frame: pd.DataFrame,
+    label_column: str = "forward_return",
 ) -> dict[str, Any]:
     table = pd.DataFrame(rows)
     return {
@@ -302,9 +312,10 @@ def _summarize_composite(
         "score_top_n_mean_label": _mean(table["score_top_n_mean_label"]),
         "score_bottom_n_mean_label": _mean(table["score_bottom_n_mean_label"]),
         "score_top_minus_bottom_label": _mean(table["score_top_minus_bottom_label"]),
-        "market_mean_label": _mean(frame["forward_return"]),
-        "market_median_label": float(frame["forward_return"].median()),
-        "market_label_std": float(frame["forward_return"].std(ddof=1)),
+        "label_column": label_column,
+        "market_mean_label": _mean(frame[label_column]),
+        "market_median_label": float(frame[label_column].median()),
+        "market_label_std": float(frame[label_column].std(ddof=1)),
         "entry_tradable_rate": _mean(frame["entry_tradable_bar"].astype(float)),
         "entry_limit_up_open_rate": _mean(frame["entry_limit_up_open"].astype(float)),
         "entry_limit_down_open_rate": _mean(
@@ -542,6 +553,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--method", default="decorrelated")
     parser.add_argument("--policy", default="partial_rebalance_daily")
     parser.add_argument("--year", type=int, default=2024)
+    parser.add_argument("--label-column", default="forward_return")
     parser.add_argument("--months", nargs="+")
     parser.add_argument(
         "--include-features",
@@ -554,6 +566,8 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.top_n <= 0:
         raise ValueError("--top-n must be positive")
+    if not args.label_column:
+        raise ValueError("--label-column must be non-empty")
     if args.report_months <= 0:
         raise ValueError("--report-months must be positive")
     return args

@@ -20,6 +20,7 @@ def test_candidate_policy_regime_timestamp_diagnostics_orients_factors() -> None
                 "alpha_a": 0.1,
                 "alpha_b": 0.9,
                 "forward_return": 0.03,
+                "forward_return_240b": 0.30,
             },
             {
                 "timestamp": "t0",
@@ -28,6 +29,7 @@ def test_candidate_policy_regime_timestamp_diagnostics_orients_factors() -> None
                 "alpha_a": 0.5,
                 "alpha_b": 0.2,
                 "forward_return": 0.00,
+                "forward_return_240b": 0.00,
             },
             {
                 "timestamp": "t0",
@@ -36,6 +38,7 @@ def test_candidate_policy_regime_timestamp_diagnostics_orients_factors() -> None
                 "alpha_a": 0.9,
                 "alpha_b": 0.1,
                 "forward_return": -0.02,
+                "forward_return_240b": -0.20,
             },
         ]
     )
@@ -49,12 +52,13 @@ def test_candidate_policy_regime_timestamp_diagnostics_orients_factors() -> None
         candidates=candidates,
         weights={"alpha_a": 0.7, "alpha_b": 0.3},
         top_n=1,
+        label_column="forward_return_240b",
     )
 
-    assert diagnostics["composite"]["score_top_minus_bottom_label"] == pytest.approx(0.05)
+    assert diagnostics["composite"]["score_top_minus_bottom_label"] == pytest.approx(0.5)
     factor_rows = {row["feature"]: row for row in diagnostics["factor_rows"]}
-    assert factor_rows["alpha_a"]["top_minus_bottom_label"] == pytest.approx(0.05)
-    assert factor_rows["alpha_b"]["top_minus_bottom_label"] == pytest.approx(0.05)
+    assert factor_rows["alpha_a"]["top_minus_bottom_label"] == pytest.approx(0.5)
+    assert factor_rows["alpha_b"]["top_minus_bottom_label"] == pytest.approx(0.5)
     exposure_rows = {row["feature"]: row for row in diagnostics["exposure_rows"]}
     assert (
         exposure_rows["alpha_a"]["top_score_abs_contribution_share"]
@@ -82,14 +86,22 @@ def test_candidate_policy_regime_composite_summary_reports_market_rates() -> Non
     frame = pd.DataFrame(
         {
             "forward_return": [0.01, 0.02, -0.01],
+            "forward_return_240b": [0.10, 0.20, -0.10],
             "entry_tradable_bar": [True, True, False],
             "entry_limit_up_open": [False, True, False],
             "entry_limit_down_open": [False, False, True],
         }
     )
 
-    summary = _summarize_composite("2024-01", rows, frame)
+    summary = _summarize_composite(
+        "2024-01",
+        rows,
+        frame,
+        label_column="forward_return_240b",
+    )
 
     assert summary["month"] == "2024-01"
+    assert summary["label_column"] == "forward_return_240b"
+    assert summary["market_mean_label"] == pytest.approx((0.10 + 0.20 - 0.10) / 3)
     assert summary["score_rank_ic_mean"] == pytest.approx(0.25)
     assert summary["entry_tradable_rate"] == pytest.approx(2 / 3)
