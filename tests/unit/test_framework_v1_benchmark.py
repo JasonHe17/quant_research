@@ -144,6 +144,52 @@ def test_framework_v1_benchmark_can_plan_candidate_policy_validation(
     assert command[command.index("--policy") + 1] == "partial_rebalance_daily"
 
 
+def test_framework_v1_benchmark_can_plan_auto_factor_admission(
+    tmp_path: Path,
+) -> None:
+    script = Path("examples/run_framework_v1_benchmark.py")
+    output_dir = tmp_path / "benchmark"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--output-dir",
+            str(output_dir),
+            "--start",
+            "2024-01-02T09:35:00+08:00",
+            "--end",
+            "2024-01-03T15:00:00+08:00",
+            "--max-symbols",
+            "2",
+            "--profile",
+            "quick",
+            "--auto-factor-admission",
+            "--candidate-policy-validation-methods",
+            "decorrelated",
+            "--dry-run",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    summary = json.loads((output_dir / "benchmark_summary.json").read_text())
+    commands = json.loads((output_dir / "commands.json").read_text())
+    assert "factor_admission" in commands
+    assert "candidate_policy_validation" in commands
+    assert "analyze_framework_v1_acceptance.py" in commands["factor_admission"][1]
+    admission_path = output_dir / "factor_admission" / "factor_admission_report.json"
+    assert commands["candidate_policy_validation"][
+        commands["candidate_policy_validation"].index("--admission-report") + 1
+    ] == str(admission_path)
+    assert summary["config"]["auto_factor_admission"] is True
+    assert summary["config"]["effective_candidate_admission_report"] == str(
+        admission_path
+    )
+
+
 def test_framework_v1_benchmark_command_failures_raise(tmp_path: Path) -> None:
     log_path = tmp_path / "logs" / "failed.log"
 

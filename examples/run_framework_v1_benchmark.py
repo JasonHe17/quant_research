@@ -55,6 +55,7 @@ class FrameworkV1BenchmarkConfig:
     partition: str
     padding_days: int
     cost_stress_multiplier: float
+    auto_factor_admission: bool
     candidate_admission_report: Path | None
     candidate_policy_validation_methods: tuple[str, ...]
     candidate_policy_validation_policy: str
@@ -145,7 +146,11 @@ def run_framework_v1_benchmark(
     _run_required_stage(config, commands, "dataset", logs_dir)
     _run_required_stage(config, commands, "factor_evaluation", logs_dir)
     _run_backtest_commands(config, commands=commands, logs_dir=logs_dir)
-    if config.candidate_admission_report is not None:
+    if _should_run_factor_admission(config):
+        summary = _collect_completed_summary(config, commands=commands)
+        _write_summary(output_dir, summary)
+        _run_required_stage(config, commands, "factor_admission", logs_dir)
+    if _should_run_candidate_policy_validation(config):
         _run_required_stage(config, commands, "candidate_policy_validation", logs_dir)
     summary = _collect_completed_summary(config, commands=commands)
     _write_summary(output_dir, summary)
@@ -237,7 +242,9 @@ def _benchmark_commands(
     }
     for scenario in _backtest_scenarios(config):
         commands[f"backtest_{scenario.name}"] = _backtest_command(config, scenario)
-    if config.candidate_admission_report is not None:
+    if _should_run_factor_admission(config):
+        commands["factor_admission"] = _factor_admission_command(config)
+    if _should_run_candidate_policy_validation(config):
         commands["candidate_policy_validation"] = _candidate_policy_validation_command(config)
     return commands
 
@@ -378,7 +385,7 @@ def _candidate_policy_validation_command(config: FrameworkV1BenchmarkConfig) -> 
         "--label-column",
         _primary_label_column(config),
         "--admission-report",
-        str(config.candidate_admission_report),
+        str(_effective_candidate_admission_report(config)),
         "--factor-correlation",
         str(config.output_dir / "factor_evaluation" / "feature_correlation.csv"),
         "--output-dir",
@@ -431,6 +438,46 @@ def _candidate_policy_validation_command(config: FrameworkV1BenchmarkConfig) -> 
     if config.resume_existing:
         command.append("--resume-existing")
     return command
+
+
+def _factor_admission_command(config: FrameworkV1BenchmarkConfig) -> list[str]:
+    command = [
+        sys.executable,
+        str(EXAMPLES_DIR / "analyze_framework_v1_acceptance.py"),
+        "--benchmark-summary",
+        str(config.output_dir / "benchmark_summary.json"),
+        "--factor-summary",
+        str(config.output_dir / "factor_evaluation" / "summary.json"),
+        "--output-dir",
+        str(config.output_dir / "factor_admission"),
+        "--cost-bps",
+        str(_estimated_round_trip_cost_bps(config)),
+    ]
+    return command
+
+
+def _should_run_factor_admission(config: FrameworkV1BenchmarkConfig) -> bool:
+    return config.auto_factor_admission
+
+
+def _should_run_candidate_policy_validation(config: FrameworkV1BenchmarkConfig) -> bool:
+    return _effective_candidate_admission_report(config) is not None
+
+
+def _effective_candidate_admission_report(config: FrameworkV1BenchmarkConfig) -> Path | None:
+    if config.candidate_admission_report is not None:
+        return config.candidate_admission_report
+    if config.auto_factor_admission:
+        return config.output_dir / "factor_admission" / "factor_admission_report.json"
+    return None
+
+
+def _estimated_round_trip_cost_bps(config: FrameworkV1BenchmarkConfig) -> float:
+    return float(
+        2.0 * config.commission_bps
+        + 2.0 * config.slippage_bps
+        + config.sell_stamp_tax_bps
+    )
 
 
 def _years_in_window(start: str, end: str) -> list[int]:
@@ -600,6 +647,8 @@ def _stage_complete(config: FrameworkV1BenchmarkConfig, stage_name: str) -> bool
         return Path(str(artifacts["dataset_summary"])).exists()
     if stage_name == "factor_evaluation":
         return Path(str(artifacts["factor_evaluation_summary"])).exists()
+    if stage_name == "factor_admission":
+        return Path(str(artifacts["factor_admission_summary"])).exists()
     if stage_name.startswith("backtest_"):
         scenario_name = stage_name.removeprefix("backtest_")
         summaries = artifacts["backtest_summaries"]
@@ -619,6 +668,7 @@ def _collect_completed_summary(
     dataset_summary = _read_json(Path(artifacts["dataset_summary"]))
     evaluation_summary = _read_json(Path(artifacts["factor_evaluation_summary"]))
     backtest_summaries = _read_backtest_summaries(config)
+    factor_admission = _read_factor_admission_summary(config)
     candidate_policy_validation = _read_candidate_policy_validation_summary(config)
     dataset_partitions = dataset_summary.get("partitions", [])
     dataset_rows = sum(int(row.get("dataset_row_count", 0)) for row in dataset_partitions)
@@ -641,6 +691,7 @@ def _collect_completed_summary(
         config,
         dataset=dataset,
         factor_evaluation=factor_evaluation,
+        factor_admission=factor_admission,
         backtests=backtest_summaries,
     )
     status = "completed" if acceptance["overall_status"] != "fail" else "failed_gates"
@@ -657,8 +708,23 @@ def _collect_completed_summary(
     )
 
 
+def _read_factor_admission_summary(config: FrameworkV1BenchmarkConfig) -> dict[str, Any]:
+    path = config.output_dir / "factor_admission" / "factor_admission_report.json"
+    if not path.exists():
+        return {}
+    payload = _read_json(path)
+    return {
+        "artifact_dir": str(path.parent),
+        "summary": str(path),
+        "generated_at": payload.get("generated_at"),
+        "source": payload.get("source", {}),
+        "thresholds": payload.get("thresholds", {}),
+        "summary_metrics": payload.get("summary", {}),
+    }
+
+
 def _read_candidate_policy_validation_summary(config: FrameworkV1BenchmarkConfig) -> dict[str, Any]:
-    if config.candidate_admission_report is None:
+    if not _should_run_candidate_policy_validation(config):
         return {}
     path = config.output_dir / "candidate_policy_validation" / "validation_summary.json"
     if not path.exists():
@@ -922,6 +988,7 @@ def _benchmark_summary(
     artifacts: dict[str, str],
     dataset: dict[str, Any] | None = None,
     factor_evaluation: dict[str, Any] | None = None,
+    factor_admission: dict[str, Any] | None = None,
     backtests: dict[str, Any] | None = None,
     candidate_policy_validation: dict[str, Any] | None = None,
     acceptance: dict[str, Any] | None = None,
@@ -936,6 +1003,7 @@ def _benchmark_summary(
         "artifacts": artifacts,
         "dataset": dataset or {},
         "factor_evaluation": factor_evaluation or {},
+        "factor_admission": factor_admission or {},
         "backtests": backtests or {},
         "candidate_policy_validation": candidate_policy_validation or {},
         "acceptance": acceptance or {},
@@ -952,6 +1020,10 @@ def _artifact_paths(config: FrameworkV1BenchmarkConfig) -> dict[str, str]:
         "factor_evaluation_dir": str(config.output_dir / "factor_evaluation"),
         "factor_evaluation_summary": str(
             config.output_dir / "factor_evaluation" / "summary.json"
+        ),
+        "factor_admission_dir": str(config.output_dir / "factor_admission"),
+        "factor_admission_summary": str(
+            config.output_dir / "factor_admission" / "factor_admission_report.json"
         ),
         "backtests_dir": str(config.output_dir / "backtests"),
         "backtest_summary": str(
@@ -989,9 +1061,16 @@ def _jsonable_config(config: FrameworkV1BenchmarkConfig) -> dict[str, Any]:
     payload["catalog_path"] = str(config.catalog_path)
     payload["output_dir"] = str(config.output_dir)
     payload["label_horizon_bars"] = list(config.label_horizon_bars)
+    payload["auto_factor_admission"] = config.auto_factor_admission
     payload["candidate_admission_report"] = (
         str(config.candidate_admission_report)
         if config.candidate_admission_report is not None
+        else None
+    )
+    effective_admission_report = _effective_candidate_admission_report(config)
+    payload["effective_candidate_admission_report"] = (
+        str(effective_admission_report)
+        if effective_admission_report is not None
         else None
     )
     payload["candidate_policy_validation_methods"] = list(
@@ -1053,6 +1132,7 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
         partition=args.partition,
         padding_days=args.padding_days,
         cost_stress_multiplier=args.cost_stress_multiplier,
+        auto_factor_admission=args.auto_factor_admission,
         candidate_admission_report=(
             Path(args.candidate_admission_report)
             if args.candidate_admission_report
@@ -1155,6 +1235,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--partition", choices=("monthly", "yearly"), default="monthly")
     parser.add_argument("--padding-days", type=int, default=30)
     parser.add_argument("--cost-stress-multiplier", type=float, default=2.0)
+    parser.add_argument(
+        "--auto-factor-admission",
+        action="store_true",
+        help=(
+            "after benchmark backtests finish, generate factor admission outputs "
+            "from the benchmark artifacts and use them for candidate policy validation"
+        ),
+    )
     parser.add_argument(
         "--candidate-admission-report",
         help=(
@@ -1261,9 +1349,12 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--streaming-chunk-padding-days must be non-negative")
     if args.cost_stress_multiplier < 1:
         raise ValueError("--cost-stress-multiplier must be at least 1")
-    if args.candidate_admission_report and args.skip_feature_correlation:
+    if (
+        (args.candidate_admission_report or args.auto_factor_admission)
+        and args.skip_feature_correlation
+    ):
         raise ValueError(
-            "--candidate-admission-report requires feature correlation; "
+            "candidate policy validation requires feature correlation; "
             "do not pass --skip-feature-correlation"
         )
     for name in (
