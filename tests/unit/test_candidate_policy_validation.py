@@ -9,6 +9,7 @@ from examples.run_candidate_policy_validation import (
     _backtest_output_dir,
     _collect_factor_contribution_summary_rows,
     _collect_factor_health_summary_rows,
+    _collect_monthly_summary_rows,
     _effective_scenario_memory_budget_gb,
     _infer_full_years,
     _monthly_summary_rows_for_backtest,
@@ -294,6 +295,48 @@ def test_candidate_policy_validation_builds_monthly_summary(tmp_path: Path) -> N
     assert rows[0]["return"] == pytest.approx(0.02)
     assert rows[0]["trade_count"] == 1
     assert rows[1]["total_transaction_cost"] == 7.0
+
+
+def test_candidate_policy_validation_collects_monthly_rows_for_all_policies(
+    tmp_path: Path,
+) -> None:
+    args = _validation_args(output_dir=str(tmp_path), methods=["decorrelated"])
+    scenario = _validation_scenarios(args, years=[2024])[0]
+    scenario_dir = tmp_path / scenario.name
+    scenario_dir.mkdir(parents=True)
+    pd = pytest.importorskip("pandas")
+    pd.DataFrame(
+        [
+            {"method": "decorrelated", "policy": "partial_rebalance_daily"},
+            {"method": "decorrelated", "policy": "cost_aware_optimizer_daily"},
+        ]
+    ).to_csv(scenario_dir / "backtest_summary.csv", index=False)
+    for policy in ("partial_rebalance_daily", "cost_aware_optimizer_daily"):
+        backtest_dir = scenario_dir / "backtests" / "decorrelated" / policy
+        backtest_dir.mkdir(parents=True)
+        (backtest_dir / "equity_curve.csv").write_text(
+            "\n".join(
+                [
+                    "timestamp,cash,positions_value,equity",
+                    "2024-01-02T09:35:00+08:00,900000,100000,1000000",
+                    "2024-01-31T15:00:00+08:00,900000,110000,1010000",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (backtest_dir / "trades.csv").write_text(
+            "timestamp,instrument_id,side,shares,price,reference_price,commission,"
+            "stamp_tax,slippage_cost,total_cost,notional,reference_notional\n",
+            encoding="utf-8",
+        )
+
+    rows = _collect_monthly_summary_rows(args, [scenario])
+
+    assert sorted(row["policy"] for row in rows) == [
+        "cost_aware_optimizer_daily",
+        "partial_rebalance_daily",
+    ]
 
 
 def test_candidate_policy_validation_backtest_output_dir_matches_policy_set(

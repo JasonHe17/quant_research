@@ -495,10 +495,19 @@ def _backtest_output_dir(
     scenario: ValidationScenario,
     method: str,
 ) -> Path:
+    return _backtest_output_dir_for_policy(args, scenario, method, args.policy)
+
+
+def _backtest_output_dir_for_policy(
+    args: argparse.Namespace,
+    scenario: ValidationScenario,
+    method: str,
+    policy: str,
+) -> Path:
     path = _scenario_output_dir(args, scenario) / "backtests" / method
     if args.backtest_policy_set == "single":
         return path
-    return path / args.policy
+    return path / policy
 
 
 def _run_scenario(command: list[str], log_path: Path) -> None:
@@ -647,14 +656,27 @@ def _collect_monthly_summary_rows(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for scenario in scenarios:
-        for method in args.methods:
-            backtest_dir = _backtest_output_dir(args, scenario, method)
+        scenario_summary = _scenario_output_dir(args, scenario) / "backtest_summary.csv"
+        if not scenario_summary.exists():
+            raise FileNotFoundError(f"missing scenario summary: {scenario_summary}")
+        summary = pd.read_csv(scenario_summary)
+        if summary.empty:
+            continue
+        for record in summary.loc[:, ["method", "policy"]].drop_duplicates().to_dict("records"):
+            method = str(record["method"])
+            policy = str(record["policy"])
+            backtest_dir = _backtest_output_dir_for_policy(
+                args,
+                scenario,
+                method,
+                policy,
+            )
             rows.extend(
                 _monthly_summary_rows_for_backtest(
                     backtest_dir,
                     scenario=scenario,
                     method=method,
-                    policy=args.policy,
+                    policy=policy,
                     initial_cash=args.initial_cash,
                 )
             )
