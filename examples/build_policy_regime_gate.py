@@ -286,7 +286,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument("--lookback-windows", type=int, default=20)
     parser.add_argument("--min-periods", type=int, default=5)
-    parser.add_argument("--label-lag-windows", type=int, default=48)
+    parser.add_argument("--label-lag-windows", type=int)
     parser.add_argument("--state-confirmation-windows", type=int, default=1)
     parser.add_argument("--max-scale-change-per-window", type=float)
     parser.add_argument("--max-scale-increase-per-window", type=float)
@@ -323,6 +323,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--max-partitions must be positive")
     if args.partition_start and args.partition_end and args.partition_start > args.partition_end:
         raise ValueError("--partition-start must not be after --partition-end")
+    if args.label_lag_windows is None:
+        args.label_lag_windows = _default_label_lag_windows(args.label_column)
     RollingRegimeGateConfig(
         lookback_windows=args.lookback_windows,
         min_periods=args.min_periods,
@@ -353,6 +355,13 @@ def _parse_args() -> argparse.Namespace:
         block_rank_ic=args.block_rank_ic,
     )
     return args
+
+
+def _default_label_lag_windows(label_column: str) -> int:
+    suffix = label_column.rsplit("_", 1)[-1]
+    if suffix.endswith("b") and suffix[:-1].isdigit():
+        return int(suffix[:-1])
+    return 48
 
 
 if __name__ == "__main__":

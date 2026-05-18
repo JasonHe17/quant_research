@@ -14,6 +14,7 @@ from examples.run_candidate_factor_portfolios import (
     _backtest_policy_specs,
     _backtest_summary_rows,
     _dataset_paths,
+    _default_label_lag_windows,
     _effective_backtest_memory_budget_gb,
     _registry_filter_summary,
     _summary_params,
@@ -776,6 +777,11 @@ def test_candidate_factor_summary_params_record_backtest_policy_set() -> None:
     assert params["backtest"]["backtest_policies"] == ["partial_rebalance_daily"]  # type: ignore[index]
     assert params["backtest"]["policy_set_exit_rank"] == 150  # type: ignore[index]
     assert params["backtest"]["backtest_workers"] == 2  # type: ignore[index]
+
+
+def test_candidate_factor_default_label_lag_follows_horizon_suffix() -> None:
+    assert _default_label_lag_windows("forward_return") == 48
+    assert _default_label_lag_windows("forward_return_240b") == 240
 
 
 def _portfolio_args(**overrides: object) -> object:

@@ -1210,7 +1210,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--factor-health-lookback-windows", type=int, default=20)
     parser.add_argument("--factor-health-min-periods", type=int, default=5)
-    parser.add_argument("--factor-health-label-lag-windows", type=int, default=48)
+    parser.add_argument("--factor-health-label-lag-windows", type=int)
     parser.add_argument("--factor-health-min-scale", type=float, default=0.25)
     parser.add_argument("--factor-health-max-scale", type=float, default=1.0)
     parser.add_argument("--factor-health-rank-ic-floor", type=float, default=-0.05)
@@ -1225,7 +1225,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--forecast-calibration-lookback-windows", type=int, default=20)
     parser.add_argument("--forecast-calibration-min-periods", type=int, default=5)
-    parser.add_argument("--forecast-calibration-label-lag-windows", type=int, default=48)
+    parser.add_argument("--forecast-calibration-label-lag-windows", type=int)
     parser.add_argument("--forecast-calibration-bucket-count", type=int, default=5)
     parser.add_argument("--forecast-calibration-risk-multiplier", type=float, default=1.0)
     parser.add_argument("--forecast-calibration-max-abs-edge-bps", type=float)
@@ -1391,6 +1391,10 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError(
             "--factor-health-min-periods must be <= --factor-health-lookback-windows"
         )
+    if args.factor_health_label_lag_windows is None:
+        args.factor_health_label_lag_windows = _default_label_lag_windows(
+            args.label_column
+        )
     if args.factor_health_label_lag_windows <= 0:
         raise ValueError("--factor-health-label-lag-windows must be positive")
     if not 0 <= args.factor_health_min_scale <= args.factor_health_max_scale <= 1:
@@ -1413,6 +1417,10 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError(
             "--forecast-calibration-min-periods must be <= "
             "--forecast-calibration-lookback-windows"
+        )
+    if args.forecast_calibration_label_lag_windows is None:
+        args.forecast_calibration_label_lag_windows = _default_label_lag_windows(
+            args.label_column
         )
     if args.forecast_calibration_label_lag_windows <= 0:
         raise ValueError("--forecast-calibration-label-lag-windows must be positive")
@@ -1565,6 +1573,13 @@ def _parse_args() -> argparse.Namespace:
     if args.max_full_turnover <= 0:
         raise ValueError("--max-full-turnover must be positive")
     return args
+
+
+def _default_label_lag_windows(label_column: str) -> int:
+    suffix = label_column.rsplit("_", 1)[-1]
+    if suffix.endswith("b") and suffix[:-1].isdigit():
+        return int(suffix[:-1])
+    return 48
 
 
 if __name__ == "__main__":
