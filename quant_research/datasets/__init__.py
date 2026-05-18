@@ -21,6 +21,7 @@ from quant_research.datasets.supervised import (
     add_cross_sectional_label_rank,
     build_alpha_feature_matrix,
     build_forward_return_labels,
+    build_multi_horizon_forward_return_labels,
     join_alpha_features_and_labels,
 )
 
@@ -34,6 +35,7 @@ __all__ = [
     "build_alpha_feature_matrix",
     "build_intraday_feature_matrix",
     "build_forward_return_labels",
+    "build_multi_horizon_forward_return_labels",
     "file_sha256",
     "join_alpha_features_and_labels",
     "purged_time_split",

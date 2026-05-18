@@ -122,6 +122,65 @@ def build_forward_return_labels(
     return output.reset_index(drop=True)
 
 
+def build_multi_horizon_forward_return_labels(
+    bars: pd.DataFrame,
+    configs: Iterable[ForwardReturnLabelConfig],
+) -> pd.DataFrame:
+    """Build one label table containing multiple aligned forward-return horizons.
+
+    All horizons must share the same entry lag, timestamp column, and price column
+    so they represent alternative exit choices from the same signal-time entry.
+    For a single config this is equivalent to ``build_forward_return_labels``.
+    """
+
+    config_list = tuple(configs)
+    if not config_list:
+        raise ValueError("configs must be non-empty")
+    if len({config.name for config in config_list}) != len(config_list):
+        raise ValueError("label config names must be unique")
+    first = config_list[0]
+    for config in config_list[1:]:
+        if config.entry_lag_bars != first.entry_lag_bars:
+            raise ValueError("all label configs must share entry_lag_bars")
+        if config.price_column != first.price_column:
+            raise ValueError("all label configs must share price_column")
+        if config.timestamp_column != first.timestamp_column:
+            raise ValueError("all label configs must share timestamp_column")
+    if len(config_list) == 1:
+        return build_forward_return_labels(bars, first)
+
+    output: pd.DataFrame | None = None
+    for config in config_list:
+        labels = build_forward_return_labels(bars, config)
+        labels = labels.rename(
+            columns={
+                "exit_timestamp": f"{config.name}_exit_timestamp",
+                "exit_price": f"{config.name}_exit_price",
+            }
+        )
+        columns = [
+            "timestamp",
+            "instrument_id",
+            "entry_timestamp",
+            "entry_price",
+            config.name,
+            f"{config.name}_exit_timestamp",
+            f"{config.name}_exit_price",
+        ]
+        labels = labels.loc[:, columns]
+        if output is None:
+            output = labels
+            continue
+        output = output.merge(
+            labels,
+            on=["timestamp", "instrument_id", "entry_timestamp", "entry_price"],
+            how="inner",
+        )
+    if output is None:
+        return pd.DataFrame(columns=["timestamp", "instrument_id"])
+    return output.reset_index(drop=True)
+
+
 def add_cross_sectional_label_rank(
     labels: pd.DataFrame,
     *,

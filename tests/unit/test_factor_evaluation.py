@@ -95,12 +95,18 @@ def test_evaluate_single_factors_infers_feature_columns() -> None:
             "alpha_a": [0.1, 0.2],
             "alpha_b": [1.0, 0.0],
             "forward_return": [0.0, 0.1],
+            "forward_return_5d": [0.02, 0.03],
+            "forward_return_5d_rank": [0.5, 1.0],
+            "forward_return_5d_exit_price": [12.0, 13.0],
             "entry_price": [10.0, 10.0],
             "exit_price": [11.0, 12.0],
         }
     )
 
-    result = evaluate_single_factors(frame)
+    result = evaluate_single_factors(
+        frame,
+        SingleFactorEvaluationConfig(horizon_label_columns=("forward_return_5d",)),
+    )
 
     assert result.summary["feature"].tolist() == ["alpha_a", "alpha_b"]
     assert list(result.feature_correlation.columns) == ["alpha_a", "alpha_b"]

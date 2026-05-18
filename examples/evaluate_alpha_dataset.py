@@ -30,6 +30,7 @@ def main() -> None:
     dataset_paths = _dataset_paths(args)
     config = SingleFactorEvaluationConfig(
         label_column=args.label_column,
+        horizon_label_columns=tuple(args.horizon_label_columns or ()),
         feature_columns=tuple(args.feature_columns or ()),
         top_n=args.top_n,
         quantiles=args.quantiles,
@@ -55,6 +56,7 @@ def main() -> None:
         "params": {
             "dataset_paths": [str(path) for path in dataset_paths],
             "label_column": args.label_column,
+            "horizon_label_columns": args.horizon_label_columns,
             "feature_columns": args.feature_columns,
             "top_n": args.top_n,
             "quantiles": args.quantiles,
@@ -101,6 +103,7 @@ def _evaluate_dataset_paths(
     feature_columns = config.feature_columns or _infer_feature_columns_from_path(
         dataset_paths[0],
         label_column=config.label_column,
+        horizon_label_columns=config.horizon_label_columns,
     )
     partition_config = replace(
         config,
@@ -194,10 +197,25 @@ def _infer_feature_columns_from_path(
     path: Path,
     *,
     label_column: str,
+    horizon_label_columns: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     frame = pd.read_parquet(path)
     try:
-        return infer_feature_columns(frame, label_column=label_column)
+        exclude_columns: list[str] = []
+        for column in horizon_label_columns:
+            exclude_columns.extend(
+                [
+                    column,
+                    f"{column}_rank",
+                    f"{column}_exit_timestamp",
+                    f"{column}_exit_price",
+                ]
+            )
+        return infer_feature_columns(
+            frame,
+            label_column=label_column,
+            exclude_columns=tuple(exclude_columns),
+        )
     finally:
         del frame
 
@@ -393,6 +411,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-paths", nargs="+")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--label-column", default="forward_return")
+    parser.add_argument("--horizon-label-columns", nargs="+")
     parser.add_argument("--feature-columns", nargs="+")
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument("--quantiles", type=int, default=5)

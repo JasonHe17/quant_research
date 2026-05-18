@@ -8,6 +8,7 @@ from quant_research.datasets import (
     add_cross_sectional_label_rank,
     build_alpha_feature_matrix,
     build_forward_return_labels,
+    build_multi_horizon_forward_return_labels,
     join_alpha_features_and_labels,
 )
 from quant_research.factors import FactorResult
@@ -99,6 +100,42 @@ def test_build_forward_return_labels_uses_entry_lag_and_horizon() -> None:
     assert labels.loc[0, "entry_timestamp"] == "t1"
     assert labels.loc[0, "exit_timestamp"] == "t3"
     assert labels.loc[0, "fwd_ret_2b"] == pytest.approx(13.0 / 11.0 - 1.0)
+
+
+def test_build_multi_horizon_forward_return_labels_shares_entry() -> None:
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": float(10 + i),
+            }
+            for i in range(6)
+        ]
+    )
+
+    labels = build_multi_horizon_forward_return_labels(
+        bars,
+        (
+            ForwardReturnLabelConfig(
+                name="forward_return_1b",
+                entry_lag_bars=1,
+                horizon_bars=1,
+            ),
+            ForwardReturnLabelConfig(
+                name="forward_return_3b",
+                entry_lag_bars=1,
+                horizon_bars=3,
+            ),
+        ),
+    )
+
+    assert labels["timestamp"].tolist() == ["t0", "t1"]
+    assert labels.loc[0, "entry_timestamp"] == "t1"
+    assert labels.loc[0, "forward_return_1b"] == pytest.approx(12.0 / 11.0 - 1.0)
+    assert labels.loc[0, "forward_return_3b"] == pytest.approx(14.0 / 11.0 - 1.0)
+    assert labels.loc[0, "forward_return_1b_exit_timestamp"] == "t2"
+    assert labels.loc[0, "forward_return_3b_exit_timestamp"] == "t4"
 
 
 def test_join_features_labels_and_add_cross_sectional_rank() -> None:

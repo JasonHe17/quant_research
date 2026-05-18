@@ -14,6 +14,42 @@ The canonical data platform remains the sibling `quant_dataset` repository. This
 package consumes that data through `DataPortal` and stable `quantdb.sdk`
 interfaces.
 
+## Frequency And Horizon Separation
+
+The framework uses 5-minute bars as the default observation and execution grid
+because that is the smallest practical step under current compute and data
+constraints. That grid is not the research horizon.
+
+The system should keep these concepts separate:
+
+- observation frequency: how often market state is refreshed;
+- feature frequency: the native sampling interval of a feature, such as 5m or
+  1d;
+- execution frequency: how often the strategy may submit target changes;
+- forecast horizon: the return interval used to score a signal;
+- holding policy: the rule that decides whether to keep or replace a position
+  after costs and risk penalties.
+
+The baseline dataset builder now supports multiple forward-return horizons in
+one materialization run. For example:
+
+```bash
+conda run -n quant python examples/build_baseline_a_alpha_dataset.py \
+  --catalog-path ../quant_dataset/canonical_store/catalog/quant_research.duckdb \
+  --start 2023-01-03T09:35:00+08:00 \
+  --end 2025-12-31T15:00:00+08:00 \
+  --output-dir runs/framework_v1_acceptance/multi_horizon/alpha_dataset \
+  --factor-groups reversal volatility \
+  --horizon-bars 48 240 960
+```
+
+If only one horizon is supplied, the label keeps the base name. If multiple
+horizons are supplied, labels are named `<label-name>_<horizon>b`, for example
+`forward_return_48b`, `forward_return_240b`, and `forward_return_960b`, with
+matching rank columns. This lets evaluation compare short, medium, and long
+holding periods before deciding whether a signal belongs in a fast or slow
+policy.
+
 ## Pipeline Shape
 
 ```text

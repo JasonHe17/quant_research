@@ -65,10 +65,15 @@ def evaluate_single_factors(
 
     config = config or SingleFactorEvaluationConfig()
     _require_columns(frame, ("timestamp", "instrument_id", config.label_column))
+    label_columns = _label_columns(config)
     feature_columns = (
         config.feature_columns
         if config.feature_columns
-        else infer_feature_columns(frame, label_column=config.label_column)
+        else infer_feature_columns(
+            frame,
+            label_column=config.label_column,
+            exclude_columns=_label_metadata_columns(label_columns),
+        )
     )
     _require_columns(frame, feature_columns)
     timestamp_rows: list[dict[str, object]] = []
@@ -81,7 +86,6 @@ def evaluate_single_factors(
     previous_rank_by_feature: dict[str, pd.Series | None] = {
         feature: None for feature in feature_columns
     }
-    label_columns = _label_columns(config)
     _require_columns(frame, tuple(label_columns))
     group_columns = tuple(column for column in config.group_columns if column in frame.columns)
     liquidity_columns = tuple(
@@ -352,6 +356,20 @@ def _nullable_float(value: object) -> float | None:
 
 def _label_columns(config: SingleFactorEvaluationConfig) -> tuple[str, ...]:
     return tuple(dict.fromkeys((config.label_column, *config.horizon_label_columns)))
+
+
+def _label_metadata_columns(label_columns: tuple[str, ...]) -> tuple[str, ...]:
+    columns: list[str] = []
+    for label_column in label_columns:
+        columns.extend(
+            [
+                label_column,
+                f"{label_column}_rank",
+                f"{label_column}_exit_timestamp",
+                f"{label_column}_exit_price",
+            ]
+        )
+    return tuple(dict.fromkeys(columns))
 
 
 def _liquidity_timestamp_summary(

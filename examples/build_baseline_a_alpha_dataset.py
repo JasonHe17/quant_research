@@ -25,11 +25,12 @@ from quant_research.datasets import (
     IntradayFeatureConfig,
     add_cross_sectional_label_rank,
     build_intraday_feature_matrix,
-    build_forward_return_labels,
+    build_multi_horizon_forward_return_labels,
     join_alpha_features_and_labels,
     write_dataset_manifest,
 )
 from quant_research.data.cache import catalog_reference_for_path
+from quant_research.models import infer_feature_columns
 
 from run_baseline_a_real_backtest import (
     BacktestParams,
@@ -65,11 +66,7 @@ def main() -> None:
     if not files:
         raise FileNotFoundError("no 5-minute CN equity parquet files found")
     rows: list[dict[str, object]] = []
-    label_config = ForwardReturnLabelConfig(
-        name=args.label_name,
-        horizon_bars=args.horizon_bars,
-        entry_lag_bars=args.entry_lag_bars,
-    )
+    label_configs = _label_configs(args)
     chunks = _time_chunks(
         start=args.start,
         end=args.end,
@@ -91,7 +88,7 @@ def main() -> None:
                 params=params,
                 files=files,
                 args=args,
-                label_config=label_config,
+                label_configs=label_configs,
                 output_dir=output_dir,
             )
             for partition_name, core_start, core_end in chunks
@@ -113,16 +110,16 @@ def main() -> None:
                 while pending and len(running) < effective_workers:
                     partition_name, core_start, core_end = pending.pop(0)
                     future = executor.submit(
-                    _build_partition_dataset,
-                    partition_name=partition_name,
-                    core_start=core_start,
-                    core_end=core_end,
-                    params=params,
-                    files=files,
-                    args=args,
-                    label_config=label_config,
-                    output_dir=output_dir,
-                )
+                        _build_partition_dataset,
+                        partition_name=partition_name,
+                        core_start=core_start,
+                        core_end=core_end,
+                        params=params,
+                        files=files,
+                        args=args,
+                        label_configs=label_configs,
+                        output_dir=output_dir,
+                    )
                     running[future] = (partition_name, core_start, core_end)
                 done, _ = wait(running, return_when=FIRST_COMPLETED)
                 for future in done:
@@ -144,7 +141,7 @@ def _build_partition_dataset(
     params: BacktestParams,
     files: list[Path],
     args: argparse.Namespace,
-    label_config: ForwardReturnLabelConfig,
+    label_configs: tuple[ForwardReturnLabelConfig, ...],
     output_dir: Path,
 ) -> dict[str, object] | None:
     read_start = core_start - pd.Timedelta(days=args.padding_days)
@@ -209,17 +206,18 @@ def _build_partition_dataset(
         ),
     )
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
-    labels = build_forward_return_labels(bars, label_config)
+    labels = build_multi_horizon_forward_return_labels(bars, label_configs)
     labels = _filter_core_window(labels, core_start=core_start, core_end=core_end)
     labels = _add_entry_execution_columns(labels, bars)
     label_row_count_before_entry_filter = len(labels)
     entry_filter_counts = _entry_execution_filter_counts(labels)
     labels = _filter_entry_execution_constraints(labels, args)
-    labels = add_cross_sectional_label_rank(
-        labels,
-        label_column=args.label_name,
-        rank_column=f"{args.label_name}_rank",
-    )
+    for label_config in label_configs:
+        labels = add_cross_sectional_label_rank(
+            labels,
+            label_column=label_config.name,
+            rank_column=f"{label_config.name}_rank",
+        )
     dataset = join_alpha_features_and_labels(features, labels)
     dataset_path = output_dir / f"dataset_{partition_name}.parquet"
     dataset.to_parquet(dataset_path, index=False)
@@ -230,12 +228,12 @@ def _build_partition_dataset(
         label_path = output_dir / f"labels_{partition_name}.parquet"
         features.to_parquet(feature_path, index=False)
         labels.to_parquet(label_path, index=False)
-    feature_columns = tuple(
+    label_columns = tuple(
         column
-        for column in dataset.columns
-        if column.startswith("intraday_")
+        for label_config in label_configs
+        for column in (label_config.name, f"{label_config.name}_rank")
     )
-    label_columns = (args.label_name, f"{args.label_name}_rank")
+    feature_columns = _feature_columns(dataset, label_configs)
     source_artifacts = {}
     if feature_path is not None:
         source_artifacts["features"] = str(feature_path)
@@ -439,7 +437,9 @@ def _write_summary(
             "limit_pressure_resilience_windows": args.limit_pressure_resilience_windows,
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
+            "label_columns": _label_column_names(args),
             "entry_lag_bars": args.entry_lag_bars,
+            "research_grid": _research_grid(args),
             "exclude_st": args.exclude_st,
             "limit_up_bps": args.limit_up_bps,
             "limit_down_bps": args.limit_down_bps,
@@ -582,7 +582,7 @@ def _parse_args() -> argparse.Namespace:
         "--limit-pressure-resilience-windows", type=int, nargs="+", default=[48]
     )
     parser.add_argument("--label-name", default="forward_return")
-    parser.add_argument("--horizon-bars", type=int, default=48)
+    parser.add_argument("--horizon-bars", type=int, nargs="+", default=[48])
     parser.add_argument("--entry-lag-bars", type=int, default=1)
     parser.add_argument("--exclude-st", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--limit-up-bps", type=float, default=980.0)
@@ -667,6 +667,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--breadth-resilience-windows values must be positive")
     if any(value <= 0 for value in args.limit_pressure_resilience_windows):
         raise ValueError("--limit-pressure-resilience-windows values must be positive")
+    if any(value <= 0 for value in args.horizon_bars):
+        raise ValueError("--horizon-bars values must be positive")
     if args.padding_days < 0:
         raise ValueError("--padding-days must be non-negative")
     if args.workers <= 0:
@@ -719,8 +721,10 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "market_state_windows": list(args.market_state_windows),
         "breadth_resilience_windows": list(args.breadth_resilience_windows),
         "label_name": args.label_name,
-        "horizon_bars": args.horizon_bars,
+        "horizon_bars": list(args.horizon_bars),
+        "label_columns": _label_column_names(args),
         "entry_lag_bars": args.entry_lag_bars,
+        "research_grid": _research_grid(args),
         "exclude_st": args.exclude_st,
         "limit_up_bps": args.limit_up_bps,
         "limit_down_bps": args.limit_down_bps,
@@ -771,10 +775,73 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         },
         "entry_exit_assumption": {
             "entry_lag_bars": args.entry_lag_bars,
-            "horizon_bars": args.horizon_bars,
+            "horizon_bars": list(args.horizon_bars),
             "entry_price": "close_price",
             "exit_price": "close_price",
         },
+    }
+
+
+def _label_configs(args: argparse.Namespace) -> tuple[ForwardReturnLabelConfig, ...]:
+    horizons = tuple(dict.fromkeys(int(value) for value in args.horizon_bars))
+    if len(horizons) == 1:
+        names = (args.label_name,)
+    else:
+        names = tuple(f"{args.label_name}_{horizon}b" for horizon in horizons)
+    return tuple(
+        ForwardReturnLabelConfig(
+            name=name,
+            horizon_bars=horizon,
+            entry_lag_bars=args.entry_lag_bars,
+        )
+        for name, horizon in zip(names, horizons, strict=True)
+    )
+
+
+def _label_column_names(args: argparse.Namespace) -> list[str]:
+    return [
+        column
+        for config in _label_configs(args)
+        for column in (config.name, f"{config.name}_rank")
+    ]
+
+
+def _feature_columns(
+    dataset: pd.DataFrame,
+    label_configs: tuple[ForwardReturnLabelConfig, ...],
+) -> tuple[str, ...]:
+    primary_label = label_configs[0].name
+    exclude_columns = []
+    for config in label_configs:
+        exclude_columns.extend(
+            [
+                config.name,
+                f"{config.name}_rank",
+                f"{config.name}_exit_timestamp",
+                f"{config.name}_exit_price",
+            ]
+        )
+    return infer_feature_columns(
+        dataset,
+        label_column=primary_label,
+        exclude_columns=tuple(exclude_columns),
+    )
+
+
+def _research_grid(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "observation_frequency": "5m",
+        "execution_frequency": "5m",
+        "feature_frequency": "5m",
+        "label_frequency": "5m",
+        "label_horizon_bars": list(
+            dict.fromkeys(int(value) for value in args.horizon_bars)
+        ),
+        "entry_lag_bars": args.entry_lag_bars,
+        "note": (
+            "5m is the current observation and execution grid; labels may span "
+            "multiple horizons so holding-period research is not fixed to one day."
+        ),
     }
 
 
