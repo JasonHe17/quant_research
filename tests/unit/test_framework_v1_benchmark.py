@@ -34,6 +34,9 @@ def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
             "2",
             "--profile",
             "standard",
+            "--label-horizon-bars",
+            "48",
+            "240",
             "--dry-run",
         ],
         check=False,
@@ -54,12 +57,24 @@ def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
         "backtest_full_high_cost",
     }
     assert summary["config"]["profile"] == "standard"
+    assert summary["config"]["label_horizon_bars"] == [48, 240]
     assert summary["config"]["evaluation_workers"] == 8
     assert summary["config"]["backtest_workers"] == 2
     assert summary["config"]["backtest_memory_budget_gb"] is None
     assert "acceptance_plan" in summary
     assert "full_high_cost" in summary["backtests"]
     assert "build_baseline_a_alpha_dataset.py" in commands["dataset"][1]
+    assert commands["dataset"][
+        commands["dataset"].index("--horizon-bars") + 1 : commands["dataset"].index(
+            "--entry-lag-bars"
+        )
+    ] == ["48", "240"]
+    assert commands["factor_evaluation"][
+        commands["factor_evaluation"].index("--label-column") + 1
+    ] == "forward_return_48b"
+    assert commands["factor_evaluation"][
+        commands["factor_evaluation"].index("--horizon-label-columns") + 1
+    ] == "forward_return_240b"
     assert "run_baseline_a_real_backtest.py" in commands["backtest_full_base"][1]
     assert "--streaming-chunk" in commands["backtest_full_base"]
 

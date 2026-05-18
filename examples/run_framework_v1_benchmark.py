@@ -32,7 +32,7 @@ class FrameworkV1BenchmarkConfig:
     initial_cash: float
     top_n: int
     benchmark_lookback_bars: int
-    label_horizon_bars: int
+    label_horizon_bars: tuple[int, ...]
     label_entry_lag_bars: int
     commission_bps: float
     slippage_bps: float
@@ -172,7 +172,7 @@ def _benchmark_commands(
         "--label-name",
         "forward_return",
         "--horizon-bars",
-        str(config.label_horizon_bars),
+        *[str(value) for value in config.label_horizon_bars],
         "--entry-lag-bars",
         str(config.label_entry_lag_bars),
         "--limit-up-bps",
@@ -202,7 +202,7 @@ def _benchmark_commands(
         "--output-dir",
         str(factor_eval_dir),
         "--label-column",
-        "forward_return",
+        _primary_label_column(config),
         "--top-n",
         str(config.top_n),
         "--quantiles",
@@ -212,6 +212,9 @@ def _benchmark_commands(
         "--backend",
         config.evaluation_backend,
     ]
+    horizon_labels = _horizon_label_columns(config)
+    if horizon_labels:
+        evaluation_command.extend(["--horizon-label-columns", *horizon_labels])
     if config.skip_feature_correlation:
         evaluation_command.append("--skip-feature-correlation")
     if config.dataset_memory_budget_gb is not None:
@@ -884,7 +887,22 @@ def _jsonable_config(config: FrameworkV1BenchmarkConfig) -> dict[str, Any]:
     payload = asdict(config)
     payload["catalog_path"] = str(config.catalog_path)
     payload["output_dir"] = str(config.output_dir)
+    payload["label_horizon_bars"] = list(config.label_horizon_bars)
     return payload
+
+
+def _label_columns(config: FrameworkV1BenchmarkConfig) -> tuple[str, ...]:
+    if len(config.label_horizon_bars) == 1:
+        return ("forward_return",)
+    return tuple(f"forward_return_{horizon}b" for horizon in config.label_horizon_bars)
+
+
+def _primary_label_column(config: FrameworkV1BenchmarkConfig) -> str:
+    return _label_columns(config)[0]
+
+
+def _horizon_label_columns(config: FrameworkV1BenchmarkConfig) -> list[str]:
+    return list(_label_columns(config)[1:])
 
 
 def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
@@ -899,7 +917,7 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
         initial_cash=args.initial_cash,
         top_n=args.top_n,
         benchmark_lookback_bars=args.benchmark_lookback_bars,
-        label_horizon_bars=args.label_horizon_bars,
+        label_horizon_bars=tuple(dict.fromkeys(args.label_horizon_bars)),
         label_entry_lag_bars=args.label_entry_lag_bars,
         commission_bps=args.commission_bps,
         slippage_bps=args.slippage_bps,
@@ -962,7 +980,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--initial-cash", type=float, default=1_000_000.0)
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument("--benchmark-lookback-bars", type=int, default=1)
-    parser.add_argument("--label-horizon-bars", type=int, default=48)
+    parser.add_argument("--label-horizon-bars", type=int, nargs="+", default=[48])
     parser.add_argument("--label-entry-lag-bars", type=int, default=1)
     parser.add_argument("--commission-bps", type=float, default=3.0)
     parser.add_argument("--slippage-bps", type=float, default=1.0)
@@ -1084,7 +1102,6 @@ def _validate_args(args: argparse.Namespace) -> None:
     for name in (
         "top_n",
         "benchmark_lookback_bars",
-        "label_horizon_bars",
         "label_entry_lag_bars",
         "lot_size",
         "dataset_workers",
@@ -1093,6 +1110,8 @@ def _validate_args(args: argparse.Namespace) -> None:
     ):
         if getattr(args, name) <= 0:
             raise ValueError(f"--{name.replace('_', '-')} must be positive")
+    if any(value <= 0 for value in args.label_horizon_bars):
+        raise ValueError("--label-horizon-bars values must be positive")
     if not 0 <= args.min_trade_weight <= 1:
         raise ValueError("--min-trade-weight must be in [0, 1]")
     if args.padding_days < 0:
