@@ -48,6 +48,8 @@ Regime diagnostic artifact:
 | Score-health gate v1 | -4.28% | -27.88% | 41.92 | Helps, but still fails yearly stability. |
 | Volatility gate v1 | -15.96% | -31.57% | 48.25 | Does not identify the bad regime. |
 | Score-health gate v1 + drawdown brake | 8.18% | -27.19% | 46.49 | Best tested variant, still fails drawdown control. |
+| Market downside gate w48, 240-lookback, 70/90 q | -13.77% | -30.71% | 47.01 | Directionally helpful, too slow. |
+| Market downside gate w48, 120-lookback, 50/75 q, zero scale | -8.94% | -30.14% | 39.64 | Cuts trades and loss, still misses drawdown control. |
 
 The drawdown brake can stop additional damage after the drawdown is observed,
 but it does not prevent the initial drawdown event. That makes it a damage
@@ -66,3 +68,27 @@ state available before entry, not on realized portfolio drawdown. Promising
 inputs include recent market breadth, market-level downside momentum, liquidity
 stress, and limit-down pressure. A simple cross-sectional volatility proxy was
 tested and rejected.
+
+## Market-State Gate Prototype
+
+Added a dedicated `market_state` feature group for risk-control inputs rather
+than ordinary alpha admission. The generated columns use a `market_state_`
+prefix so they are not picked up by the existing `intraday_` alpha feature
+allowlist. Current outputs include market median return, downside pressure,
+breadth, weak breadth, limit-down rate, limit pressure, and rolling mean risk
+proxies.
+
+Artifacts:
+
+- Monthly 2024 dataset:
+  `runs/factor_research_smoke/2026_05_18_amihud_market_state_2024_monthly_dataset`
+- Conservative gate validation:
+  `runs/candidate_factor_portfolios/intraday_amihud_5m_market_state_gate_2024_validation_v2/validation_summary.json`
+- Fast gate validation:
+  `runs/candidate_factor_portfolios/intraday_amihud_5m_market_state_gate_fast_2024_validation/validation_summary.json`
+
+The market-state gate improves final 2024 PnL only when made aggressive, but it
+does not materially reduce the worst drawdown. This suggests the remaining
+problem is not just detecting stressed market state; the strategy also needs
+entry timing and portfolio construction changes that avoid large early exposure
+before the regime proxy has enough history.

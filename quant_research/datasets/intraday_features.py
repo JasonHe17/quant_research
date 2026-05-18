@@ -27,6 +27,7 @@ _VALID_GROUPS = {
     "risk_adjusted_momentum",
     "volume_confirmed_momentum",
     "intraday_gap",
+    "market_state",
     "market_downside_beta",
     "breadth_resilience",
     "limit_pressure_resilience",
@@ -65,6 +66,7 @@ class IntradayFeatureConfig:
     downside_turnover_decay_windows: tuple[int, ...] = (48,)
     sell_pressure_recovery_windows: tuple[int, ...] = (48,)
     market_downside_beta_windows: tuple[int, ...] = (48,)
+    market_state_windows: tuple[int, ...] = (48,)
     breadth_resilience_windows: tuple[int, ...] = (48,)
     limit_pressure_resilience_windows: tuple[int, ...] = (48,)
 
@@ -103,6 +105,7 @@ class IntradayFeatureConfig:
             ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
             ("sell_pressure_recovery_windows", self.sell_pressure_recovery_windows),
             ("market_downside_beta_windows", self.market_downside_beta_windows),
+            ("market_state_windows", self.market_state_windows),
             ("breadth_resilience_windows", self.breadth_resilience_windows),
             (
                 "limit_pressure_resilience_windows",
@@ -142,7 +145,7 @@ def build_intraday_feature_matrix(
         required.append("turnover")
     if groups & {"vwap_deviation"}:
         required.append("volume")
-    if "limit_pressure_resilience" in groups:
+    if groups & {"limit_pressure_resilience", "market_state"}:
         required.extend(["limit_up_open", "limit_down_open"])
     _require_columns(bars, tuple(required))
     frame = bars.sort_values(["instrument_id", "bar_end_time"]).copy()
@@ -307,6 +310,44 @@ def build_intraday_feature_matrix(
                 rolling_variance != 0.0
             )
             feature_columns.append(column)
+    if "market_state" in groups:
+        market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")
+        up_rate = one_bar_return.gt(0.0).where(one_bar_return.notna()).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_up_rate = frame["limit_up_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_down_rate = frame["limit_down_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        market_downside = (-market_return).clip(lower=0.0)
+        weak_breadth = (0.5 - up_rate).clip(lower=0.0)
+        limit_pressure = (limit_down_rate - limit_up_rate).clip(lower=0.0)
+        state_columns = {
+            "market_state_return_5m": market_return,
+            "market_state_downside_5m": market_downside,
+            "market_state_breadth_5m": up_rate,
+            "market_state_weak_breadth_5m": weak_breadth,
+            "market_state_limit_down_rate_5m": limit_down_rate,
+            "market_state_limit_pressure_5m": limit_pressure,
+        }
+        for column, values in state_columns.items():
+            output[column] = values
+            feature_columns.append(column)
+        for window in config.market_state_windows:
+            for base_name, values in (
+                ("downside_mean", market_downside),
+                ("weak_breadth_mean", weak_breadth),
+                ("limit_pressure_mean", limit_pressure),
+            ):
+                column = f"market_state_{base_name}_5m_w{window}"
+                output[column] = _rolling_timestamp_state(
+                    frame["bar_end_time"],
+                    values,
+                    window,
+                )
+                feature_columns.append(column)
     if "breadth_resilience" in groups:
         up_rate = one_bar_return.gt(0.0).where(one_bar_return.notna()).groupby(
             frame["bar_end_time"]
@@ -508,6 +549,21 @@ def _expanded_groups(groups: tuple[str, ...]) -> set[str]:
     if "all" not in selected:
         return selected
     return _VALID_GROUPS - {"all"}
+
+
+def _rolling_timestamp_state(
+    timestamps: pd.Series,
+    values: pd.Series,
+    window: int,
+) -> pd.Series:
+    timestamp_values = (
+        pd.DataFrame({"timestamp": timestamps, "value": values})
+        .drop_duplicates("timestamp")
+        .set_index("timestamp")["value"]
+        .sort_index()
+    )
+    rolling_values = timestamp_values.rolling(window, min_periods=window).mean()
+    return timestamps.map(rolling_values)
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

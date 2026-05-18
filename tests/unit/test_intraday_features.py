@@ -44,6 +44,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "risk_adjusted_momentum",
             "volume_confirmed_momentum",
             "intraday_gap",
+            "market_state",
             "market_downside_beta",
             "breadth_resilience",
             "limit_pressure_resilience",
@@ -73,6 +74,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         sell_pressure_absorption_windows=(3,),
         downside_turnover_decay_windows=(4,),
         sell_pressure_recovery_windows=(3,),
+        market_state_windows=(3,),
         market_downside_beta_windows=(3,),
         breadth_resilience_windows=(3,),
         limit_pressure_resilience_windows=(3,),
@@ -98,6 +100,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_risk_adjusted_momentum_5m_w3" in features
     assert "intraday_volume_confirmed_momentum_5m_w3" in features
     assert "intraday_gap_5m" in features
+    assert "market_state_downside_mean_5m_w3" in features
     assert "intraday_market_downside_beta_5m_w3" in features
     assert "intraday_breadth_resilience_5m_w3" in features
     assert "intraday_limit_pressure_resilience_5m_w3" in features
@@ -162,6 +165,7 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_risk_adjusted_momentum_5m_w48" in features
     assert "intraday_volume_confirmed_momentum_5m_w48" in features
     assert "intraday_gap_5m" in features
+    assert "market_state_downside_mean_5m_w48" in features
     assert "intraday_market_downside_beta_5m_w48" in features
     assert "intraday_breadth_resilience_5m_w48" in features
     assert "intraday_limit_pressure_resilience_5m_w48" in features
@@ -416,6 +420,85 @@ def test_breadth_resilience_uses_weak_market_breadth_state() -> None:
     assert values.loc[("b", "t1")] == pytest.approx(-0.05)
     assert values.loc[("c", "t1")] == pytest.approx(0.05)
     assert ("a", "t2") not in values.index
+
+
+def test_market_state_features_broadcast_cross_sectional_risk_state() -> None:
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "a",
+                "bar_end_time": "t0",
+                "close_price": 10.0,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "b",
+                "bar_end_time": "t0",
+                "close_price": 20.0,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "a",
+                "bar_end_time": "t1",
+                "close_price": 9.0,
+                "limit_up_open": False,
+                "limit_down_open": True,
+            },
+            {
+                "instrument_id": "b",
+                "bar_end_time": "t1",
+                "close_price": 19.0,
+                "limit_up_open": False,
+                "limit_down_open": True,
+            },
+            {
+                "instrument_id": "a",
+                "bar_end_time": "t2",
+                "close_price": 9.45,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "b",
+                "bar_end_time": "t2",
+                "close_price": 19.95,
+                "limit_up_open": True,
+                "limit_down_open": False,
+            },
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("market_state",),
+            market_state_windows=(2,),
+        ),
+    )
+
+    values = features.set_index(["instrument_id", "timestamp"])
+    expected_downside_t1 = 0.075
+
+    assert values.loc[("a", "t1"), "market_state_downside_5m"] == pytest.approx(
+        expected_downside_t1
+    )
+    assert values.loc[("b", "t1"), "market_state_downside_5m"] == pytest.approx(
+        expected_downside_t1
+    )
+    assert values.loc[("a", "t1"), "market_state_limit_pressure_5m"] == pytest.approx(
+        1.0
+    )
+    assert values.loc[("a", "t2"), "market_state_limit_pressure_mean_5m_w2"] == (
+        pytest.approx(0.5)
+    )
+    assert values.loc[("b", "t2"), "market_state_limit_pressure_mean_5m_w2"] == (
+        pytest.approx(0.5)
+    )
+    assert values.loc[("a", "t2"), "market_state_weak_breadth_mean_5m_w2"] == (
+        pytest.approx(0.25)
+    )
 
 
 def test_intraday_feature_config_rejects_unknown_group() -> None:
