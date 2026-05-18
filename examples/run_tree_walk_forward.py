@@ -110,6 +110,12 @@ def _run_fold(
             args.dataset_dir,
             "--output-dir",
             str(model_dir),
+            "--label-column",
+            args.label_column,
+            *_optional_repeated_args(
+                "--horizon-label-columns",
+                args.horizon_label_columns,
+            ),
             "--train-end",
             fold.train_end,
             "--valid-start",
@@ -243,6 +249,8 @@ def _write_summary(
         "params": {
             "dataset_dir": args.dataset_dir,
             "catalog_path": args.catalog_path,
+            "label_column": args.label_column,
+            "horizon_label_columns": args.horizon_label_columns,
             "top_n": args.top_n,
             "initial_cash": args.initial_cash,
             "commission_bps": args.commission_bps,
@@ -319,6 +327,8 @@ def _parse_args() -> argparse.Namespace:
         default="../quant_dataset/canonical_store/catalog/quant_research.duckdb",
     )
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--label-column", default="forward_return")
+    parser.add_argument("--horizon-label-columns", nargs="+")
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument("--initial-cash", type=float, default=1_000_000.0)
     parser.add_argument("--commission-bps", type=float, default=3.0)
@@ -354,6 +364,12 @@ def _parse_args() -> argparse.Namespace:
     if not 0 < args.max_bar_turnover_participation <= 1:
         raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
     return args
+
+
+def _optional_repeated_args(flag: str, values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    return [flag, *values]
 
 
 if __name__ == "__main__":

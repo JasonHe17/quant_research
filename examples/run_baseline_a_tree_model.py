@@ -32,6 +32,7 @@ def main() -> None:
         else _infer_feature_columns_from_path(
             dataset_paths[0],
             label_column=args.label_column,
+            horizon_label_columns=tuple(args.horizon_label_columns or ()),
         )
     )
     splits = _load_time_splits(
@@ -89,6 +90,7 @@ def main() -> None:
         "params": {
             "dataset_paths": [str(path) for path in dataset_paths],
             "label_column": args.label_column,
+            "horizon_label_columns": args.horizon_label_columns,
             "feature_columns": list(feature_columns),
             "train_end": args.train_end,
             "valid_start": args.valid_start,
@@ -129,10 +131,25 @@ def _infer_feature_columns_from_path(
     path: Path,
     *,
     label_column: str,
+    horizon_label_columns: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     frame = pd.read_parquet(path)
     try:
-        return infer_feature_columns(frame, label_column=label_column)
+        exclude_columns: list[str] = []
+        for column in horizon_label_columns:
+            exclude_columns.extend(
+                [
+                    column,
+                    f"{column}_rank",
+                    f"{column}_exit_timestamp",
+                    f"{column}_exit_price",
+                ]
+            )
+        return infer_feature_columns(
+            frame,
+            label_column=label_column,
+            exclude_columns=tuple(exclude_columns),
+        )
     finally:
         del frame
 
@@ -201,6 +218,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-paths", nargs="+")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--label-column", default="forward_return")
+    parser.add_argument("--horizon-label-columns", nargs="+")
     parser.add_argument("--feature-columns", nargs="+")
     parser.add_argument("--train-end", required=True)
     parser.add_argument("--valid-start")
