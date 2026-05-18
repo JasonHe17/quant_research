@@ -53,7 +53,7 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
 
     command = _scenario_command(args, scenario)
 
-    assert command[command.index("--backtest-policies") + 1] == "partial_rebalance_daily"
+    assert "--backtest-policies" not in command
     assert command[command.index("--label-column") + 1] == "forward_return"
     assert command[command.index("--methods") + 1 : command.index("--partition-start")] == [
         "decorrelated",
@@ -106,7 +106,7 @@ def test_candidate_policy_validation_command_supports_single_calibrated_optimize
     command = _scenario_command(args, scenario)
 
     assert command[command.index("--backtest-policy-set") + 1] == "single"
-    assert command[command.index("--backtest-policies") + 1] == "single"
+    assert "--backtest-policies" not in command
     assert command[command.index("--trade-policy") + 1] == "cost_aware_optimizer"
     assert command[command.index("--rebalance-every-n-bars") + 1] == "48"
     assert command[command.index("--policy-estimated-cost-bps") + 1] == "9.0"
@@ -123,6 +123,27 @@ def test_candidate_policy_validation_command_supports_single_calibrated_optimize
     assert command[command.index("--optimizer-score-to-edge-bps") + 1] == "0.0"
     assert command[command.index("--optimizer-risk-penalty-multiplier") + 1] == "0.0"
     assert command[command.index("--optimizer-weighting") + 1] == "equal"
+
+
+def test_candidate_policy_validation_command_supports_explicit_policy_subset(
+    tmp_path: Path,
+) -> None:
+    args = _validation_args(
+        output_dir=str(tmp_path),
+        backtest_policies=[
+            "partial_rebalance_daily",
+            "cost_aware_optimizer_daily",
+        ],
+    )
+    scenario = _validation_scenarios(args, years=[2024])[0]
+
+    command = _scenario_command(args, scenario)
+
+    subset_start = command.index("--backtest-policies") + 1
+    subset_end = command.index("--enforce-registry")
+    assert command[
+        subset_start:subset_end
+    ] == ["partial_rebalance_daily", "cost_aware_optimizer_daily"]
 
 
 def test_candidate_policy_validation_dry_run_wires_factor_risk_gate(
@@ -402,6 +423,7 @@ def _validation_args(**overrides: object) -> object:
         "include_features": [],
         "primary_method": "decorrelated",
         "backtest_policy_set": "comparison",
+        "backtest_policies": None,
         "policy": "partial_rebalance_daily",
         "top_n": 50,
         "score_diagnostics_top_n": 50,

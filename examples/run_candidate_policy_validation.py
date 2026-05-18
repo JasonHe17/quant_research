@@ -296,8 +296,6 @@ def _scenario_command(
         str(args.lot_size),
         "--backtest-policy-set",
         args.backtest_policy_set,
-        "--backtest-policies",
-        args.policy,
         "--trade-policy",
         args.trade_policy,
         "--rebalance-every-n-bars",
@@ -360,6 +358,8 @@ def _scenario_command(
         str(scenario.memory_estimate_gb),
         ]
     )
+    if args.backtest_policies:
+        command.extend(["--backtest-policies", *args.backtest_policies])
     if args.enforce_registry:
         command.append("--enforce-registry")
     else:
@@ -824,6 +824,7 @@ def _validation_summary(
             "methods": args.methods,
             "primary_method": args.primary_method,
             "backtest_policy_set": args.backtest_policy_set,
+            "backtest_policies": args.backtest_policies,
             "policy": args.policy,
             "years": years,
             "top_n": args.top_n,
@@ -1194,6 +1195,14 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--primary-method", default="decorrelated")
     parser.add_argument("--policy", default="partial_rebalance_daily")
+    parser.add_argument(
+        "--backtest-policies",
+        nargs="+",
+        help=(
+            "optional subset of generated backtest policy names to run; "
+            "--policy remains the primary policy used for validation checks"
+        ),
+    )
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument(
         "--score-diagnostics-top-n",
