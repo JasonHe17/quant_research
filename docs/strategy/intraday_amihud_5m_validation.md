@@ -45,17 +45,24 @@ Regime diagnostic artifact:
 | Baseline yearly path budget | -15.77% | -32.08% | 50.07 | Fails. |
 | Path budget pacing = 1.0 | -12.11% | -32.08% | 50.41 | Insufficient. |
 | Drawdown brake -7%, reduced scale 0 | 5.91% | -31.20% | 54.03 | Improves final return, does not control tail drawdown. |
+| Score-health gate v1 | -4.28% | -27.88% | 41.92 | Helps, but still fails yearly stability. |
+| Volatility gate v1 | -15.96% | -31.57% | 48.25 | Does not identify the bad regime. |
+| Score-health gate v1 + drawdown brake | 8.18% | -27.19% | 46.49 | Best tested variant, still fails drawdown control. |
 
 The drawdown brake can stop additional damage after the drawdown is observed,
 but it does not prevent the initial drawdown event. That makes it a damage
-control tool, not a sufficient promotion gate.
+control tool, not a sufficient promotion gate. The lagged score-health gate is
+the best pre-trade proxy tested so far, but it reacts too late to prevent the
+January/February 2024 loss.
 
 ## Decision
 
 Do not promote `intraday_amihud_5m` as a standalone factor yet.
 
-Next research step: build a pre-trade regime gate that blocks or scales down the
-factor before January/February 2024-like conditions. The gate should be based on
-observable state available before entry, not on realized portfolio drawdown.
-Promising inputs include recent market breadth, market-level downside momentum,
-liquidity stress, and limit-down pressure.
+Next research step: add earlier market-state features to the alpha dataset and
+build a pre-trade regime gate that blocks or scales down the factor before
+January/February 2024-like conditions. The gate should be based on observable
+state available before entry, not on realized portfolio drawdown. Promising
+inputs include recent market breadth, market-level downside momentum, liquidity
+stress, and limit-down pressure. A simple cross-sectional volatility proxy was
+tested and rejected.
