@@ -113,6 +113,7 @@ def main() -> None:
         max_factor_contribution_share=args.factor_max_contribution_share,
         factor_health_schedule=factor_health_schedule,
         diagnostics_top_n=args.score_diagnostics_top_n,
+        diagnostics_label_column=args.label_column,
         forecast_calibration_config=_forecast_calibration_config(args),
     )
     summary = {
@@ -168,6 +169,7 @@ def _load_correlation(path: Path) -> pd.DataFrame:
 def _summary_params(args: argparse.Namespace) -> dict[str, object]:
     params: dict[str, object] = {
         "dataset_dir": args.dataset_dir,
+        "label_column": args.label_column,
         "admission_report": args.admission_report,
         "registry": args.registry,
         "enforce_registry": args.enforce_registry,
@@ -349,6 +351,7 @@ def _build_factor_health_schedule(
             spread_ceiling=args.factor_health_spread_ceiling,
         ),
         top_n=args.score_diagnostics_top_n or args.top_n,
+        label_column=args.label_column,
     )
 
 
@@ -365,6 +368,7 @@ def _forecast_calibration_config(
         lookback_windows=args.forecast_calibration_lookback_windows,
         min_periods=args.forecast_calibration_min_periods,
         label_lag_windows=args.forecast_calibration_label_lag_windows,
+        label_column=args.label_column,
         bucket_count=args.forecast_calibration_bucket_count,
         risk_multiplier=args.forecast_calibration_risk_multiplier,
         max_abs_edge_bps=args.forecast_calibration_max_abs_edge_bps,
@@ -901,6 +905,7 @@ def _parse_args() -> argparse.Namespace:
         "--dataset-dir",
         default="runs/framework_v1_acceptance/standard/alpha_dataset",
     )
+    parser.add_argument("--label-column", default="forward_return")
     parser.add_argument(
         "--admission-report",
         default=(
@@ -1115,6 +1120,8 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.max_partitions is not None and args.max_partitions <= 0:
         raise ValueError("--max-partitions must be positive")
+    if not args.label_column:
+        raise ValueError("--label-column must be non-empty")
     if args.partition_start and args.partition_end and args.partition_start > args.partition_end:
         raise ValueError("--partition-start must not be after --partition-end")
     if args.decorrelation_ridge < 0:

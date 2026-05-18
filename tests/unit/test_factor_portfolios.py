@@ -303,6 +303,7 @@ def test_build_factor_health_schedule_uses_only_lagged_labels(tmp_path: Path) ->
                 "instrument_id": instrument,
                 "alpha_a": value,
                 "forward_return": value if index == 0 else -value,
+                "forward_return_240b": 10.0 * (value if index == 0 else -value),
             }
             for index in range(4)
             for instrument, value in (("a", 1.0), ("b", 2.0), ("c", 3.0))
@@ -324,9 +325,11 @@ def test_build_factor_health_schedule_uses_only_lagged_labels(tmp_path: Path) ->
             spread_ceiling=1.0,
         ),
         top_n=1,
+        label_column="forward_return_240b",
     )
 
     assert schedule.loc[0, "shrink_reason"] == "warmup"
+    assert schedule.loc[0, "label_column"] == "forward_return_240b"
     assert schedule.loc[1, "weight_scale"] == pytest.approx(1.0)
     assert schedule.loc[2, "weight_scale"] == pytest.approx(0.25)
 
@@ -340,6 +343,7 @@ def test_factor_contribution_diagnostics_reports_top_concentration() -> None:
                 "alpha_a": 1.0,
                 "alpha_b": 1.0,
                 "forward_return": 0.01,
+                "forward_return_240b": 0.10,
             },
             {
                 "timestamp": "t0",
@@ -347,6 +351,7 @@ def test_factor_contribution_diagnostics_reports_top_concentration() -> None:
                 "alpha_a": 2.0,
                 "alpha_b": 1.0,
                 "forward_return": 0.02,
+                "forward_return_240b": 0.20,
             },
             {
                 "timestamp": "t0",
@@ -354,6 +359,7 @@ def test_factor_contribution_diagnostics_reports_top_concentration() -> None:
                 "alpha_a": 3.0,
                 "alpha_b": 1.0,
                 "forward_return": 0.03,
+                "forward_return_240b": 0.30,
             },
         ]
     )
@@ -375,8 +381,11 @@ def test_factor_contribution_diagnostics_reports_top_concentration() -> None:
         factor_health=None,
         max_factor_contribution_share=0.5,
         top_n=2,
+        label_column="forward_return_240b",
     )
 
+    assert diagnostics.loc[0, "label_column"] == "forward_return_240b"
+    assert diagnostics.loc[0, "top_score_mean_label"] == pytest.approx(0.25)
     assert diagnostics.loc[0, "largest_contribution_feature"] == "alpha_a"
     assert diagnostics.loc[0, "largest_abs_contribution_share"] <= 0.5
 
@@ -390,12 +399,14 @@ def test_write_score_partitions_writes_one_partition_per_method(tmp_path: Path) 
                 "instrument_id": "a",
                 "alpha_a": 1.0,
                 "forward_return": 0.01,
+                "forward_return_240b": 0.10,
             },
             {
                 "timestamp": "t0",
                 "instrument_id": "b",
                 "alpha_a": 2.0,
                 "forward_return": 0.02,
+                "forward_return_240b": 0.20,
             },
         ]
     ).to_parquet(dataset_path, index=False)
@@ -406,6 +417,7 @@ def test_write_score_partitions_writes_one_partition_per_method(tmp_path: Path) 
         candidates=(CandidateFactor("alpha_a", 1, 0.02),),
         weights_by_method={"equal": {"alpha_a": 1.0}},
         diagnostics_top_n=1,
+        diagnostics_label_column="forward_return_240b",
     )
 
     assert summary["methods"]["equal"]["row_count"] == 2
@@ -417,6 +429,14 @@ def test_write_score_partitions_writes_one_partition_per_method(tmp_path: Path) 
         / "diagnostics"
         / "factor_contribution_2024_01.csv"
     ).exists()
+    diagnostics = pd.read_csv(
+        tmp_path
+        / "scores"
+        / "equal"
+        / "diagnostics"
+        / "factor_contribution_2024_01.csv"
+    )
+    assert diagnostics.loc[0, "label_column"] == "forward_return_240b"
 
 
 def test_write_score_partitions_can_attach_calibrated_forecasts(tmp_path: Path) -> None:
@@ -761,6 +781,7 @@ def test_candidate_factor_summary_params_record_backtest_policy_set() -> None:
 def _portfolio_args(**overrides: object) -> object:
     defaults = {
         "dataset_dir": "dataset",
+        "label_column": "forward_return",
         "admission_report": "admission.json",
         "registry": "configs/factors/factor_registry.json",
         "enforce_registry": True,

@@ -179,9 +179,12 @@ def build_factor_health_schedule(
     candidates: tuple[CandidateFactor, ...],
     config: FactorHealthConfig,
     top_n: int,
+    label_column: str = "forward_return",
 ) -> pd.DataFrame:
     """Build lagged rolling per-factor health scales from matured labels."""
 
+    if not label_column:
+        raise ValueError("label_column must be non-empty")
     if top_n <= 0:
         raise ValueError("top_n must be positive")
     rows: list[dict[str, Any]] = []
@@ -189,13 +192,14 @@ def build_factor_health_schedule(
     for dataset_path in dataset_paths:
         frame = pd.read_parquet(
             dataset_path,
-            columns=["timestamp", "instrument_id", "forward_return", *features],
+            columns=["timestamp", "instrument_id", label_column, *features],
         )
         rows.extend(
             _factor_health_observations(
                 frame,
                 candidates=candidates,
                 top_n=top_n,
+                label_column=label_column,
             )
         )
         del frame
@@ -321,10 +325,13 @@ def write_score_partitions(
     max_factor_contribution_share: float | None = None,
     factor_health_schedule: pd.DataFrame | None = None,
     diagnostics_top_n: int | None = None,
+    diagnostics_label_column: str = "forward_return",
     forecast_calibration_config: ScoreForecastCalibrationConfig | None = None,
 ) -> dict[str, Any]:
     """Write composite score parquet partitions for each method."""
 
+    if not diagnostics_label_column:
+        raise ValueError("diagnostics_label_column must be non-empty")
     output_dir.mkdir(parents=True, exist_ok=True)
     features = [factor.feature for factor in candidates]
     methods: dict[str, dict[str, Any]] = {}
@@ -347,7 +354,7 @@ def write_score_partitions(
         for dataset_path in dataset_paths:
             columns = ["timestamp", "instrument_id", *features]
             if diagnostics_top_n is not None:
-                columns.append("forward_return")
+                columns.append(diagnostics_label_column)
             if forecast_calibration_config is not None:
                 columns.append(forecast_calibration_config.label_column)
             columns = list(dict.fromkeys(columns))
@@ -415,6 +422,7 @@ def write_score_partitions(
                     factor_health=health,
                     max_factor_contribution_share=max_factor_contribution_share,
                     top_n=diagnostics_top_n,
+                    label_column=diagnostics_label_column,
                 )
                 diagnostics_path = diagnostics_dir / f"factor_contribution_{partition}.csv"
                 diagnostics.to_csv(diagnostics_path, index=False)
@@ -458,12 +466,15 @@ def factor_contribution_diagnostics(
     factor_health: pd.DataFrame | None,
     max_factor_contribution_share: float | None = None,
     top_n: int,
+    label_column: str = "forward_return",
 ) -> pd.DataFrame:
     """Summarize factor contribution concentration in top-score baskets."""
 
+    if not label_column:
+        raise ValueError("label_column must be non-empty")
     if top_n <= 0:
         raise ValueError("top_n must be positive")
-    _require_columns(frame, ("timestamp", "instrument_id", "forward_return"))
+    _require_columns(frame, ("timestamp", "instrument_id", label_column))
     contribution_frame = _factor_contribution_frame(
         frame,
         candidates=candidates,
@@ -477,7 +488,7 @@ def factor_contribution_diagnostics(
         how="left",
     )
     joined = joined.merge(
-        frame.loc[:, ["timestamp", "instrument_id", "forward_return"]],
+        frame.loc[:, ["timestamp", "instrument_id", label_column]],
         on=["timestamp", "instrument_id"],
         how="left",
     )
@@ -502,7 +513,8 @@ def factor_contribution_diagnostics(
             {
                 "timestamp": timestamp,
                 "top_n": int(len(top)),
-                "top_score_mean_label": _mean(top["forward_return"]),
+                "label_column": label_column,
+                "top_score_mean_label": _mean(top[label_column]),
                 "largest_contribution_feature": largest_feature,
                 "largest_abs_contribution_share": largest_share,
                 "top_two_abs_contribution_share": top_two_share,
@@ -517,26 +529,28 @@ def _factor_health_observations(
     *,
     candidates: tuple[CandidateFactor, ...],
     top_n: int,
+    label_column: str,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for timestamp, group in frame.groupby("timestamp", sort=True):
         for factor in candidates:
-            valid = group.dropna(subset=[factor.feature, "forward_return"]).copy()
+            valid = group.dropna(subset=[factor.feature, label_column]).copy()
             if valid.empty:
                 rank_ic = None
                 spread = None
             else:
                 ranks = valid[factor.feature].rank(method="average", pct=True)
                 oriented = (ranks - 0.5) * factor.direction
-                rank_ic = _correlation(oriented, valid["forward_return"])
+                rank_ic = _correlation(oriented, valid[label_column])
                 n = min(top_n, len(valid))
                 top = valid.loc[oriented.nlargest(n).index] if n else valid
                 bottom = valid.loc[oriented.nsmallest(n).index] if n else valid
-                spread = _mean(top["forward_return"]) - _mean(bottom["forward_return"])
+                spread = _mean(top[label_column]) - _mean(bottom[label_column])
             rows.append(
                 {
                     "timestamp": timestamp,
                     "feature": factor.feature,
+                    "label_column": label_column,
                     "factor_rank_ic": rank_ic,
                     "factor_top_minus_bottom_label": spread,
                 }

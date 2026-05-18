@@ -54,6 +54,7 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     command = _scenario_command(args, scenario)
 
     assert command[command.index("--backtest-policies") + 1] == "partial_rebalance_daily"
+    assert command[command.index("--label-column") + 1] == "forward_return"
     assert command[command.index("--methods") + 1 : command.index("--partition-start")] == [
         "decorrelated",
         "equal",
@@ -388,6 +389,7 @@ def test_candidate_policy_validation_collects_factor_summaries(tmp_path: Path) -
 def _validation_args(**overrides: object) -> object:
     defaults = {
         "dataset_dir": "dataset",
+        "label_column": "forward_return",
         "admission_report": "admission.json",
         "factor_correlation": "correlation.csv",
         "registry": "configs/factors/factor_registry.json",

@@ -250,6 +250,8 @@ def _scenario_command(
         str(EXAMPLES_DIR / "run_candidate_factor_portfolios.py"),
         "--dataset-dir",
         args.dataset_dir,
+        "--label-column",
+        args.label_column,
         "--admission-report",
         args.admission_report,
         "--factor-correlation",
@@ -813,6 +815,7 @@ def _validation_summary(
         "params": {
             "profile": args.profile,
             "dataset_dir": args.dataset_dir,
+            "label_column": args.label_column,
             "admission_report": args.admission_report,
             "factor_correlation": args.factor_correlation,
             "registry": args.registry,
@@ -1138,6 +1141,7 @@ def _parse_args() -> argparse.Namespace:
         "--dataset-dir",
         default="runs/framework_v1_acceptance/standard/alpha_dataset",
     )
+    parser.add_argument("--label-column", default="forward_return")
     parser.add_argument(
         "--admission-report",
         default=(
@@ -1368,6 +1372,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--primary-method must be included in --methods")
     if args.top_n <= 0:
         raise ValueError("--top-n must be positive")
+    if not args.label_column:
+        raise ValueError("--label-column must be non-empty")
     if args.score_diagnostics_top_n <= 0:
         raise ValueError("--score-diagnostics-top-n must be positive")
     if args.factor_max_weight is not None and not 0 < args.factor_max_weight <= 1:
