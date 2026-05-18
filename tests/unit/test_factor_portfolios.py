@@ -547,6 +547,8 @@ def test_candidate_factor_policy_set_builds_standard_comparison_specs() -> None:
         "entry_exit_buffer_every_bar",
         "entry_exit_buffer_daily",
         "partial_rebalance_daily",
+        "cost_aware_optimizer_every_bar",
+        "cost_aware_optimizer_daily",
     ]
     top_k_drop = specs[1]
     assert top_k_drop.trade_policy == "rank_buffer_drop"
@@ -559,6 +561,12 @@ def test_candidate_factor_policy_set_builds_standard_comparison_specs() -> None:
     assert buffered.policy_exit_rank == 150
     assert buffered.policy_no_trade_weight_band == pytest.approx(0.002)
     assert specs[4].policy_partial_rebalance_rate == pytest.approx(0.5)
+    assert specs[5].trade_policy == "cost_aware_optimizer"
+    assert specs[5].rebalance_every_n_bars == 1
+    assert specs[5].optimizer_weighting == "utility"
+    assert specs[6].trade_policy == "cost_aware_optimizer"
+    assert specs[6].rebalance_every_n_bars == 48
+    assert specs[6].policy_partial_rebalance_rate == pytest.approx(0.5)
 
 
 def test_candidate_factor_policy_set_filters_named_specs() -> None:

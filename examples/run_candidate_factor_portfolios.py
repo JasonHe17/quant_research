@@ -749,6 +749,20 @@ def _backtest_policy_specs(args: argparse.Namespace) -> list[BacktestPolicySpec]
             policy_partial_rebalance_rate=args.policy_set_partial_rebalance_rate,
             **base,
         ),
+        BacktestPolicySpec(
+            name="cost_aware_optimizer_every_bar",
+            trade_policy="cost_aware_optimizer",
+            rebalance_every_n_bars=1,
+            policy_partial_rebalance_rate=1.0,
+            **{key: value for key, value in base.items() if key != "trade_policy"},
+        ),
+        BacktestPolicySpec(
+            name="cost_aware_optimizer_daily",
+            trade_policy="cost_aware_optimizer",
+            rebalance_every_n_bars=daily_rebalance,
+            policy_partial_rebalance_rate=args.policy_set_partial_rebalance_rate,
+            **{key: value for key, value in base.items() if key != "trade_policy"},
+        ),
     ]
     return _filter_backtest_policy_specs(specs, args.backtest_policies)
 
