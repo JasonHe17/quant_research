@@ -24,6 +24,7 @@ from examples.run_tree_score_backtest import (
     _build_target_weights,
     _load_ranked_score_signals,
     _next_segment_end,
+    _resolved_policy_estimated_cost_bps,
     _score_rank_limit,
     _run_tree_score_backtest_streaming,
 )
@@ -989,6 +990,20 @@ def test_tree_score_rank_limit_includes_optimizer_candidate_rank(tmp_path) -> No
     )
 
     assert _score_rank_limit(params) == 5
+
+
+def test_tree_score_backtest_default_policy_cost_uses_round_trip_trading_costs(
+    tmp_path,
+) -> None:
+    params = replace(
+        _tree_score_params(tmp_path),
+        commission_bps=3.0,
+        slippage_bps=1.0,
+        sell_stamp_tax_bps=5.0,
+        policy_estimated_cost_bps=None,  # type: ignore[arg-type]
+    )
+
+    assert _resolved_policy_estimated_cost_bps(params) == pytest.approx(13.0)
 
 
 def test_tree_score_loader_preserves_optimizer_forecast_columns(tmp_path) -> None:
