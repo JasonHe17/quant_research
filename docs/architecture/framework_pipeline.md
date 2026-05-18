@@ -66,8 +66,22 @@ conda run -n quant python examples/run_framework_v1_benchmark.py \
     runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json
 ```
 
-That optional stage calls `examples/run_candidate_policy_validation.py`, writes
-`candidate_policy_validation/validation_summary.json`, and surfaces the
+For an end-to-end benchmark, use `--auto-factor-admission`. In that mode the
+benchmark first completes dataset, factor evaluation, and regression backtests;
+writes an intermediate benchmark summary; runs
+`examples/analyze_framework_v1_acceptance.py` to create
+`factor_admission/factor_admission_report.json`; and then runs
+`examples/run_candidate_policy_validation.py` with that generated admission
+report.
+
+```bash
+conda run -n quant python examples/run_framework_v1_benchmark.py \
+  --output-dir runs/framework_v1_acceptance/standard \
+  --auto-factor-admission
+```
+
+The policy validation stage writes
+`candidate_policy_validation/validation_summary.json` and surfaces the
 `policy_leaderboard` in the benchmark summary. The leaderboard compares policy
 families across produced scenarios, so the framework can choose between slower
 holding policies and faster cost-aware optimizers from measured return, cost,
