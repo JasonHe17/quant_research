@@ -55,6 +55,10 @@ class FrameworkV1BenchmarkConfig:
     partition: str
     padding_days: int
     cost_stress_multiplier: float
+    candidate_admission_report: Path | None
+    candidate_policy_validation_methods: tuple[str, ...]
+    candidate_policy_validation_policy: str
+    candidate_policy_validation_memory_gb: float
     backtest_workers: int
     backtest_memory_budget_gb: float | None
     full_backtest_memory_gb: float
@@ -141,6 +145,8 @@ def run_framework_v1_benchmark(
     _run_required_stage(config, commands, "dataset", logs_dir)
     _run_required_stage(config, commands, "factor_evaluation", logs_dir)
     _run_backtest_commands(config, commands=commands, logs_dir=logs_dir)
+    if config.candidate_admission_report is not None:
+        _run_required_stage(config, commands, "candidate_policy_validation", logs_dir)
     summary = _collect_completed_summary(config, commands=commands)
     _write_summary(output_dir, summary)
     if config.enforce_gates and summary["acceptance"]["overall_status"] == "fail":
@@ -231,6 +237,8 @@ def _benchmark_commands(
     }
     for scenario in _backtest_scenarios(config):
         commands[f"backtest_{scenario.name}"] = _backtest_command(config, scenario)
+    if config.candidate_admission_report is not None:
+        commands["candidate_policy_validation"] = _candidate_policy_validation_command(config)
     return commands
 
 
@@ -358,6 +366,71 @@ def _backtest_scenarios(config: FrameworkV1BenchmarkConfig) -> list[BacktestScen
             )
         )
     return scenarios
+
+
+def _candidate_policy_validation_command(config: FrameworkV1BenchmarkConfig) -> list[str]:
+    output_dir = config.output_dir / "candidate_policy_validation"
+    command = [
+        sys.executable,
+        str(EXAMPLES_DIR / "run_candidate_policy_validation.py"),
+        "--dataset-dir",
+        str(config.output_dir / "alpha_dataset"),
+        "--label-column",
+        _primary_label_column(config),
+        "--admission-report",
+        str(config.candidate_admission_report),
+        "--factor-correlation",
+        str(config.output_dir / "factor_evaluation" / "feature_correlation.csv"),
+        "--output-dir",
+        str(output_dir),
+        "--profile",
+        config.profile,
+        "--methods",
+        *config.candidate_policy_validation_methods,
+        "--primary-method",
+        config.candidate_policy_validation_methods[0],
+        "--policy",
+        config.candidate_policy_validation_policy,
+        "--top-n",
+        str(config.top_n),
+        "--initial-cash",
+        str(config.initial_cash),
+        "--commission-bps",
+        str(config.commission_bps),
+        "--slippage-bps",
+        str(config.slippage_bps),
+        "--sell-stamp-tax-bps",
+        str(config.sell_stamp_tax_bps),
+        "--min-commission",
+        str(config.min_commission),
+        "--cost-stress-multiplier",
+        str(config.cost_stress_multiplier),
+        "--lot-size",
+        str(config.lot_size),
+        "--min-trade-weight",
+        str(config.min_trade_weight),
+        "--limit-up-bps",
+        str(config.limit_up_bps),
+        "--limit-down-bps",
+        str(config.limit_down_bps),
+        "--data-access-mode",
+        config.data_access_mode,
+        "--streaming-chunk",
+        config.streaming_chunk,
+        "--streaming-chunk-padding-days",
+        str(config.streaming_chunk_padding_days),
+        "--backtest-workers",
+        str(config.backtest_workers),
+        "--backtest-memory-estimate-gb",
+        str(config.candidate_policy_validation_memory_gb),
+    ]
+    if config.exclude_st:
+        command.append("--exclude-st")
+    else:
+        command.append("--no-exclude-st")
+    if config.resume_existing:
+        command.append("--resume-existing")
+    return command
 
 
 def _years_in_window(start: str, end: str) -> list[int]:
@@ -532,6 +605,8 @@ def _stage_complete(config: FrameworkV1BenchmarkConfig, stage_name: str) -> bool
         summaries = artifacts["backtest_summaries"]
         if isinstance(summaries, dict):
             return Path(str(summaries.get(scenario_name, ""))).exists()
+    if stage_name == "candidate_policy_validation":
+        return Path(str(artifacts["candidate_policy_validation_summary"])).exists()
     return False
 
 
@@ -544,6 +619,7 @@ def _collect_completed_summary(
     dataset_summary = _read_json(Path(artifacts["dataset_summary"]))
     evaluation_summary = _read_json(Path(artifacts["factor_evaluation_summary"]))
     backtest_summaries = _read_backtest_summaries(config)
+    candidate_policy_validation = _read_candidate_policy_validation_summary(config)
     dataset_partitions = dataset_summary.get("partitions", [])
     dataset_rows = sum(int(row.get("dataset_row_count", 0)) for row in dataset_partitions)
     label_rows = sum(int(row.get("label_row_count", 0)) for row in dataset_partitions)
@@ -576,8 +652,25 @@ def _collect_completed_summary(
         dataset=dataset,
         factor_evaluation=factor_evaluation,
         backtests=backtest_summaries,
+        candidate_policy_validation=candidate_policy_validation,
         acceptance=acceptance,
     )
+
+
+def _read_candidate_policy_validation_summary(config: FrameworkV1BenchmarkConfig) -> dict[str, Any]:
+    if config.candidate_admission_report is None:
+        return {}
+    path = config.output_dir / "candidate_policy_validation" / "validation_summary.json"
+    if not path.exists():
+        return {}
+    payload = _read_json(path)
+    return {
+        "artifact_dir": str(path.parent),
+        "summary": str(path),
+        "status": payload.get("status"),
+        "policy_leaderboard": payload.get("policy_leaderboard", []),
+        "validation": payload.get("validation", {}),
+    }
 
 
 def _read_backtest_summaries(config: FrameworkV1BenchmarkConfig) -> dict[str, Any]:
@@ -830,6 +923,7 @@ def _benchmark_summary(
     dataset: dict[str, Any] | None = None,
     factor_evaluation: dict[str, Any] | None = None,
     backtests: dict[str, Any] | None = None,
+    candidate_policy_validation: dict[str, Any] | None = None,
     acceptance: dict[str, Any] | None = None,
     acceptance_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -843,6 +937,7 @@ def _benchmark_summary(
         "dataset": dataset or {},
         "factor_evaluation": factor_evaluation or {},
         "backtests": backtests or {},
+        "candidate_policy_validation": candidate_policy_validation or {},
         "acceptance": acceptance or {},
         "acceptance_plan": acceptance_plan or {},
     }
@@ -868,6 +963,12 @@ def _artifact_paths(config: FrameworkV1BenchmarkConfig) -> dict[str, str]:
             )
             for scenario in _backtest_scenarios(config)
         },
+        "candidate_policy_validation_dir": str(
+            config.output_dir / "candidate_policy_validation"
+        ),
+        "candidate_policy_validation_summary": str(
+            config.output_dir / "candidate_policy_validation" / "validation_summary.json"
+        ),
         "logs_dir": str(config.output_dir / "logs"),
     }
 
@@ -888,6 +989,14 @@ def _jsonable_config(config: FrameworkV1BenchmarkConfig) -> dict[str, Any]:
     payload["catalog_path"] = str(config.catalog_path)
     payload["output_dir"] = str(config.output_dir)
     payload["label_horizon_bars"] = list(config.label_horizon_bars)
+    payload["candidate_admission_report"] = (
+        str(config.candidate_admission_report)
+        if config.candidate_admission_report is not None
+        else None
+    )
+    payload["candidate_policy_validation_methods"] = list(
+        config.candidate_policy_validation_methods
+    )
     return payload
 
 
@@ -944,6 +1053,14 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
         partition=args.partition,
         padding_days=args.padding_days,
         cost_stress_multiplier=args.cost_stress_multiplier,
+        candidate_admission_report=(
+            Path(args.candidate_admission_report)
+            if args.candidate_admission_report
+            else None
+        ),
+        candidate_policy_validation_methods=tuple(args.candidate_policy_validation_methods),
+        candidate_policy_validation_policy=args.candidate_policy_validation_policy,
+        candidate_policy_validation_memory_gb=args.candidate_policy_validation_memory_gb,
         backtest_workers=args.backtest_workers,
         backtest_memory_budget_gb=(
             args.backtest_memory_budget_gb
@@ -1039,6 +1156,30 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--padding-days", type=int, default=30)
     parser.add_argument("--cost-stress-multiplier", type=float, default=2.0)
     parser.add_argument(
+        "--candidate-admission-report",
+        help=(
+            "optional factor_admission_report.json; when provided, run candidate "
+            "policy validation as part of the benchmark"
+        ),
+    )
+    parser.add_argument(
+        "--candidate-policy-validation-methods",
+        nargs="+",
+        choices=("equal", "ic_weighted", "decorrelated"),
+        default=["decorrelated", "equal", "ic_weighted"],
+    )
+    parser.add_argument(
+        "--candidate-policy-validation-policy",
+        default="partial_rebalance_daily",
+        help="primary policy name used for candidate policy validation gates",
+    )
+    parser.add_argument(
+        "--candidate-policy-validation-memory-gb",
+        type=float,
+        default=5.0,
+        help="estimated memory footprint for each candidate policy validation backtest",
+    )
+    parser.add_argument(
         "--backtest-workers",
         type=int,
         default=2,
@@ -1120,15 +1261,23 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--streaming-chunk-padding-days must be non-negative")
     if args.cost_stress_multiplier < 1:
         raise ValueError("--cost-stress-multiplier must be at least 1")
+    if args.candidate_admission_report and args.skip_feature_correlation:
+        raise ValueError(
+            "--candidate-admission-report requires feature correlation; "
+            "do not pass --skip-feature-correlation"
+        )
     for name in (
         "dataset_memory_budget_gb",
         "dataset_worker_memory_estimate_gb",
         "backtest_memory_budget_gb",
         "full_backtest_memory_gb",
         "yearly_backtest_memory_gb",
+        "candidate_policy_validation_memory_gb",
     ):
         if getattr(args, name) < 0:
             raise ValueError(f"--{name.replace('_', '-')} must be non-negative")
+    if not args.candidate_policy_validation_methods:
+        raise ValueError("--candidate-policy-validation-methods must be non-empty")
 
 
 if __name__ == "__main__":

@@ -98,6 +98,52 @@ def test_framework_v1_benchmark_profiles_define_expected_scenarios(
     assert robust["acceptance_plan"]["profile"] == "robust"
 
 
+def test_framework_v1_benchmark_can_plan_candidate_policy_validation(
+    tmp_path: Path,
+) -> None:
+    script = Path("examples/run_framework_v1_benchmark.py")
+    output_dir = tmp_path / "benchmark"
+    admission = tmp_path / "factor_admission_report.json"
+    admission.write_text("{}", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--output-dir",
+            str(output_dir),
+            "--start",
+            "2024-01-02T09:35:00+08:00",
+            "--end",
+            "2024-01-03T15:00:00+08:00",
+            "--max-symbols",
+            "2",
+            "--profile",
+            "quick",
+            "--candidate-admission-report",
+            str(admission),
+            "--candidate-policy-validation-methods",
+            "decorrelated",
+            "equal",
+            "--dry-run",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    commands = json.loads((output_dir / "commands.json").read_text())
+    command = commands["candidate_policy_validation"]
+    assert "run_candidate_policy_validation.py" in command[1]
+    assert command[command.index("--dataset-dir") + 1] == str(output_dir / "alpha_dataset")
+    assert command[command.index("--admission-report") + 1] == str(admission)
+    assert command[
+        command.index("--methods") + 1 : command.index("--primary-method")
+    ] == ["decorrelated", "equal"]
+    assert command[command.index("--policy") + 1] == "partial_rebalance_daily"
+
+
 def test_framework_v1_benchmark_command_failures_raise(tmp_path: Path) -> None:
     log_path = tmp_path / "logs" / "failed.log"
 
