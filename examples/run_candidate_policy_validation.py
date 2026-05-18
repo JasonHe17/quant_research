@@ -999,10 +999,63 @@ def _validation_summary(
         "commands": commands,
         "results": rows,
         "monthly_results": monthly_rows,
+        "policy_leaderboard": _policy_leaderboard(rows),
         "factor_health_summary": factor_health_rows,
         "factor_contribution_summary": factor_contribution_rows,
         "validation": _validation_checks(args, rows),
     }
+
+
+def _policy_leaderboard(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        method = str(row.get("method"))
+        policy = str(row.get("policy"))
+        groups.setdefault((method, policy), []).append(row)
+    leaderboard: list[dict[str, Any]] = []
+    for (method, policy), group in groups.items():
+        returns = [_number(row.get("total_return")) for row in group]
+        drawdowns = [_number(row.get("max_drawdown")) for row in group]
+        turnovers = [_number(row.get("gross_turnover")) for row in group]
+        costs = [_number(row.get("total_transaction_cost")) for row in group]
+        full_base = next(
+            (row for row in group if row.get("scenario") == "full_base"),
+            None,
+        )
+        high_cost = next(
+            (row for row in group if row.get("scenario") == "full_high_cost"),
+            None,
+        )
+        leaderboard.append(
+            {
+                "method": method,
+                "policy": policy,
+                "scenario_count": len(group),
+                "full_base_return": _finite_or_none(
+                    _number(full_base.get("total_return")) if full_base else float("nan")
+                ),
+                "full_high_cost_return": _finite_or_none(
+                    _number(high_cost.get("total_return"))
+                    if high_cost
+                    else float("nan")
+                ),
+                "mean_return": _mean_finite(returns),
+                "worst_return": _min_finite(returns),
+                "worst_drawdown": _min_finite(drawdowns),
+                "mean_gross_turnover": _mean_finite(turnovers),
+                "total_transaction_cost": _sum_finite(costs),
+            }
+        )
+    return sorted(
+        leaderboard,
+        key=lambda row: (
+            -_sort_number(row["full_base_return"]),
+            -_sort_number(row["mean_return"]),
+            _sort_number(row["mean_gross_turnover"]),
+            str(row["method"]),
+            str(row["policy"]),
+        ),
+    )
 
 
 def _validation_checks(
@@ -1153,6 +1206,36 @@ def _number(value: Any) -> float:
     except (TypeError, ValueError):
         return float("nan")
     return output if math.isfinite(output) else float("nan")
+
+
+def _finite_or_none(value: float) -> float | None:
+    return value if math.isfinite(value) else None
+
+
+def _mean_finite(values: list[float]) -> float | None:
+    finite = [value for value in values if math.isfinite(value)]
+    if not finite:
+        return None
+    return sum(finite) / len(finite)
+
+
+def _min_finite(values: list[float]) -> float | None:
+    finite = [value for value in values if math.isfinite(value)]
+    if not finite:
+        return None
+    return min(finite)
+
+
+def _sum_finite(values: list[float]) -> float | None:
+    finite = [value for value in values if math.isfinite(value)]
+    if not finite:
+        return None
+    return sum(finite)
+
+
+def _sort_number(value: Any) -> float:
+    number = _number(value)
+    return number if math.isfinite(number) else -math.inf
 
 
 def _infer_full_years(dataset_dir: Path) -> list[int]:

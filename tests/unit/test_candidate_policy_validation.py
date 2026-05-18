@@ -13,6 +13,7 @@ from examples.run_candidate_policy_validation import (
     _effective_scenario_memory_budget_gb,
     _infer_full_years,
     _monthly_summary_rows_for_backtest,
+    _policy_leaderboard,
     _prepare_factor_risk_gate,
     _scenario_command,
     _scenario_outputs_exist,
@@ -251,6 +252,44 @@ def test_candidate_policy_validation_checks_primary_policy() -> None:
     checks = _validation_checks(args, rows)
 
     assert checks["overall_status"] == "pass"
+
+
+def test_candidate_policy_validation_policy_leaderboard_ranks_full_base_return() -> None:
+    rows = [
+        {
+            "scenario": "full_base",
+            "method": "decorrelated",
+            "policy": "partial_rebalance_daily",
+            "total_return": 0.04,
+            "max_drawdown": -0.05,
+            "gross_turnover": 12.0,
+            "total_transaction_cost": 100.0,
+        },
+        {
+            "scenario": "full_base",
+            "method": "decorrelated",
+            "policy": "cost_aware_optimizer_daily",
+            "total_return": 0.06,
+            "max_drawdown": -0.04,
+            "gross_turnover": 10.0,
+            "total_transaction_cost": 90.0,
+        },
+        {
+            "scenario": "full_high_cost",
+            "method": "decorrelated",
+            "policy": "cost_aware_optimizer_daily",
+            "total_return": 0.03,
+            "max_drawdown": -0.06,
+            "gross_turnover": 9.0,
+            "total_transaction_cost": 120.0,
+        },
+    ]
+
+    leaderboard = _policy_leaderboard(rows)
+
+    assert leaderboard[0]["policy"] == "cost_aware_optimizer_daily"
+    assert leaderboard[0]["full_base_return"] == pytest.approx(0.06)
+    assert leaderboard[0]["mean_gross_turnover"] == pytest.approx(9.5)
 
 
 def test_candidate_policy_validation_builds_monthly_summary(tmp_path: Path) -> None:
