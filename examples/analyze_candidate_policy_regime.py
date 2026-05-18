@@ -36,7 +36,10 @@ def main() -> None:
 def analyze_candidate_policy_regime(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    candidates = load_candidate_factors(Path(args.admission_report))
+    candidates = load_candidate_factors(
+        Path(args.admission_report),
+        include_features=tuple(args.include_features),
+    )
     weights = _load_method_weights(
         Path(args.validation_dir),
         scenario=args.scenario,
@@ -94,6 +97,7 @@ def analyze_candidate_policy_regime(args: argparse.Namespace) -> dict[str, Any]:
             "policy": args.policy,
             "year": args.year,
             "top_n": args.top_n,
+            "include_features": args.include_features,
         },
         "artifacts": {
             "composite_monthly": str(composite_path),
@@ -539,6 +543,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy", default="partial_rebalance_daily")
     parser.add_argument("--year", type=int, default=2024)
     parser.add_argument("--months", nargs="+")
+    parser.add_argument(
+        "--include-features",
+        nargs="+",
+        default=[],
+        help="optional factor feature allowlist for shared admission reports",
+    )
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument("--report-months", type=int, default=5)
     args = parser.parse_args()

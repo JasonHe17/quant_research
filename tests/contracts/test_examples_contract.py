@@ -194,6 +194,7 @@ def test_candidate_policy_regime_analysis_example_has_cli_help() -> None:
     assert result.returncode == 0
     assert "--validation-dir" in result.stdout
     assert "--scenario" in result.stdout
+    assert "--include-features" in result.stdout
 
 
 def test_policy_regime_gate_builder_example_has_cli_help() -> None:

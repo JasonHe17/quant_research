@@ -1,0 +1,61 @@
+# intraday_amihud_5m Validation Notes
+
+Generated: 2026-05-18
+
+## Summary
+
+`intraday_amihud_5m` has a real standalone signal footprint, but it is not a stable
+promotion candidate without regime control.
+
+Full-window standard validation:
+
+| Scenario | Return | Max drawdown | Gross turnover | Notes |
+| --- | ---: | ---: | ---: | --- |
+| full_base | 12.79% | -3.78% | 47.59 | Positive full-window result. |
+| full_high_cost | 9.47% | -4.33% | 48.38 | Survives doubled transaction costs. |
+| year_2023_base | 5.47% | -3.78% | 48.29 | Positive. |
+| year_2024_base | -15.77% | -32.08% | 50.07 | Fails yearly stability. |
+| year_2025_base | 12.62% | -8.38% | 45.97 | Positive. |
+
+Validation artifact:
+`runs/candidate_factor_portfolios/intraday_amihud_5m_standard_validation/validation_summary.json`
+
+## 2024 Failure Diagnosis
+
+The 2024 failure is concentrated early:
+
+| Month | Portfolio return | Score IC | Score spread | Market label | Trades |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2024-01 | -13.23% | -0.0305 | 0.06% | -0.82% | 1082 |
+| 2024-02 | -6.83% | 0.0432 | 0.45% | 0.47% | 748 |
+| 2024-03 | 3.90% | 0.0460 | 0.18% | 0.25% | 946 |
+
+After March, the path turnover budget is effectively exhausted in the yearly
+scenario, so most later monthly rows have `trade_count = 0`. The bad 2024 result
+is therefore not a broad all-year ranking failure; it is a concentrated early
+portfolio construction and risk-control failure.
+
+Regime diagnostic artifact:
+`runs/candidate_factor_portfolios/intraday_amihud_5m_standard_validation/regime_diagnostics_2024/summary.json`
+
+## Mitigation Checks
+
+| Check | 2024 return | Max drawdown | Gross turnover | Assessment |
+| --- | ---: | ---: | ---: | --- |
+| Baseline yearly path budget | -15.77% | -32.08% | 50.07 | Fails. |
+| Path budget pacing = 1.0 | -12.11% | -32.08% | 50.41 | Insufficient. |
+| Drawdown brake -7%, reduced scale 0 | 5.91% | -31.20% | 54.03 | Improves final return, does not control tail drawdown. |
+
+The drawdown brake can stop additional damage after the drawdown is observed,
+but it does not prevent the initial drawdown event. That makes it a damage
+control tool, not a sufficient promotion gate.
+
+## Decision
+
+Do not promote `intraday_amihud_5m` as a standalone factor yet.
+
+Next research step: build a pre-trade regime gate that blocks or scales down the
+factor before January/February 2024-like conditions. The gate should be based on
+observable state available before entry, not on realized portfolio drawdown.
+Promising inputs include recent market breadth, market-level downside momentum,
+liquidity stress, and limit-down pressure.
