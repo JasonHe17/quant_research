@@ -486,31 +486,31 @@ class CostAwareOptimizerPolicy:
                 continue
             if net_edge >= cfg.min_net_edge_bps and instrument_id in forecast_by_id:
                 eligible_ids.append(instrument_id)
-        incumbent_ids = _ordered_optimizer_candidates(
+        selected = list(dict.fromkeys(forced_hold_ids))[: cfg.target_count]
+        entry_count = 0
+        for instrument_id in _ordered_optimizer_candidates(
             [
                 instrument_id
                 for instrument_id in eligible_ids
-                if float(state_by_id.get(instrument_id, {}).get("current_weight") or 0.0) > 0
+                if instrument_id not in forced_hold_ids
             ],
             forecast_by_id=forecast_by_id,
             state_by_id=state_by_id,
             config=cfg,
-        )
-        entrant_ids = _ordered_optimizer_candidates(
-            [
-                instrument_id
-                for instrument_id in eligible_ids
-                if float(state_by_id.get(instrument_id, {}).get("current_weight") or 0.0) <= 0
-            ],
-            forecast_by_id=forecast_by_id,
-            state_by_id=state_by_id,
-            config=cfg,
-        )
-        if cfg.max_entries_per_rebalance is not None:
-            entrant_ids = entrant_ids[: cfg.max_entries_per_rebalance]
-        selected = list(dict.fromkeys([*forced_hold_ids, *incumbent_ids]))[: cfg.target_count]
-        if len(selected) < cfg.target_count:
-            selected = [*selected, *entrant_ids[: cfg.target_count - len(selected)]]
+        ):
+            if len(selected) >= cfg.target_count:
+                break
+            current_weight = float(
+                state_by_id.get(instrument_id, {}).get("current_weight") or 0.0
+            )
+            if current_weight <= 0:
+                if (
+                    cfg.max_entries_per_rebalance is not None
+                    and entry_count >= cfg.max_entries_per_rebalance
+                ):
+                    continue
+                entry_count += 1
+            selected.append(instrument_id)
         if cfg.max_exits_per_rebalance is not None:
             exit_candidates = [
                 instrument_id

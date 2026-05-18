@@ -517,6 +517,50 @@ def test_cost_aware_optimizer_prefers_existing_holding_within_switch_cost() -> N
     assert decisions.loc["inst-new", "target_weight"] == pytest.approx(0.0)
 
 
+def test_cost_aware_optimizer_replaces_holding_when_edge_clears_switch_cost() -> None:
+    forecasts = pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "inst-new",
+                "score": 0.70,
+                "rank": 1,
+            },
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "inst-held",
+                "score": 0.50,
+                "rank": 2,
+            },
+        ]
+    )
+    state = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-held",
+                "current_weight": 1.0,
+                "sellable_weight": 1.0,
+                "holding_bars": 5,
+            }
+        ]
+    )
+
+    result = CostAwareOptimizerPolicy(
+        CostAwareOptimizerConfig(
+            target_count=1,
+            candidate_rank=2,
+            score_to_edge_bps=100.0,
+            estimated_cost_bps=5.0,
+        )
+    ).decide(forecasts, state)
+
+    decisions = result.trade_decisions.set_index("instrument_id")
+    assert decisions.loc["inst-new", "target_weight"] == pytest.approx(1.0)
+    assert decisions.loc["inst-held", "target_weight"] == pytest.approx(0.0)
+    assert decisions.loc["inst-new", "decision_reason"] == "entry_rank"
+    assert decisions.loc["inst-held", "decision_reason"] == "exit_rank"
+
+
 def test_cost_aware_optimizer_turnover_budget_prioritizes_best_entries() -> None:
     forecasts = pd.DataFrame(
         [
