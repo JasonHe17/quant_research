@@ -70,6 +70,7 @@ def build_policy_regime_gate(args: argparse.Namespace) -> dict[str, Any]:
         "params": {
             "dataset_dir": args.dataset_dir,
             "scores_path": args.scores_path,
+            "label_column": args.label_column,
             "top_n": args.top_n,
             "lookback_windows": args.lookback_windows,
             "min_periods": args.min_periods,
@@ -140,6 +141,7 @@ def _score_health_observations(args: argparse.Namespace) -> pd.DataFrame:
                 dataset_path,
                 score_path=score_path,
                 top_n=args.top_n,
+                label_column=args.label_column,
             )
         )
     if not rows:
@@ -162,29 +164,32 @@ def _partition_score_health(
     *,
     score_path: Path,
     top_n: int,
+    label_column: str,
 ) -> list[dict[str, Any]]:
+    if not label_column:
+        raise ValueError("label_column must be non-empty")
     dataset = pd.read_parquet(
         dataset_path,
-        columns=["timestamp", "instrument_id", "forward_return"],
+        columns=["timestamp", "instrument_id", label_column],
     )
     scores = pd.read_parquet(score_path, columns=["timestamp", "instrument_id", "score"])
     frame = dataset.merge(scores, on=["timestamp", "instrument_id"], how="inner")
     rows = []
     for timestamp, group in frame.groupby("timestamp", sort=True):
-        valid = group.dropna(subset=["score", "forward_return"])
+        valid = group.dropna(subset=["score", label_column])
         n = min(top_n, len(valid))
         top = valid.nlargest(n, "score") if n else valid
         bottom = valid.nsmallest(n, "score") if n else valid
         rows.append(
             {
                 "timestamp": timestamp,
-                "score_rank_ic": _correlation(valid["score"], valid["forward_return"]),
-                "score_top_n_mean_label": _mean(top["forward_return"]),
-                "score_bottom_n_mean_label": _mean(bottom["forward_return"]),
+                "score_rank_ic": _correlation(valid["score"], valid[label_column]),
+                "score_top_n_mean_label": _mean(top[label_column]),
+                "score_bottom_n_mean_label": _mean(bottom[label_column]),
                 "score_top_minus_bottom_label": (
-                    _mean(top["forward_return"]) - _mean(bottom["forward_return"])
+                    _mean(top[label_column]) - _mean(bottom[label_column])
                 ),
-                "market_mean_label": _mean(valid["forward_return"]),
+                "market_mean_label": _mean(valid[label_column]),
                 "sample_count": int(len(valid)),
             }
         )
@@ -277,6 +282,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--scores-path", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--label-column", default="forward_return")
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument("--lookback-windows", type=int, default=20)
     parser.add_argument("--min-periods", type=int, default=5)
@@ -311,6 +317,8 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.top_n <= 0:
         raise ValueError("--top-n must be positive")
+    if not args.label_column:
+        raise ValueError("--label-column must be non-empty")
     if args.max_partitions is not None and args.max_partitions <= 0:
         raise ValueError("--max-partitions must be positive")
     if args.partition_start and args.partition_end and args.partition_start > args.partition_end:

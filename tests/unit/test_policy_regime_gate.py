@@ -48,6 +48,7 @@ def test_build_policy_regime_gate_writes_lagged_schedule(tmp_path: Path) -> None
             dataset_dir=str(dataset_dir),
             scores_path=str(score_dir),
             output_dir=str(output_dir),
+            label_column="forward_return",
             top_n=1,
             lookback_windows=1,
             min_periods=1,
