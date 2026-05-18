@@ -50,6 +50,29 @@ matching rank columns. This lets evaluation compare short, medium, and long
 holding periods before deciding whether a signal belongs in a fast or slow
 policy.
 
+## Framework Benchmark And Policy Validation
+
+`examples/run_framework_v1_benchmark.py` still keeps the original Baseline A
+backtests as regression checks for data, execution, and cost plumbing. Those
+checks are not the final strategy selection mechanism.
+
+For strategy-level validation, the benchmark can optionally run candidate policy
+validation when an admission report is available:
+
+```bash
+conda run -n quant python examples/run_framework_v1_benchmark.py \
+  --output-dir runs/framework_v1_acceptance/standard \
+  --candidate-admission-report \
+    runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json
+```
+
+That optional stage calls `examples/run_candidate_policy_validation.py`, writes
+`candidate_policy_validation/validation_summary.json`, and surfaces the
+`policy_leaderboard` in the benchmark summary. The leaderboard compares policy
+families across produced scenarios, so the framework can choose between slower
+holding policies and faster cost-aware optimizers from measured return, cost,
+and risk tradeoffs instead of from a fixed manual holding period.
+
 ## Pipeline Shape
 
 ```text
