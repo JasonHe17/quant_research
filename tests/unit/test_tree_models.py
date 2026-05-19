@@ -43,24 +43,60 @@ def test_infer_feature_columns_excludes_labels_and_execution_columns() -> None:
 def test_time_split_uses_timestamp_boundaries() -> None:
     frame = pd.DataFrame(
         [
-            {"timestamp": "t0", "instrument_id": "a"},
-            {"timestamp": "t1", "instrument_id": "a"},
-            {"timestamp": "t2", "instrument_id": "a"},
-            {"timestamp": "t3", "instrument_id": "a"},
+            {"timestamp": "2024-01-01T09:35:00+08:00", "instrument_id": "a"},
+            {"timestamp": "2024-01-02T09:35:00+08:00", "instrument_id": "a"},
+            {"timestamp": "2024-01-03T09:35:00+08:00", "instrument_id": "a"},
+            {"timestamp": "2024-01-04T09:35:00+08:00", "instrument_id": "a"},
         ]
     )
 
     splits = time_split(
         frame,
-        train_end="t1",
-        valid_start="t2",
-        valid_end="t2",
-        test_start="t3",
+        train_end="2024-01-02T09:35:00+08:00",
+        valid_start="2024-01-03T09:35:00+08:00",
+        valid_end="2024-01-03T09:35:00+08:00",
+        test_start="2024-01-04T09:35:00+08:00",
     )
 
-    assert splits["train"]["timestamp"].tolist() == ["t0", "t1"]
-    assert splits["valid"]["timestamp"].tolist() == ["t2"]
-    assert splits["test"]["timestamp"].tolist() == ["t3"]
+    assert splits["train"]["timestamp"].tolist() == [
+        "2024-01-01T09:35:00+08:00",
+        "2024-01-02T09:35:00+08:00",
+    ]
+    assert splits["valid"]["timestamp"].tolist() == ["2024-01-03T09:35:00+08:00"]
+    assert splits["test"]["timestamp"].tolist() == ["2024-01-04T09:35:00+08:00"]
+
+
+def test_time_split_purges_training_labels_that_overlap_evaluation() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-01T09:35:00+08:00",
+                "exit_timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "a",
+            },
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "exit_timestamp": "2024-01-03T09:35:00+08:00",
+                "instrument_id": "a",
+            },
+            {
+                "timestamp": "2024-01-03T09:35:00+08:00",
+                "exit_timestamp": "2024-01-04T09:35:00+08:00",
+                "instrument_id": "a",
+            },
+        ]
+    )
+
+    splits = time_split(
+        frame,
+        train_end="2024-01-02T09:35:00+08:00",
+        valid_start="2024-01-03T09:35:00+08:00",
+        test_start="2024-01-03T09:35:00+08:00",
+    )
+
+    assert splits["train"]["timestamp"].tolist() == ["2024-01-01T09:35:00+08:00"]
+    assert splits["valid"]["timestamp"].tolist() == ["2024-01-03T09:35:00+08:00"]
+    assert splits["test"]["timestamp"].tolist() == ["2024-01-03T09:35:00+08:00"]
 
 
 def test_evaluate_cross_sectional_predictions_reports_ic_and_top_spread() -> None:

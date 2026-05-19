@@ -37,6 +37,13 @@ class MismatchedFactorName(Factor):
         return pd.DataFrame([{"factor_name": "other", "factor_value": 1.0}])
 
 
+class MissingTimeFactor(Factor):
+    def compute(self, context: FactorContext) -> pd.DataFrame:
+        return pd.DataFrame(
+            [{"instrument_id": "inst-600000", "factor_value": 1.0}]
+        )
+
+
 def test_factor_engine_computes_dataframe_result_with_metadata() -> None:
     data = _FakeDataPortal()
     context = FactorContext(
@@ -112,6 +119,20 @@ def test_factor_engine_rejects_mismatched_factor_name_column() -> None:
     with pytest.raises(ValueError, match="factor_name"):
         FactorEngine().compute(
             MismatchedFactorName(name="expected", inputs=()), context
+        )
+
+
+def test_factor_engine_rejects_missing_time_column() -> None:
+    context = FactorContext(
+        data=_FakeDataPortal(),
+        start="2024-01-01",
+        end="2024-01-02",
+        symbols=("600000.SH",),
+    )
+
+    with pytest.raises(ValueError, match="timestamp or bar_end_time"):
+        FactorEngine().compute(
+            MissingTimeFactor(name="missing_time", inputs=()), context
         )
 
 

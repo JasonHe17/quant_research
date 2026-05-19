@@ -6,6 +6,7 @@ import pandas as pd
 
 from quant_research.artifacts import ArtifactStore
 from quant_research.factors.base import Factor, FactorContext, FactorResult
+from quant_research.schemas import validate_standard_table
 
 
 class FactorEngine:
@@ -25,6 +26,7 @@ class FactorEngine:
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("factor.compute() must return a pandas DataFrame")
         normalized = _normalize_factor_frame(frame, factor_name=factor.name)
+        validate_standard_table("factor", normalized)
         result = FactorResult(
             factor_name=factor.name,
             frame=normalized,

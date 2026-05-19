@@ -106,21 +106,49 @@ def time_split(
     valid_end: str | None = None,
     test_start: str,
     test_end: str | None = None,
+    label_end_column: str = "exit_timestamp",
+    embargo: str | pd.Timedelta | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Split a supervised dataset by timestamp boundaries."""
+    """Split a supervised dataset by timestamp boundaries.
+
+    When ``label_end_column`` is present, training rows whose labels mature in
+    the validation/test window are purged. This keeps the legacy tree baseline
+    API aligned with the purged dataset split utilities used by factor research.
+    """
 
     _require_columns(frame, ("timestamp",))
-    train = frame.loc[frame["timestamp"] <= train_end].copy()
+    timestamp = _to_datetime(frame["timestamp"], column="timestamp")
+    train_end_at = _timestamp(train_end, field_name="train_end")
+    test_start_at = _timestamp(test_start, field_name="test_start")
+    eval_start = min(
+        value
+        for value in (
+            _timestamp(valid_start, field_name="valid_start")
+            if valid_start is not None
+            else None,
+            test_start_at,
+        )
+        if value is not None
+    )
+    train_mask = timestamp <= train_end_at
+    if label_end_column in frame.columns:
+        label_end = _to_datetime(frame[label_end_column], column=label_end_column)
+        train_mask = train_mask & (label_end < eval_start - _embargo_delta(embargo))
+    train = frame.loc[train_mask].copy()
     if valid_start is not None:
-        valid_mask = frame["timestamp"] >= valid_start
+        valid_mask = timestamp >= _timestamp(valid_start, field_name="valid_start")
         if valid_end is not None:
-            valid_mask = valid_mask & (frame["timestamp"] <= valid_end)
+            valid_mask = valid_mask & (
+                timestamp <= _timestamp(valid_end, field_name="valid_end")
+            )
         valid = frame.loc[valid_mask].copy()
     else:
         valid = pd.DataFrame(columns=frame.columns)
-    test_mask = frame["timestamp"] >= test_start
+    test_mask = timestamp >= test_start_at
     if test_end is not None:
-        test_mask = test_mask & (frame["timestamp"] <= test_end)
+        test_mask = test_mask & (
+            timestamp <= _timestamp(test_end, field_name="test_end")
+        )
     test = frame.loc[test_mask].copy()
     return {"train": train, "valid": valid, "test": test}
 
@@ -266,6 +294,31 @@ def _nullable_float(value: object) -> float | None:
     if pd.isna(value):
         return None
     return float(value)
+
+
+def _to_datetime(series: pd.Series, *, column: str) -> pd.Series:
+    parsed = pd.to_datetime(series, utc=True, errors="coerce")
+    if parsed.isna().any():
+        raise ValueError(f"{column} contains values that cannot be parsed as timestamps")
+    return parsed
+
+
+def _timestamp(value: str, *, field_name: str) -> pd.Timestamp:
+    try:
+        timestamp = pd.Timestamp(value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be a parseable timestamp") from exc
+    if timestamp.tzinfo is None:
+        return timestamp.tz_localize("UTC")
+    return timestamp.tz_convert("UTC")
+
+
+def _embargo_delta(value: str | pd.Timedelta | None) -> pd.Timedelta:
+    if value is None:
+        return pd.Timedelta(0)
+    if isinstance(value, pd.Timedelta):
+        return value
+    return pd.Timedelta(value)
 
 
 def _correlation(left: pd.Series, right: pd.Series, *, method: str) -> float:

@@ -58,3 +58,33 @@ def test_standard_table_schema_rejects_null_required_columns() -> None:
 
     with pytest.raises(ValueError, match="instrument_id.*nulls"):
         validate_standard_table("backtest_trades", frame)
+
+
+def test_factor_schema_accepts_bar_end_time_as_observation_time() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "factor_name": "alpha",
+                "instrument_id": "inst-1",
+                "bar_end_time": "2025-01-03T09:35:00+08:00",
+                "factor_value": 0.1,
+            }
+        ]
+    )
+
+    validate_standard_table("factor", frame)
+
+
+def test_factor_schema_rejects_missing_observation_time() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "factor_name": "alpha",
+                "instrument_id": "inst-1",
+                "factor_value": 0.1,
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match="timestamp or bar_end_time"):
+        validate_standard_table("factor", frame)

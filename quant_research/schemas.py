@@ -177,6 +177,8 @@ def validate_standard_table(name: str, frame: pd.DataFrame) -> None:
     except KeyError as exc:
         raise KeyError(f"unknown standard table schema: {name}") from exc
     validate_table_schema(frame, schema)
+    if name == "factor":
+        _validate_factor_time_column(frame)
 
 
 def validate_table_schema(frame: pd.DataFrame, schema: TableSchema) -> None:
@@ -221,3 +223,12 @@ def _validate_kind(
     else:
         raise ValueError(f"unsupported schema column kind: {column.kind}")
     raise ValueError(f"{schema.name}.{column.name} must be {column.kind}")
+
+
+def _validate_factor_time_column(frame: pd.DataFrame) -> None:
+    time_columns = [column for column in ("timestamp", "bar_end_time") if column in frame]
+    if not time_columns:
+        raise ValueError("factor must contain either timestamp or bar_end_time")
+    for column in time_columns:
+        if frame[column].isna().any():
+            raise ValueError(f"factor.{column} must not contain nulls")
