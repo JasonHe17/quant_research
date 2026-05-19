@@ -4,6 +4,7 @@ from quant_research.universe.builder import UniverseBuilder
 from quant_research.universe.filters import (
     active_on,
     cn_main_board,
+    cn_main_board_symbol_mask,
     identity_filter,
     is_cn_main_board_symbol,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "UniverseSpec",
     "active_on",
     "cn_main_board",
+    "cn_main_board_symbol_mask",
     "identity_filter",
     "is_cn_main_board_symbol",
 ]

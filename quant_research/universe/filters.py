@@ -49,13 +49,10 @@ def cn_main_board(universe: Universe) -> Universe:
 
     members = universe.members.copy()
     _require_columns(members, ("symbol", "market", "asset_type"))
-    mask = members.apply(
-        lambda row: is_cn_main_board_symbol(
-            str(row["symbol"]),
-            market=str(row["market"]) if pd.notna(row["market"]) else None,
-            asset_type=str(row["asset_type"]) if pd.notna(row["asset_type"]) else None,
-        ),
-        axis=1,
+    mask = cn_main_board_symbol_mask(
+        members["symbol"],
+        market=members["market"],
+        asset_type=members["asset_type"],
     )
     filtered = members.loc[mask].reset_index(drop=True)
     diagnostics = pd.concat(
@@ -101,12 +98,59 @@ def is_cn_main_board_symbol(
     return False
 
 
+def cn_main_board_symbol_mask(
+    symbols: pd.Series,
+    *,
+    market: pd.Series | str | None = "CN",
+    asset_type: pd.Series | str | None = "equity",
+) -> pd.Series:
+    """Vectorized main-board A-share mask matching ``is_cn_main_board_symbol``."""
+
+    codes, suffixes = _split_canonical_symbol_series(symbols)
+    market_ok = _optional_text_filter(market, expected="CN", normalize="upper")
+    asset_type_ok = _optional_text_filter(
+        asset_type,
+        expected="equity",
+        normalize="lower",
+    )
+    sh_main = suffixes.eq("SH") & codes.str.startswith(("600", "601", "603", "605"))
+    sz_main = suffixes.eq("SZ") & codes.str.startswith(("000", "001", "002", "003"))
+    return (market_ok & asset_type_ok & (sh_main | sz_main)).astype(bool)
+
+
 def _split_canonical_symbol(symbol: str) -> tuple[str, str]:
     parts = symbol.strip().upper().split(".", maxsplit=1)
     if len(parts) != 2:
         return "", ""
     code, suffix = parts
     return code, suffix
+
+
+def _split_canonical_symbol_series(symbols: pd.Series) -> tuple[pd.Series, pd.Series]:
+    parts = symbols.fillna("").astype(str).str.strip().str.upper().str.split(".", n=1)
+    codes = parts.str[0].fillna("")
+    suffixes = parts.str[1].fillna("")
+    return codes, suffixes
+
+
+def _optional_text_filter(
+    values: pd.Series | str | None,
+    *,
+    expected: str,
+    normalize: str,
+) -> pd.Series | bool:
+    if values is None:
+        return True
+    if isinstance(values, pd.Series):
+        text = values.astype("string")
+        if normalize == "upper":
+            normalized = text.str.upper()
+        else:
+            normalized = text.str.lower()
+        return text.isna() | normalized.eq(expected)
+    value = str(values)
+    normalized_value = value.upper() if normalize == "upper" else value.lower()
+    return normalized_value == expected
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

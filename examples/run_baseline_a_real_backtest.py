@@ -31,7 +31,7 @@ from quant_research.backtest import (
     simulate_target_weight_executions,
 )
 from quant_research.data import DataPortal
-from quant_research.universe import is_cn_main_board_symbol
+from quant_research.universe import cn_main_board_symbol_mask
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,15 +293,12 @@ def _main_board_symbols_from_data_portal(
     code_column = "canonical_code" if "canonical_code" in instruments.columns else "symbol"
     if code_column not in instruments.columns:
         raise ValueError("DataPortal instruments missing canonical_code/symbol column")
-    mask = instruments.apply(
-        lambda row: is_cn_main_board_symbol(
-            str(row[code_column]),
-            market=str(row["market"]) if "market" in instruments.columns else "CN",
-            asset_type=str(row["asset_type"])
-            if "asset_type" in instruments.columns
-            else "equity",
-        ),
-        axis=1,
+    mask = cn_main_board_symbol_mask(
+        instruments[code_column],
+        market=instruments["market"] if "market" in instruments.columns else "CN",
+        asset_type=instruments["asset_type"]
+        if "asset_type" in instruments.columns
+        else "equity",
     )
     symbols = sorted(instruments.loc[mask, code_column].astype(str).unique().tolist())
     if params.max_symbols is not None:
