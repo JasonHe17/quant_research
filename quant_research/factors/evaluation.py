@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
+import numpy as np
 import pandas as pd
 
 from quant_research.models import infer_feature_columns
@@ -87,6 +88,11 @@ def evaluate_single_factors(
         feature: None for feature in feature_columns
     }
     _require_columns(frame, tuple(label_columns))
+    secondary_label_columns = tuple(
+        label_column
+        for label_column in label_columns
+        if label_column != config.label_column
+    )
     group_columns = tuple(column for column in config.group_columns if column in frame.columns)
     liquidity_columns = tuple(
         column for column in config.liquidity_columns if column in frame.columns
@@ -141,21 +147,23 @@ def evaluate_single_factors(
                 top=top,
                 liquidity_columns=liquidity_columns,
             )
+            pearson_ic = _correlation(
+                feature_values,
+                label_values,
+                method="pearson",
+            )
+            spearman_rank_ic = _correlation(
+                feature_values,
+                label_values,
+                method="spearman",
+            )
             timestamp_rows.append(
                 {
                     "feature": feature,
                     "timestamp": timestamp,
                     "sample_count": len(valid),
-                    "pearson_ic": _correlation(
-                        feature_values,
-                        label_values,
-                        method="pearson",
-                    ),
-                    "spearman_rank_ic": _correlation(
-                        feature_values,
-                        label_values,
-                        method="spearman",
-                    ),
+                    "pearson_ic": pearson_ic,
+                    "spearman_rank_ic": spearman_rank_ic,
                     "top_n_mean_label": top[config.label_column].mean(),
                     "bottom_n_mean_label": bottom[config.label_column].mean(),
                     "top_minus_bottom_label": top_minus_bottom,
@@ -165,12 +173,22 @@ def evaluate_single_factors(
                     **liquidity_summary,
                 }
             )
+            label_ic_rows.append(
+                {
+                    "feature": feature,
+                    "label_column": config.label_column,
+                    "timestamp": timestamp,
+                    "sample_count": len(valid),
+                    "pearson_ic": pearson_ic,
+                    "spearman_rank_ic": spearman_rank_ic,
+                }
+            )
             label_ic_rows.extend(
                 _label_ic_rows(
                     group,
                     timestamp=timestamp,
                     feature=feature,
-                    label_columns=label_columns,
+                    label_columns=secondary_label_columns,
                 )
             )
             group_rows.extend(
@@ -607,9 +625,39 @@ def _correlation(left: pd.Series, right: pd.Series, *, method: str) -> float | N
     else:
         left_values = left.astype(float)
         right_values = right.astype(float)
-    if left_values.nunique(dropna=True) < 2 or right_values.nunique(dropna=True) < 2:
+    left_array, right_array = _aligned_float_arrays(left_values, right_values)
+    if len(left_array) < 2:
         return None
-    return _nullable_float(left_values.corr(right_values))
+    if (
+        float(np.min(left_array)) == float(np.max(left_array))
+        or float(np.min(right_array)) == float(np.max(right_array))
+    ):
+        return None
+    left_centered = left_array - float(np.mean(left_array))
+    right_centered = right_array - float(np.mean(right_array))
+    denominator = math.sqrt(
+        float(np.dot(left_centered, left_centered))
+        * float(np.dot(right_centered, right_centered))
+    )
+    if denominator == 0:
+        return None
+    return _nullable_float(float(np.dot(left_centered, right_centered) / denominator))
+
+
+def _aligned_float_arrays(
+    left: pd.Series,
+    right: pd.Series,
+) -> tuple[np.ndarray, np.ndarray]:
+    if left.index.equals(right.index) and not left.hasnans and not right.hasnans:
+        return (
+            left.to_numpy(dtype=float, copy=False),
+            right.to_numpy(dtype=float, copy=False),
+        )
+    paired = pd.concat([left, right], axis=1).dropna()
+    if paired.empty:
+        return np.array([], dtype=float), np.array([], dtype=float)
+    values = paired.to_numpy(dtype=float, copy=False)
+    return values[:, 0], values[:, 1]
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
