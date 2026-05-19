@@ -201,15 +201,15 @@ def evaluate_single_factors(
                 )
             )
             buckets = _rank_quantile_buckets(feature_values, quantiles=config.quantiles)
-            bucketed = valid.assign(quantile=buckets)
-            for quantile, quantile_group in bucketed.groupby("quantile", sort=True):
+            bucket_stats = label_values.groupby(buckets, sort=True).agg(["size", "mean"])
+            for quantile, stats in bucket_stats.iterrows():
                 quantile_rows.append(
                     {
                         "feature": feature,
                         "timestamp": timestamp,
                         "quantile": int(quantile),
-                        "sample_count": len(quantile_group),
-                        "mean_label": quantile_group[config.label_column].mean(),
+                        "sample_count": int(stats["size"]),
+                        "mean_label": stats["mean"],
                     }
                 )
     by_timestamp = pd.DataFrame(timestamp_rows)
