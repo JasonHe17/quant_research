@@ -31,16 +31,7 @@ class PortfolioConstructor:
             target_weights,
             current_positions=current_positions,
         )
-        diagnostics = pd.DataFrame(
-            [
-                {
-                    "timestamp": timestamp,
-                    "instrument_count": len(group),
-                    "gross_weight": float(group["target_weight"].abs().sum()),
-                }
-                for timestamp, group in target_weights.groupby("timestamp", sort=True)
-            ]
-        )
+        diagnostics = _diagnostics(target_weights)
         result = PortfolioConstructionResult(
             config=config,
             target_weights=target_weights,
@@ -57,25 +48,20 @@ class PortfolioConstructor:
 def _target_weights(
     signals: pd.DataFrame, *, config: PortfolioConfig
 ) -> pd.DataFrame:
-    rows: list[pd.DataFrame] = []
-    for timestamp, group in signals.groupby("timestamp", sort=True):
-        ordered = group.sort_values("instrument_id").copy()
-        if config.weighting == "equal":
-            weights = pd.Series(1.0 / len(ordered), index=ordered.index)
-        else:
-            signal_sum = ordered["signal"].abs().sum()
-            if signal_sum == 0:
-                weights = pd.Series(0.0, index=ordered.index)
-            else:
-                weights = ordered["signal"] / signal_sum
-        if config.max_weight is not None:
-            weights = weights.clip(lower=-config.max_weight, upper=config.max_weight)
-        output = ordered.loc[:, ["timestamp", "instrument_id"]].copy()
-        output["target_weight"] = weights.astype(float)
-        rows.append(output)
-    if not rows:
+    if signals.empty:
         return pd.DataFrame(columns=["timestamp", "instrument_id", "target_weight"])
-    return pd.concat(rows, ignore_index=True)
+    ordered = signals.sort_values(["timestamp", "instrument_id"]).reset_index(drop=True)
+    output = ordered.loc[:, ["timestamp", "instrument_id"]].copy()
+    if config.weighting == "equal":
+        counts = ordered.groupby("timestamp", sort=False)["instrument_id"].transform("size")
+        weights = 1.0 / counts.astype(float)
+    else:
+        denominator = ordered["signal"].abs().groupby(ordered["timestamp"], sort=False).transform("sum")
+        weights = ordered["signal"].astype(float).div(denominator).fillna(0.0)
+    if config.max_weight is not None:
+        weights = weights.clip(lower=-config.max_weight, upper=config.max_weight)
+    output["target_weight"] = weights.astype(float)
+    return output
 
 
 def _rebalance_orders(
@@ -90,31 +76,7 @@ def _rebalance_orders(
     )
     if not current.empty:
         _require_columns(current, ("instrument_id", "current_weight"))
-    frames: list[pd.DataFrame] = []
-    for timestamp, group in target_weights.groupby("timestamp", sort=True):
-        current_for_timestamp = current.copy()
-        if not current_for_timestamp.empty:
-            current_for_timestamp = current_for_timestamp.loc[
-                :, ["instrument_id", "current_weight"]
-            ]
-        merged = group.merge(current_for_timestamp, on="instrument_id", how="outer")
-        merged["timestamp"] = merged["timestamp"].fillna(timestamp)
-        merged["target_weight"] = merged["target_weight"].fillna(0.0)
-        merged["current_weight"] = merged["current_weight"].fillna(0.0)
-        merged["delta_weight"] = merged["target_weight"] - merged["current_weight"]
-        frames.append(
-            merged.loc[
-                :,
-                [
-                    "timestamp",
-                    "instrument_id",
-                    "current_weight",
-                    "target_weight",
-                    "delta_weight",
-                ],
-            ]
-        )
-    if not frames:
+    if target_weights.empty:
         return pd.DataFrame(
             columns=[
                 "timestamp",
@@ -124,7 +86,60 @@ def _rebalance_orders(
                 "delta_weight",
             ]
         )
-    return pd.concat(frames, ignore_index=True)
+    if current.empty:
+        output = target_weights.copy()
+        output["current_weight"] = 0.0
+    else:
+        current = current.loc[:, ["instrument_id", "current_weight"]].copy()
+        expanded_current = _expanded_current_positions(
+            target_weights["timestamp"].drop_duplicates().tolist(),
+            current,
+        )
+        output = target_weights.merge(
+            expanded_current,
+            on=["timestamp", "instrument_id"],
+            how="outer",
+            sort=False,
+        )
+        output["target_weight"] = output["target_weight"].fillna(0.0)
+        output["current_weight"] = output["current_weight"].fillna(0.0)
+    output["delta_weight"] = output["target_weight"] - output["current_weight"]
+    return output.loc[
+        :,
+        [
+            "timestamp",
+            "instrument_id",
+            "current_weight",
+            "target_weight",
+            "delta_weight",
+        ],
+    ]
+
+
+def _diagnostics(target_weights: pd.DataFrame) -> pd.DataFrame:
+    if target_weights.empty:
+        return pd.DataFrame(columns=["timestamp", "instrument_count", "gross_weight"])
+    diagnostics = (
+        target_weights.assign(abs_weight=target_weights["target_weight"].abs())
+        .groupby("timestamp", sort=True)
+        .agg(
+            instrument_count=("instrument_id", "size"),
+            gross_weight=("abs_weight", "sum"),
+        )
+        .reset_index()
+    )
+    diagnostics["gross_weight"] = diagnostics["gross_weight"].astype(float)
+    return diagnostics
+
+
+def _expanded_current_positions(
+    timestamps: list[object],
+    current: pd.DataFrame,
+) -> pd.DataFrame:
+    if not timestamps or current.empty:
+        return pd.DataFrame(columns=["timestamp", "instrument_id", "current_weight"])
+    timestamp_frame = pd.DataFrame({"timestamp": timestamps})
+    return timestamp_frame.merge(current, how="cross")
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
