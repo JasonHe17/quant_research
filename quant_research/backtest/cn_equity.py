@@ -285,57 +285,31 @@ def simulate_target_weight_executions(
     state = state or TargetWeightSimulationState.create(config.initial_cash)
     trades: list[dict[str, object]] = []
     equity_rows: list[dict[str, object]] = []
+    shares_by_instrument = _shares_by_instrument(state.lots)
     for exec_time, group in executions.groupby("exec_time", sort=True):
         trade_date = str(exec_time)[:10]
         _roll_lots_to_sellable(state, trade_date)
-        target_rows = group.loc[group["target_weight"].notna()]
-        target_instruments = (
-            set(target_rows["instrument_id"].astype(str)) if not target_rows.empty else set()
-        )
-        relevant_instruments = set(state.lots) | target_instruments
-        if relevant_instruments:
-            relevant_group = group.loc[
-                group["instrument_id"].astype(str).isin(relevant_instruments)
-            ]
-        else:
-            relevant_group = group.iloc[0:0]
-        execution_price_by_instrument = _column_by_instrument(
-            relevant_group, config.price_field
-        )
-        sizing_price_by_instrument = _column_by_instrument(
-            relevant_group, config.sizing_price_field
-        )
-        mark_price_by_instrument = _column_by_instrument(
-            relevant_group, config.mark_price_field
-        )
-        tradable_by_instrument = _bool_column_by_instrument(
-            relevant_group,
-            config.tradable_field,
-            default=True,
-        )
-        limit_up_by_instrument = _bool_column_by_instrument(
-            relevant_group,
-            config.limit_up_field,
-            default=False,
-        )
-        limit_down_by_instrument = _bool_column_by_instrument(
-            relevant_group,
-            config.limit_down_field,
-            default=False,
-        )
-        capacity_by_instrument = (
-            _column_by_instrument(relevant_group, config.capacity_notional_field)
-            if config.capacity_notional_field is not None
-            and config.capacity_notional_field in group.columns
-            else {}
+        targets = _target_weights_by_instrument(group)
+        relevant_instruments = set(state.lots) | set(targets)
+        (
+            execution_price_by_instrument,
+            sizing_price_by_instrument,
+            mark_price_by_instrument,
+            tradable_by_instrument,
+            limit_up_by_instrument,
+            limit_down_by_instrument,
+            capacity_by_instrument,
+        ) = _execution_maps_for_group(
+            group,
+            relevant_instruments,
+            config,
         )
         state.last_prices.update(sizing_price_by_instrument)
-        equity = state.cash + positions_value(state.lots, state.last_prices)
-        if not target_rows.empty:
-            targets = {
-                str(row.instrument_id): float(row.target_weight)
-                for row in target_rows.itertuples(index=False)
-            }
+        equity = state.cash + _positions_value_from_shares(
+            shares_by_instrument,
+            state.last_prices,
+        )
+        if targets:
             instruments = sorted(set(state.lots) | set(targets))
             for instrument_id in instruments:
                 if instrument_id not in execution_price_by_instrument:
@@ -352,7 +326,9 @@ def simulate_target_weight_executions(
                 )
                 target_weight = targets.get(instrument_id, 0.0)
                 target_value = equity * target_weight
-                current_value = instrument_shares(state.lots, instrument_id) * sizing_price
+                current_value = (
+                    shares_by_instrument.get(instrument_id, 0) * sizing_price
+                )
                 delta_value = target_value - current_value
                 if not tradable_by_instrument.get(instrument_id, True):
                     _record_execution_diagnostic(
@@ -429,6 +405,9 @@ def simulate_target_weight_executions(
                                 "date": trade_date,
                                 "sellable": False,
                             }
+                        )
+                        shares_by_instrument[instrument_id] = (
+                            shares_by_instrument.get(instrument_id, 0) + shares
                         )
                         trades.append(
                             trade_row(
@@ -529,6 +508,13 @@ def simulate_target_weight_executions(
                     stamp_tax = notional * config.sell_stamp_tax_bps / 10_000.0
                     slippage_cost = sold * (execution_price - sell_price)
                     state.cash += notional - commission - stamp_tax
+                    remaining_shares = (
+                        shares_by_instrument.get(instrument_id, 0) - sold
+                    )
+                    if remaining_shares > 0:
+                        shares_by_instrument[instrument_id] = remaining_shares
+                    else:
+                        shares_by_instrument.pop(instrument_id, None)
                     trades.append(
                         trade_row(
                             exec_time,
@@ -543,12 +529,16 @@ def simulate_target_weight_executions(
                         )
                     )
         state.last_prices.update(mark_price_by_instrument)
+        marked_positions_value = _positions_value_from_shares(
+            shares_by_instrument,
+            state.last_prices,
+        )
         equity_rows.append(
             {
                 "timestamp": exec_time,
                 "cash": state.cash,
-                "positions_value": positions_value(state.lots, state.last_prices),
-                "equity": state.cash + positions_value(state.lots, state.last_prices),
+                "positions_value": marked_positions_value,
+                "equity": state.cash + marked_positions_value,
             }
         )
     return (
@@ -724,10 +714,7 @@ def positions_value(
 ) -> float:
     """Return marked value for all open lots."""
 
-    return sum(
-        instrument_shares(lots, instrument_id) * prices.get(instrument_id, 0.0)
-        for instrument_id in lots
-    )
+    return _positions_value_from_shares(_shares_by_instrument(lots), prices)
 
 
 def instrument_shares(
@@ -834,17 +821,24 @@ def cap_trade_shares_by_notional(
 def final_positions(lots: dict[str, list[dict[str, object]]]) -> pd.DataFrame:
     """Return final positions from open lots."""
 
-    return pd.DataFrame(
-        [
-            {
-                "instrument_id": instrument_id,
-                "shares": instrument_shares(lots, instrument_id),
-                "sellable_shares": sellable_shares(lots, instrument_id),
-            }
-            for instrument_id in sorted(lots)
-            if instrument_shares(lots, instrument_id) > 0
-        ]
-    )
+    rows: list[dict[str, object]] = []
+    for instrument_id in sorted(lots):
+        shares = 0
+        sellable = 0
+        for lot in lots.get(instrument_id, []):
+            lot_shares = int(lot["shares"])
+            shares += lot_shares
+            if bool(lot["sellable"]):
+                sellable += lot_shares
+        if shares > 0:
+            rows.append(
+                {
+                    "instrument_id": instrument_id,
+                    "shares": shares,
+                    "sellable_shares": sellable,
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def _roll_lots_to_sellable(
@@ -887,6 +881,115 @@ def _bool_column_by_instrument(
     if default:
         return values
     return values
+
+
+def _target_weights_by_instrument(group: pd.DataFrame) -> dict[str, float]:
+    targets: dict[str, float] = {}
+    instrument_values = group["instrument_id"].to_numpy(copy=False)
+    target_values = group["target_weight"].to_numpy(copy=False)
+    for instrument_id, target_weight in zip(instrument_values, target_values):
+        if pd.notna(target_weight):
+            targets[str(instrument_id)] = float(target_weight)
+    return targets
+
+
+def _execution_maps_for_group(
+    group: pd.DataFrame,
+    relevant_instruments: set[str],
+    config: TargetWeightExecutionConfig,
+) -> tuple[
+    dict[str, float],
+    dict[str, float],
+    dict[str, float],
+    dict[str, bool],
+    dict[str, bool],
+    dict[str, bool],
+    dict[str, float],
+]:
+    execution_price_by_instrument: dict[str, float] = {}
+    sizing_price_by_instrument: dict[str, float] = {}
+    mark_price_by_instrument: dict[str, float] = {}
+    tradable_by_instrument: dict[str, bool] = {}
+    limit_up_by_instrument: dict[str, bool] = {}
+    limit_down_by_instrument: dict[str, bool] = {}
+    capacity_by_instrument: dict[str, float] = {}
+    if not relevant_instruments:
+        return (
+            execution_price_by_instrument,
+            sizing_price_by_instrument,
+            mark_price_by_instrument,
+            tradable_by_instrument,
+            limit_up_by_instrument,
+            limit_down_by_instrument,
+            capacity_by_instrument,
+        )
+
+    instrument_values = group["instrument_id"].to_numpy(copy=False)
+    execution_prices = group[config.price_field].to_numpy(copy=False)
+    sizing_prices = group[config.sizing_price_field].to_numpy(copy=False)
+    mark_prices = group[config.mark_price_field].to_numpy(copy=False)
+    tradable_values = (
+        group[config.tradable_field].to_numpy(copy=False)
+        if config.tradable_field in group.columns
+        else None
+    )
+    limit_up_values = (
+        group[config.limit_up_field].to_numpy(copy=False)
+        if config.limit_up_field in group.columns
+        else None
+    )
+    limit_down_values = (
+        group[config.limit_down_field].to_numpy(copy=False)
+        if config.limit_down_field in group.columns
+        else None
+    )
+    capacity_values = (
+        group[config.capacity_notional_field].to_numpy(copy=False)
+        if config.capacity_notional_field is not None
+        and config.capacity_notional_field in group.columns
+        else None
+    )
+    for index, instrument_value in enumerate(instrument_values):
+        instrument_id = str(instrument_value)
+        if instrument_id not in relevant_instruments:
+            continue
+        execution_price_by_instrument[instrument_id] = float(execution_prices[index])
+        sizing_price_by_instrument[instrument_id] = float(sizing_prices[index])
+        mark_price_by_instrument[instrument_id] = float(mark_prices[index])
+        if tradable_values is not None:
+            tradable_by_instrument[instrument_id] = bool(tradable_values[index])
+        if limit_up_values is not None:
+            limit_up_by_instrument[instrument_id] = bool(limit_up_values[index])
+        if limit_down_values is not None:
+            limit_down_by_instrument[instrument_id] = bool(limit_down_values[index])
+        if capacity_values is not None:
+            capacity_by_instrument[instrument_id] = float(capacity_values[index])
+    return (
+        execution_price_by_instrument,
+        sizing_price_by_instrument,
+        mark_price_by_instrument,
+        tradable_by_instrument,
+        limit_up_by_instrument,
+        limit_down_by_instrument,
+        capacity_by_instrument,
+    )
+
+
+def _shares_by_instrument(lots: dict[str, list[dict[str, object]]]) -> dict[str, int]:
+    return {
+        instrument_id: sum(int(lot["shares"]) for lot in instrument_lots)
+        for instrument_id, instrument_lots in lots.items()
+    }
+
+
+def _positions_value_from_shares(
+    shares_by_instrument: dict[str, int],
+    prices: dict[str, float],
+) -> float:
+    return sum(
+        shares * prices.get(instrument_id, 0.0)
+        for instrument_id, shares in shares_by_instrument.items()
+    )
 
 
 def _below_min_trade_weight(
