@@ -36,6 +36,7 @@ _VALID_GROUPS = {
     "sell_pressure_absorption",
     "downside_turnover_decay",
     "sell_pressure_recovery",
+    "daily_moving_average",
     "all",
 }
 
@@ -65,6 +66,8 @@ class IntradayFeatureConfig:
     sell_pressure_absorption_windows: tuple[int, ...] = (48,)
     downside_turnover_decay_windows: tuple[int, ...] = (48,)
     sell_pressure_recovery_windows: tuple[int, ...] = (48,)
+    daily_moving_average_windows: tuple[int, ...] = (5, 10, 20)
+    daily_moving_average_pairs: tuple[tuple[int, int], ...] = ((5, 20), (10, 20))
     market_downside_beta_windows: tuple[int, ...] = (48,)
     market_state_windows: tuple[int, ...] = (48,)
     breadth_resilience_windows: tuple[int, ...] = (48,)
@@ -104,6 +107,7 @@ class IntradayFeatureConfig:
             ("sell_pressure_absorption_windows", self.sell_pressure_absorption_windows),
             ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
             ("sell_pressure_recovery_windows", self.sell_pressure_recovery_windows),
+            ("daily_moving_average_windows", self.daily_moving_average_windows),
             ("market_downside_beta_windows", self.market_downside_beta_windows),
             ("market_state_windows", self.market_state_windows),
             ("breadth_resilience_windows", self.breadth_resilience_windows),
@@ -114,6 +118,10 @@ class IntradayFeatureConfig:
         ):
             if any(value <= 0 for value in values):
                 raise ValueError(f"{name} values must be positive")
+        if any(short <= 0 or long <= 0 for short, long in self.daily_moving_average_pairs):
+            raise ValueError("daily_moving_average_pairs values must be positive")
+        if any(short >= long for short, long in self.daily_moving_average_pairs):
+            raise ValueError("daily_moving_average_pairs must be ordered short < long")
 
 
 def build_intraday_feature_matrix(
@@ -293,6 +301,14 @@ def build_intraday_feature_matrix(
             column = f"intraday_sell_pressure_recovery_5m_w{window}"
             output[column] = recovery_ratio * upside_participation
             feature_columns.append(column)
+    if "daily_moving_average" in groups:
+        _add_daily_moving_average_features(
+            frame,
+            output,
+            feature_columns,
+            windows=config.daily_moving_average_windows,
+            pairs=config.daily_moving_average_pairs,
+        )
     if "market_downside_beta" in groups:
         market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")
         downside_market_return = market_return.where(market_return < 0.0, 0.0)
@@ -564,6 +580,117 @@ def _rolling_timestamp_state(
     )
     rolling_values = timestamp_values.rolling(window, min_periods=window).mean()
     return timestamps.map(rolling_values)
+
+
+def _add_daily_moving_average_features(
+    frame: pd.DataFrame,
+    output: pd.DataFrame,
+    feature_columns: list[str],
+    *,
+    windows: tuple[int, ...],
+    pairs: tuple[tuple[int, int], ...],
+) -> None:
+    session_date = _session_date(frame)
+    daily_close = (
+        frame.assign(_session_date=session_date)
+        .sort_values(["instrument_id", "_session_date", "bar_end_time"])
+        .groupby(["instrument_id", "_session_date"], sort=False)
+        .tail(1)
+        .loc[:, ["instrument_id", "_session_date", "close_price"]]
+        .rename(columns={"close_price": "daily_close"})
+        .reset_index(drop=True)
+    )
+    daily_close["daily_close"] = daily_close["daily_close"].astype(float)
+    daily_grouped = daily_close.groupby("instrument_id", sort=False)["daily_close"]
+    daily_features = daily_close.loc[:, ["instrument_id", "_session_date"]].copy()
+    ma_by_window: dict[int, pd.Series] = {}
+    unique_windows = tuple(dict.fromkeys(windows))
+    for window in unique_windows:
+        ma = daily_grouped.transform(
+            lambda values: values.rolling(window, min_periods=window).mean()
+        )
+        ma_by_window[window] = ma
+        previous_ma = ma.groupby(daily_close["instrument_id"]).shift(1)
+        deviation_column = f"intraday_daily_ma_deviation_5m_d{window}"
+        slope_column = f"intraday_daily_ma_slope_5m_d{window}"
+        daily_features[deviation_column] = (
+            daily_close["daily_close"] / ma.where(ma != 0.0) - 1.0
+        )
+        daily_features[slope_column] = ma / previous_ma.where(previous_ma != 0.0) - 1.0
+
+    for short, long in pairs:
+        if short not in ma_by_window:
+            ma_by_window[short] = daily_grouped.transform(
+                lambda values, short=short: values.rolling(
+                    short, min_periods=short
+                ).mean()
+            )
+        if long not in ma_by_window:
+            ma_by_window[long] = daily_grouped.transform(
+                lambda values, long=long: values.rolling(long, min_periods=long).mean()
+            )
+        column = f"intraday_daily_ma_spread_5m_s{short}_l{long}"
+        daily_features[column] = (
+            ma_by_window[short] / ma_by_window[long].where(ma_by_window[long] != 0.0)
+            - 1.0
+        )
+
+    ribbon_windows = tuple(sorted(ma_by_window))
+    if ribbon_windows:
+        ribbon = pd.concat([ma_by_window[window] for window in ribbon_windows], axis=1)
+        valid_ribbon = ribbon.notna().all(axis=1) & ribbon.gt(0.0).all(axis=1)
+        ribbon_mean = ribbon.mean(axis=1).where(valid_ribbon)
+        daily_features["intraday_daily_ma_ribbon_position_5m"] = (
+            daily_close["daily_close"] / ribbon_mean.where(ribbon_mean != 0.0) - 1.0
+        )
+        daily_features["intraday_daily_ma_ribbon_dispersion_5m"] = (
+            np.log(ribbon.where(valid_ribbon, np.nan)).std(axis=1, ddof=0)
+        )
+        trend_components = []
+        for index, short in enumerate(ribbon_windows):
+            for long in ribbon_windows[index + 1 :]:
+                spread = ma_by_window[short] / ma_by_window[long].where(
+                    ma_by_window[long] != 0.0
+                ) - 1.0
+                trend_components.append(np.sign(spread).where(spread.notna()))
+        if trend_components:
+            daily_features["intraday_daily_ma_ribbon_trend_score_5m"] = pd.concat(
+                trend_components,
+                axis=1,
+            ).mean(axis=1)
+
+    daily_feature_columns = [
+        column
+        for column in daily_features.columns
+        if column not in {"instrument_id", "_session_date"}
+    ]
+    daily_features.loc[:, daily_feature_columns] = daily_features.groupby(
+        "instrument_id", sort=False
+    )[daily_feature_columns].shift(1)
+    row_keys = pd.DataFrame(
+        {
+            "_row_id": frame.index,
+            "instrument_id": frame["instrument_id"],
+            "_session_date": session_date,
+        }
+    )
+    aligned = (
+        row_keys.merge(daily_features, on=["instrument_id", "_session_date"], how="left")
+        .sort_values("_row_id")
+        .reset_index(drop=True)
+    )
+    for column in daily_feature_columns:
+        output[column] = aligned[column]
+        feature_columns.append(column)
+
+
+def _session_date(frame: pd.DataFrame) -> pd.Series:
+    if "trade_date" in frame.columns:
+        return frame["trade_date"].astype(str)
+    parsed = pd.to_datetime(frame["bar_end_time"], errors="coerce", format="ISO8601")
+    if parsed.notna().all():
+        return parsed.dt.strftime("%Y-%m-%d")
+    return frame["bar_end_time"].astype(str)
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

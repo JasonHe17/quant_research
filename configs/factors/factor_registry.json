@@ -1867,6 +1867,107 @@
         "recovery",
         "long_only_quality"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Multi-dimensional daily moving-average state broadcast onto the 5-minute research grid using only completed prior trading sessions.",
+      "display_name": "Daily moving-average state, 5/10/20-day windows",
+      "evaluation": {
+        "admission_status": "candidate",
+        "research_memory_check": "runs/factor_research_memory/intraday_daily_moving_average_state_5m/factor_research_memory_check.json",
+        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_19_daily_ma/factor_admission/factor_admission_report.json",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_daily_moving_average_state_5m/factor_candidate_review.json",
+        "portfolio_validation_status": "promoted_challenger_review_passed",
+        "portfolio_validation": "runs/candidate_factor_portfolios/daily_ma_equal_score_budget_gate_v1_standard/validation_summary.json",
+        "risk_gate_schedule": "runs/candidate_factor_portfolios/daily_ma_score_gate_v1_plus_ribbon_dispersion_risk_standard/factor_risk_gate/ribbon_dispersion/gross_exposure_schedule.csv",
+        "risk_gate_validation": "runs/candidate_factor_portfolios/daily_ma_score_gate_v1_plus_ribbon_dispersion_risk_standard/validation_summary.json",
+        "walk_forward_validation": "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_walk_forward_v1/walk_forward_summary.json",
+        "promotion_check": "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_promotion_checks_v1/promotion_check_summary.json",
+        "promoted_candidate_review": "runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/promoted_candidate_review.json"
+      },
+      "expected_direction": "mixed",
+      "factor_id": "intraday_daily_moving_average_state_5m",
+      "family": "momentum",
+      "feature_columns": [
+        "intraday_daily_ma_deviation_5m_d5",
+        "intraday_daily_ma_slope_5m_d5",
+        "intraday_daily_ma_deviation_5m_d10",
+        "intraday_daily_ma_slope_5m_d10",
+        "intraday_daily_ma_deviation_5m_d20",
+        "intraday_daily_ma_slope_5m_d20",
+        "intraday_daily_ma_spread_5m_s5_l20",
+        "intraday_daily_ma_spread_5m_s10_l20",
+        "intraday_daily_ma_ribbon_position_5m",
+        "intraday_daily_ma_ribbon_dispersion_5m",
+        "intraday_daily_ma_ribbon_trend_score_5m"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Completed daily moving averages capture slower investor anchoring, trend-following pressure, and crowded-trend dispersion that can complement short-horizon intraday liquidity and volatility factors without using same-day unfinished daily bars.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "daily_moving_average_pairs": [
+            [
+              5,
+              20
+            ],
+            [
+              10,
+              20
+            ]
+          ],
+          "daily_moving_average_windows": [
+            5,
+            10,
+            20
+          ],
+          "factor_groups": [
+            "daily_moving_average"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 960,
+      "notes": "The implementation deliberately shifts daily moving-average features by one completed trading session before merging back to 5-minute bars. Deviation and spread columns express trend/anchor state; slope columns express trend change; ribbon position, dispersion, and trend score summarize cross-window alignment. The research-memory check matched the rejected intraday_range_position_5m_w48 factor, but this candidate is materially different: it uses completed daily moving-average anchors and cross-window MA ribbon geometry, not a 5-minute rolling high-low range location. Admission must evaluate the generated columns individually before any portfolio-level use. Formal promoted-candidate review on 2026-05-19 accepted the fixed high_dispersion_current ribbon-dispersion gross-exposure gate as the leading promoted challenger while keeping score_budget_gate_v1 as the active primary baseline. Evidence: standard validation improved full return from 14.38% to 20.75%, high-cost return from 9.43% to 16.18%, max drawdown from -19.16% to -16.13%, and turnover from 124.78 to 101.86. Walk-forward fixed challenger sum return was 21.22% versus v1 16.91% with 4/4 positive forward windows, but the dynamic train-window selector was rejected. Promotion checks passed monthly concentration, cost stress, and factor attribution gates. Do not add month-specific patches or switch the default strategy without a separate default-change review.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "configs/factors/factor_registry.json",
+        "docs/validation/factor_admission.md",
+        "runs/framework_v1_acceptance/factor_batch_2026_05_19_daily_ma/factor_admission/factor_admission_report.json",
+        "runs/factor_candidate_reviews/intraday_daily_moving_average_state_5m/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/daily_ma_equal_score_budget_gate_v1_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_score_gate_v1_plus_ribbon_dispersion_risk_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_walk_forward_v1/walk_forward_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_promotion_checks_v1/promotion_check_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/promoted_candidate_review.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {},
+      "status": "candidate",
+      "tags": [
+        "batch_2026_05_19_daily_ma",
+        "candidate",
+        "intraday",
+        "daily",
+        "moving_average",
+        "momentum",
+        "trend_state",
+        "promoted_challenger",
+        "risk_gate",
+        "review_passed"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -1884,6 +1985,6 @@
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-17",
-  "version": 17
+  "updated_at": "2026-05-19T11:28:59+00:00",
+  "version": 18
 }

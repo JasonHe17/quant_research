@@ -51,6 +51,39 @@ Factor research now has three required governance artifacts:
 The registry is the source of truth for factor identity and lifecycle state. A
 factor that is not registered is not eligible for portfolio-level testing.
 
+## Baseline Hierarchy For Portfolio Review
+
+Portfolio review must use a layered baseline stack. A factor or risk-control
+overlay is not promotion-ready just because it beats a naive or historical
+control. Each review must state which layer is being compared and must preserve
+the evidence paths for all material comparisons.
+
+- Naive/control baseline: a simple or historical benchmark used for sanity
+  checks, plumbing regression, and long-horizon comparability. This layer
+  answers whether the candidate has any absolute value, but it is not sufficient
+  for promotion.
+- Active/default baseline: the current default production-candidate policy. As
+  of the 2026-05-19 daily moving-average review, this remains
+  `score_budget_gate_v1`.
+- Research frontier baseline: the strongest reviewed challenger that has not
+  necessarily become the active default. As of the 2026-05-19 daily
+  moving-average review, this is the fixed `high_dispersion_current`
+  ribbon-dispersion gross-exposure gate. Its evidence lives under
+  `runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/`.
+
+New factor batches must report marginal contribution against the research
+frontier whenever the frontier is in the same strategy family or can be
+composed without violating the candidate hypothesis. A result that beats only
+the naive/control baseline is recorded as useful evidence, but it does not enter
+the default combination unless it also improves or diversifies the active
+baseline and the research frontier after costs.
+
+The research frontier is a comparison target, not an automatic default. A
+frontier candidate becomes the active/default baseline only through a separate
+default-change review that links the candidate review, admission report,
+standard validation, walk-forward evidence, concentration checks, cost stress,
+and attribution evidence from the registry entry.
+
 ## Required Registry Fields
 
 Every active factor must record:
@@ -161,6 +194,22 @@ The validator treats missing active-factor safety metadata as a hard error.
    gross-turnover budget `52` are research branches, not the default factor
    promotion path.
 
+   Before running portfolio validation, identify the baseline stack for the
+   research family:
+
+   - naive/control anchor;
+   - active/default baseline;
+   - research frontier baseline, when one exists.
+
+   The validation report must include a comparison against the active/default
+   baseline and the research frontier. If compute budget prevents a full
+   frontier replay, the report must explain why and must not claim promotion.
+   For the current daily moving-average research family, compare new candidates
+   against both `score_budget_gate_v1` and the fixed
+   `high_dispersion_current` frontier. Do not use the dynamic train-window
+   selector from `daily_ma_ribbon_dispersion_walk_forward_v1` as a default
+   comparator; it was explicitly rejected in the promoted-candidate review.
+
    ```bash
    conda run -n quant python examples/run_candidate_policy_validation.py \
      --dataset-dir runs/framework_v1_acceptance/standard/alpha_dataset \
@@ -188,8 +237,11 @@ The validator treats missing active-factor safety metadata as a hard error.
 7. Promote, watchlist, or reject with evidence.
    Promotion requires the registry entry, candidate review, admission report,
    and portfolio validation summary to be linked from the entry before default
-   configuration changes. Watchlist, reject, and deprecated decisions must also
-   update `research_memory`.
+   configuration changes. If a candidate is accepted as a research frontier but
+   not as the active/default baseline, record that distinction in
+   `evaluation.portfolio_validation_status` and keep the default configuration
+   unchanged. Watchlist, reject, and deprecated decisions must also update
+   `research_memory`.
 
 ## Research Memory
 
@@ -245,8 +297,9 @@ pre-admission and post-admission gates:
 | Live availability | Inputs must be available at the decision time in a future real-time system |
 | A-share tradability | Must explicitly support long-only, T+1, ST filtering, and price-limit-aware execution |
 | Single-factor quality | Must pass or intentionally enter `watchlist` under the standard admission report |
-| Portfolio contribution | Must improve or diversify the current promoted framework after costs |
-| Robustness | Must be checked across full-window, annual slices, and high-cost stress |
+| Portfolio contribution | Must improve or diversify the active/default baseline and the research frontier after costs |
+| Robustness | Must be checked across full-window, annual slices, high-cost stress, and, when a frontier is involved, walk-forward or anchored forward windows |
+| Baseline hierarchy | Must report naive/control, active/default, and research-frontier comparisons when those layers exist |
 
 ## Unified Candidate Review Format
 

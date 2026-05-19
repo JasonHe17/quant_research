@@ -111,6 +111,16 @@ This wrapper keeps scenario construction serial by default
 currently `decorrelated + partial_rebalance_daily`; the leaderboard should still
 be reviewed because higher-return policies can be less cost-robust.
 
+For factor-promotion work, use the baseline hierarchy in
+`docs/validation/factor_development_standard.md` rather than comparing only to a
+naive control. Every strategy-level review should state the naive/control
+anchor, the active/default baseline, and the research frontier baseline when
+one exists. As of the 2026-05-19 daily moving-average review,
+`score_budget_gate_v1` remains the active/default baseline, while the fixed
+`high_dispersion_current` ribbon-dispersion gate is the research frontier
+challenger. Future daily-MA-family candidates must report marginal contribution
+against that frontier as well as against the active baseline.
+
 ## Required Outputs
 
 The benchmark writes:

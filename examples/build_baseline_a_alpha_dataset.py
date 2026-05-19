@@ -197,6 +197,8 @@ def _build_partition_dataset(
             sell_pressure_recovery_windows=tuple(
                 args.sell_pressure_recovery_windows
             ),
+            daily_moving_average_windows=tuple(args.daily_moving_average_windows),
+            daily_moving_average_pairs=tuple(args.daily_moving_average_pairs),
             market_downside_beta_windows=tuple(args.market_downside_beta_windows),
             market_state_windows=tuple(args.market_state_windows),
             breadth_resilience_windows=tuple(args.breadth_resilience_windows),
@@ -431,6 +433,12 @@ def _write_summary(
                 args.negative_return_persistence_windows
             ),
             "sell_pressure_absorption_windows": args.sell_pressure_absorption_windows,
+            "downside_turnover_decay_windows": args.downside_turnover_decay_windows,
+            "sell_pressure_recovery_windows": args.sell_pressure_recovery_windows,
+            "daily_moving_average_windows": args.daily_moving_average_windows,
+            "daily_moving_average_pairs": [
+                list(pair) for pair in args.daily_moving_average_pairs
+            ],
             "market_downside_beta_windows": args.market_downside_beta_windows,
             "market_state_windows": args.market_state_windows,
             "breadth_resilience_windows": args.breadth_resilience_windows,
@@ -503,6 +511,7 @@ def _parse_args() -> argparse.Namespace:
             "sell_pressure_absorption",
             "downside_turnover_decay",
             "sell_pressure_recovery",
+            "daily_moving_average",
         ),
     )
     parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 3, 6])
@@ -574,6 +583,19 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         nargs="+",
         default=[48],
+    )
+    parser.add_argument(
+        "--daily-moving-average-windows",
+        type=int,
+        nargs="+",
+        default=[5, 10, 20],
+    )
+    parser.add_argument(
+        "--daily-moving-average-pairs",
+        type=_daily_moving_average_pair,
+        nargs="+",
+        default=[(5, 20), (10, 20)],
+        help="short:long daily moving-average pairs, for example 5:20",
     )
     parser.add_argument("--market-downside-beta-windows", type=int, nargs="+", default=[48])
     parser.add_argument("--market-state-windows", type=int, nargs="+", default=[48])
@@ -659,6 +681,12 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--downside-turnover-decay-windows values must be at least 2")
     if any(value <= 0 for value in args.sell_pressure_recovery_windows):
         raise ValueError("--sell-pressure-recovery-windows values must be positive")
+    if any(value <= 0 for value in args.daily_moving_average_windows):
+        raise ValueError("--daily-moving-average-windows values must be positive")
+    if any(short <= 0 or long <= 0 for short, long in args.daily_moving_average_pairs):
+        raise ValueError("--daily-moving-average-pairs values must be positive")
+    if any(short >= long for short, long in args.daily_moving_average_pairs):
+        raise ValueError("--daily-moving-average-pairs must be ordered short:long")
     if any(value <= 0 for value in args.market_downside_beta_windows):
         raise ValueError("--market-downside-beta-windows values must be positive")
     if any(value <= 0 for value in args.market_state_windows):
@@ -717,6 +745,10 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "sell_pressure_absorption_windows": list(args.sell_pressure_absorption_windows),
         "downside_turnover_decay_windows": list(args.downside_turnover_decay_windows),
         "sell_pressure_recovery_windows": list(args.sell_pressure_recovery_windows),
+        "daily_moving_average_windows": list(args.daily_moving_average_windows),
+        "daily_moving_average_pairs": [
+            list(pair) for pair in args.daily_moving_average_pairs
+        ],
         "market_downside_beta_windows": list(args.market_downside_beta_windows),
         "market_state_windows": list(args.market_state_windows),
         "breadth_resilience_windows": list(args.breadth_resilience_windows),
@@ -766,6 +798,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.sell_pressure_absorption_windows,
                     *args.downside_turnover_decay_windows,
                     *args.sell_pressure_recovery_windows,
+                    *(window * 48 for window in args.daily_moving_average_windows),
                     *args.market_downside_beta_windows,
                     *args.market_state_windows,
                     *args.breadth_resilience_windows,
@@ -804,6 +837,18 @@ def _label_column_names(args: argparse.Namespace) -> list[str]:
         for config in _label_configs(args)
         for column in (config.name, f"{config.name}_rank")
     ]
+
+
+def _daily_moving_average_pair(value: str) -> tuple[int, int]:
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError("expected short:long, for example 5:20")
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "daily moving-average pair values must be integers"
+        ) from exc
 
 
 def _feature_columns(

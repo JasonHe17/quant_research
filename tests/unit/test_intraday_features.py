@@ -53,6 +53,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "sell_pressure_absorption",
             "downside_turnover_decay",
             "sell_pressure_recovery",
+            "daily_moving_average",
         ),
         reversal_lookback_bars=(1,),
         momentum_lookback_bars=(2,),
@@ -74,6 +75,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         sell_pressure_absorption_windows=(3,),
         downside_turnover_decay_windows=(4,),
         sell_pressure_recovery_windows=(3,),
+        daily_moving_average_windows=(2, 3),
+        daily_moving_average_pairs=((2, 3),),
         market_state_windows=(3,),
         market_downside_beta_windows=(3,),
         breadth_resilience_windows=(3,),
@@ -109,6 +112,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_sell_pressure_absorption_5m_w3" in features
     assert "intraday_downside_turnover_decay_5m_w4" in features
     assert "intraday_sell_pressure_recovery_5m_w3" in features
+    assert "intraday_daily_ma_deviation_5m_d3" in features
+    assert "intraday_daily_ma_spread_5m_s2_l3" in features
     assert features.loc[0, "intraday_bar_return_5m"] == pytest.approx(0.1)
     assert features["intraday_reversal_5m_lb1"].notna().sum() == 5
     assert features["intraday_range_position_5m_w3"].iloc[-1] == pytest.approx(0.5)
@@ -174,6 +179,8 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_sell_pressure_absorption_5m_w48" in features
     assert "intraday_downside_turnover_decay_5m_w48" in features
     assert "intraday_sell_pressure_recovery_5m_w48" in features
+    assert "intraday_daily_ma_deviation_5m_d20" in features
+    assert "intraday_daily_ma_ribbon_trend_score_5m" in features
     assert not features.empty
 
 
@@ -498,6 +505,58 @@ def test_market_state_features_broadcast_cross_sectional_risk_state() -> None:
     )
     assert values.loc[("a", "t2"), "market_state_weak_breadth_mean_5m_w2"] == (
         pytest.approx(0.25)
+    )
+
+
+def test_daily_moving_average_features_use_completed_prior_sessions() -> None:
+    rows = []
+    closes = {
+        "2024-01-01": (10.0, 10.5),
+        "2024-01-02": (11.0, 11.5),
+        "2024-01-03": (12.0, 12.5),
+        "2024-01-04": (20.0, 20.5),
+        "2024-01-05": (21.0, 21.5),
+    }
+    for trade_date, day_closes in closes.items():
+        for index, close in enumerate(day_closes):
+            rows.append(
+                {
+                    "instrument_id": "inst-1",
+                    "bar_end_time": f"{trade_date}T09:{35 + index * 5}:00+08:00",
+                    "trade_date": trade_date,
+                    "close_price": close,
+                }
+            )
+    bars = pd.DataFrame(rows)
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("daily_moving_average",),
+            daily_moving_average_windows=(2, 3),
+            daily_moving_average_pairs=((2, 3),),
+        ),
+    )
+
+    values = features.set_index(["timestamp"])
+    deviation = "intraday_daily_ma_deviation_5m_d3"
+    spread = "intraday_daily_ma_spread_5m_s2_l3"
+    slope = "intraday_daily_ma_slope_5m_d3"
+
+    assert values.loc["2024-01-04T09:35:00+08:00", deviation] == pytest.approx(
+        12.5 / ((10.5 + 11.5 + 12.5) / 3.0) - 1.0
+    )
+    assert values.loc["2024-01-04T09:40:00+08:00", deviation] == pytest.approx(
+        values.loc["2024-01-04T09:35:00+08:00", deviation]
+    )
+    assert values.loc["2024-01-04T09:35:00+08:00", spread] == pytest.approx(
+        ((11.5 + 12.5) / 2.0) / ((10.5 + 11.5 + 12.5) / 3.0) - 1.0
+    )
+    assert values.loc["2024-01-05T09:35:00+08:00", slope] == pytest.approx(
+        ((11.5 + 12.5 + 20.5) / 3.0) / ((10.5 + 11.5 + 12.5) / 3.0) - 1.0
+    )
+    assert values.loc["2024-01-04T09:35:00+08:00", deviation] != pytest.approx(
+        20.5 / ((11.5 + 12.5 + 20.5) / 3.0) - 1.0
     )
 
 
