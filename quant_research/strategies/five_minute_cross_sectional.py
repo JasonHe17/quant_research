@@ -112,27 +112,31 @@ class FiveMinuteCrossSectionalStrategy:
 def _select_top_signals(
     signals: pd.DataFrame, *, config: FiveMinuteCrossSectionalConfig
 ) -> pd.DataFrame:
-    rows: list[pd.DataFrame] = []
-    for timestamp, group in signals.groupby("timestamp", sort=True):
-        eligible = group.copy()
-        if config.min_signal is not None:
-            eligible = eligible.loc[
-                eligible["signal"].astype(float) >= config.min_signal
-            ]
-        selected = eligible.sort_values(
-            ["signal", "instrument_id"],
-            ascending=[False, True],
-        ).head(config.top_n)
-        if selected.empty:
-            continue
-        output = selected.loc[:, ["timestamp", "instrument_id", "signal"]].copy()
-        output["rank"] = range(1, len(output) + 1)
-        rows.append(output)
-    if not rows:
+    if signals.empty:
         return pd.DataFrame(
             columns=["timestamp", "instrument_id", "signal", "rank"]
         )
-    return pd.concat(rows, ignore_index=True)
+    eligible = signals
+    if config.min_signal is not None:
+        eligible = eligible.loc[
+            eligible["signal"].astype(float) >= config.min_signal
+        ]
+    if eligible.empty:
+        return pd.DataFrame(
+            columns=["timestamp", "instrument_id", "signal", "rank"]
+        )
+    selected = (
+        eligible.sort_values(
+            ["timestamp", "signal", "instrument_id"],
+            ascending=[True, False, True],
+        )
+        .groupby("timestamp", sort=False)
+        .head(config.top_n)
+        .loc[:, ["timestamp", "instrument_id", "signal"]]
+        .reset_index(drop=True)
+    )
+    selected["rank"] = selected.groupby("timestamp", sort=False).cumcount() + 1
+    return selected
 
 
 def _diagnostics(
