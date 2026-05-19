@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 
 
@@ -178,22 +179,73 @@ def build_rolling_regime_gate(
         "score_top_minus_bottom_label"
     ]
     output["rolling_score_rank_ic"] = rolling_means["score_rank_ic"]
-    for index, row in output.iterrows():
-        if int(row["rolling_observation_count"]) < config.min_periods:
-            continue
-        top_return = float(row["rolling_score_top_n_mean_label"])
-        spread = float(row["rolling_score_top_minus_bottom_label"])
-        rank_ic = float(row["rolling_score_rank_ic"])
-        scale, reason, health_score = _scale_from_rolling_metrics(
-            top_return=top_return,
-            spread=spread,
-            rank_ic=rank_ic,
-            config=config,
-        )
-        output.at[index, "raw_gross_exposure_scale"] = scale
-        output.at[index, "raw_gate_reason"] = reason
-        output.at[index, "budget_health_score"] = health_score
+    _set_raw_gate_columns(output, config)
     return _apply_gate_hysteresis(output, config)
+
+
+def _set_raw_gate_columns(
+    output: pd.DataFrame,
+    config: RollingRegimeGateConfig,
+) -> None:
+    ready = output["rolling_observation_count"].astype(int) >= config.min_periods
+    if not ready.any():
+        return
+    top_return = output["rolling_score_top_n_mean_label"].astype(float)
+    spread = output["rolling_score_top_minus_bottom_label"].astype(float)
+    rank_ic = output["rolling_score_rank_ic"].astype(float)
+    if config.gate_mode == "budget":
+        top_score = _linear_score_series(
+            top_return,
+            floor=config.budget_top_return_floor,
+            ceiling=config.budget_top_return_ceiling,
+        )
+        spread_score = _linear_score_series(
+            spread,
+            floor=config.budget_spread_floor,
+            ceiling=config.budget_spread_ceiling,
+        )
+        rank_ic_score = _linear_score_series(
+            rank_ic,
+            floor=config.budget_rank_ic_floor,
+            ceiling=config.budget_rank_ic_ceiling,
+        )
+        health_score = pd.concat([top_score, spread_score, rank_ic_score], axis=1).min(
+            axis=1
+        )
+        scale = config.budget_min_scale + (
+            config.budget_max_scale - config.budget_min_scale
+        ) * health_score
+        output.loc[ready, "raw_gross_exposure_scale"] = scale.loc[ready].astype(float)
+        output.loc[ready, "raw_gate_reason"] = "budget_exposure"
+        output.loc[ready, "budget_health_score"] = health_score.loc[ready].astype(float)
+        return
+
+    blocked = (
+        top_return.le(config.block_top_return)
+        | spread.le(config.block_spread)
+        | rank_ic.le(config.block_rank_ic)
+    )
+    reduced = (
+        top_return.lt(config.min_top_return)
+        | spread.lt(config.min_spread)
+        | rank_ic.lt(config.min_rank_ic)
+    )
+    output.loc[ready, "raw_gross_exposure_scale"] = config.full_scale
+    output.loc[ready, "raw_gate_reason"] = "full_exposure"
+    reduced_ready = ready & reduced & ~blocked
+    output.loc[reduced_ready, "raw_gross_exposure_scale"] = config.reduced_scale
+    output.loc[reduced_ready, "raw_gate_reason"] = "reduced_exposure"
+    blocked_ready = ready & blocked
+    output.loc[blocked_ready, "raw_gross_exposure_scale"] = config.blocked_scale
+    output.loc[blocked_ready, "raw_gate_reason"] = "blocked_exposure"
+
+
+def _linear_score_series(values: pd.Series, *, floor: float, ceiling: float) -> pd.Series:
+    scaled = (values - floor) / (ceiling - floor)
+    return pd.Series(
+        np.clip(scaled.to_numpy(dtype=float), 0.0, 1.0),
+        index=values.index,
+    )
 
 
 def _apply_gate_hysteresis(
