@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
+import glob
 import json
 from pathlib import Path
 import subprocess
@@ -16,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from quant_research.portfolio import (
+from quant_research.portfolio import (  # noqa: E402
     CandidateFactor,
     FactorHealthConfig,
     ScoreForecastCalibrationConfig,
@@ -25,7 +26,7 @@ from quant_research.portfolio import (
     load_candidate_factors,
     write_score_partitions,
 )
-from quant_research.factors import load_factor_registry
+from quant_research.factors import load_factor_registry  # noqa: E402
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,54 +80,71 @@ def main() -> None:
     args = _parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    dataset_paths = _dataset_paths(args)
-    candidates = load_candidate_factors(
-        Path(args.admission_report),
-        statuses=tuple(args.statuses),
-        include_features=tuple(args.include_features),
-    )
-    registry_filter = _registry_filter_summary(args, candidates)
-    candidates = registry_filter["candidates"]
-    correlation = _load_correlation(Path(args.factor_correlation))
-    weights_by_method = {
-        method: factor_combination_weights(
-            candidates,
-            method=method,
-            correlation=correlation,
-            ridge=args.decorrelation_ridge,
+    if args.reuse_scores_from:
+        source_summary = _load_reused_score_summary(Path(args.reuse_scores_from))
+        scores_summary = _reused_scores_summary(args, source_summary)
+        summary = {
+            "params": _summary_params(args),
+            "registry_filter": source_summary.get("registry_filter", {}),
+            "score_reuse": {
+                "enabled": True,
+                "source": args.reuse_scores_from,
+                "source_summary": str(_reused_score_summary_path(Path(args.reuse_scores_from))),
+            },
+            **scores_summary,
+        }
+        if source_summary.get("factor_health_schedule"):
+            summary["factor_health_schedule"] = source_summary["factor_health_schedule"]
+    else:
+        dataset_paths = _dataset_paths(args)
+        candidates = load_candidate_factors(
+            Path(args.admission_report),
+            statuses=tuple(args.statuses),
+            include_features=tuple(args.include_features),
         )
-        for method in args.methods
-    }
-    factor_health_schedule = _build_factor_health_schedule(args, dataset_paths, candidates)
-    factor_health_path: Path | None = None
-    if factor_health_schedule is not None:
-        health_dir = output_dir / "factor_health"
-        health_dir.mkdir(parents=True, exist_ok=True)
-        factor_health_path = health_dir / "factor_health_schedule.csv"
-        factor_health_schedule.to_csv(factor_health_path, index=False)
-    scores_summary = write_score_partitions(
-        dataset_paths,
-        output_dir=output_dir / "scores",
-        candidates=candidates,
-        weights_by_method=weights_by_method,
-        max_factor_weight=args.factor_max_weight,
-        max_factor_contribution_share=args.factor_max_contribution_share,
-        factor_health_schedule=factor_health_schedule,
-        diagnostics_top_n=args.score_diagnostics_top_n,
-        diagnostics_label_column=args.label_column,
-        forecast_calibration_config=_forecast_calibration_config(args),
-    )
-    summary = {
-        "params": _summary_params(args),
-        "registry_filter": {
-            key: value
-            for key, value in registry_filter.items()
-            if key != "candidates"
-        },
-        **scores_summary,
-    }
-    if factor_health_path is not None:
-        summary["factor_health_schedule"] = str(factor_health_path)
+        registry_filter = _registry_filter_summary(args, candidates)
+        candidates = registry_filter["candidates"]
+        correlation = _load_correlation(Path(args.factor_correlation))
+        weights_by_method = {
+            method: factor_combination_weights(
+                candidates,
+                method=method,
+                correlation=correlation,
+                ridge=args.decorrelation_ridge,
+            )
+            for method in args.methods
+        }
+        factor_health_schedule = _build_factor_health_schedule(args, dataset_paths, candidates)
+        factor_health_path: Path | None = None
+        if factor_health_schedule is not None:
+            health_dir = output_dir / "factor_health"
+            health_dir.mkdir(parents=True, exist_ok=True)
+            factor_health_path = health_dir / "factor_health_schedule.csv"
+            factor_health_schedule.to_csv(factor_health_path, index=False)
+        scores_summary = write_score_partitions(
+            dataset_paths,
+            output_dir=output_dir / "scores",
+            candidates=candidates,
+            weights_by_method=weights_by_method,
+            max_factor_weight=args.factor_max_weight,
+            max_factor_contribution_share=args.factor_max_contribution_share,
+            factor_health_schedule=factor_health_schedule,
+            diagnostics_top_n=args.score_diagnostics_top_n,
+            diagnostics_label_column=args.label_column,
+            forecast_calibration_config=_forecast_calibration_config(args),
+        )
+        summary = {
+            "params": _summary_params(args),
+            "registry_filter": {
+                key: value
+                for key, value in registry_filter.items()
+                if key != "candidates"
+            },
+            "score_reuse": {"enabled": False},
+            **scores_summary,
+        }
+        if factor_health_path is not None:
+            summary["factor_health_schedule"] = str(factor_health_path)
     if args.run_backtests:
         backtests = _run_backtests(args, scores_summary=scores_summary)
         summary["backtests"] = backtests
@@ -164,6 +182,49 @@ def _load_correlation(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
     return pd.read_csv(path, index_col=0)
+
+
+def _reused_score_summary_path(source: Path) -> Path:
+    if source.is_dir():
+        return source / "summary.json"
+    return source
+
+
+def _load_reused_score_summary(source: Path) -> dict[str, object]:
+    summary_path = _reused_score_summary_path(source)
+    if not summary_path.exists():
+        raise FileNotFoundError(f"reused score summary not found: {summary_path}")
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"invalid reused score summary: {summary_path}")
+    if not isinstance(payload.get("methods"), dict):
+        raise ValueError(f"reused score summary has no methods: {summary_path}")
+    return payload
+
+
+def _reused_scores_summary(
+    args: argparse.Namespace,
+    source_summary: dict[str, object],
+) -> dict[str, object]:
+    source_methods = source_summary.get("methods")
+    if not isinstance(source_methods, dict):
+        raise ValueError("reused score summary has no methods")
+    methods: dict[str, object] = {}
+    for method in args.methods:
+        payload = source_methods.get(method)
+        if not isinstance(payload, dict):
+            raise ValueError(f"reused score summary missing method: {method}")
+        path = payload.get("path")
+        if not isinstance(path, str) or not path:
+            raise ValueError(f"reused score summary has no score path for {method}")
+        if not glob.glob(path):
+            raise FileNotFoundError(f"reused score path has no matches for {method}: {path}")
+        methods[method] = dict(payload)
+    candidate_features = source_summary.get("candidate_features", [])
+    return {
+        "candidate_features": candidate_features,
+        "methods": methods,
+    }
 
 
 def _summary_params(args: argparse.Namespace) -> dict[str, object]:
@@ -210,6 +271,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             args.forecast_calibration_max_abs_edge_bps
         ),
         "score_diagnostics_top_n": args.score_diagnostics_top_n,
+        "reuse_scores_from": args.reuse_scores_from,
     }
     if args.run_backtests:
         params["backtest"] = {
@@ -1036,6 +1098,14 @@ def _parse_args() -> argparse.Namespace:
         "--score-diagnostics-top-n",
         type=int,
         help="write per-partition top-N factor contribution diagnostics",
+    )
+    parser.add_argument(
+        "--reuse-scores-from",
+        help=(
+            "reuse scores and score diagnostics from an existing "
+            "run_candidate_factor_portfolios output directory or summary.json; "
+            "only backtests are run in the current output directory"
+        ),
     )
     parser.add_argument("--run-backtests", action="store_true")
     parser.add_argument(

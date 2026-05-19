@@ -17,6 +17,7 @@ from examples.run_candidate_factor_portfolios import (
     _default_label_lag_windows,
     _effective_backtest_memory_budget_gb,
     _registry_filter_summary,
+    _reused_scores_summary,
     _summary_params,
 )
 from quant_research.portfolio import (
@@ -664,6 +665,46 @@ def test_candidate_factor_backtest_jobs_use_nested_policy_paths(tmp_path: Path) 
     assert jobs[0].memory_estimate_gb == pytest.approx(4.5)
 
 
+def test_candidate_factor_reused_scores_summary_keeps_existing_score_paths(
+    tmp_path: Path,
+) -> None:
+    score_dir = tmp_path / "source" / "scores" / "equal"
+    score_dir.mkdir(parents=True)
+    score_path = score_dir / "score_2024_01.parquet"
+    score_path.touch()
+    diagnostics_path = score_dir / "diagnostics" / "factor_contribution_2024_01.csv"
+    diagnostics_path.parent.mkdir()
+    diagnostics_path.touch()
+    source_summary = {
+        "candidate_features": ["alpha_a"],
+        "methods": {
+            "equal": {
+                "path": str(score_dir / "*.parquet"),
+                "partition_count": 1,
+                "factor_contribution_diagnostics": [str(diagnostics_path)],
+            },
+            "decorrelated": {
+                "path": str(tmp_path / "missing" / "*.parquet"),
+            },
+        },
+    }
+    args = _portfolio_args(methods=["equal"], reuse_scores_from=str(tmp_path / "source"))
+
+    summary = _reused_scores_summary(args, source_summary)
+
+    assert summary["candidate_features"] == ["alpha_a"]
+    assert summary["methods"]["equal"]["path"] == str(score_dir / "*.parquet")  # type: ignore[index]
+
+
+def test_candidate_factor_reused_scores_summary_requires_requested_method(
+    tmp_path: Path,
+) -> None:
+    args = _portfolio_args(methods=["decorrelated"], reuse_scores_from=str(tmp_path))
+
+    with pytest.raises(ValueError, match="missing method"):
+        _reused_scores_summary(args, {"methods": {"equal": {"path": "scores/*.parquet"}}})
+
+
 def test_candidate_factor_backtest_summary_rows_flatten_nested_results() -> None:
     rows = _backtest_summary_rows(
         {
@@ -830,6 +871,7 @@ def _portfolio_args(**overrides: object) -> object:
         "forecast_calibration_risk_multiplier": 1.0,
         "forecast_calibration_max_abs_edge_bps": None,
         "score_diagnostics_top_n": None,
+        "reuse_scores_from": None,
         "backtest_policy_set": "single",
         "backtest_policies": None,
         "trade_policy": "naive_top_n",

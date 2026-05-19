@@ -20,7 +20,7 @@ EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from examples.build_factor_risk_gate import build_factor_risk_gate
+from examples.build_factor_risk_gate import build_factor_risk_gate  # noqa: E402
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +269,9 @@ def _scenario_command(
         "--partition-end",
         scenario.partition_end,
     ]
+    score_reuse_source = _scenario_score_reuse_source(args, scenario)
+    if score_reuse_source is not None:
+        command.extend(["--reuse-scores-from", str(score_reuse_source)])
     if args.include_features:
         command.extend(["--include-features", *args.include_features])
     command.extend(
@@ -490,6 +493,24 @@ def _scenario_output_dir(args: argparse.Namespace, scenario: ValidationScenario)
     return Path(args.output_dir) / scenario.name
 
 
+def _scenario_score_reuse_source(
+    args: argparse.Namespace,
+    scenario: ValidationScenario,
+) -> Path | None:
+    if scenario.name not in {"full_high_cost", "full_zero_cost"}:
+        return None
+    return Path(args.output_dir) / "full_base"
+
+
+def _scenario_dependencies(
+    args: argparse.Namespace,
+    scenario: ValidationScenario,
+) -> tuple[str, ...]:
+    if _scenario_score_reuse_source(args, scenario) is None:
+        return ()
+    return ("full_base",)
+
+
 def _backtest_output_dir(
     args: argparse.Namespace,
     scenario: ValidationScenario,
@@ -553,6 +574,7 @@ def _run_scenarios(
             _run_scenario(commands[scenario.name], logs_dir / f"{scenario.name}.log")
         return
     _run_scenarios_with_budget(
+        args,
         scenarios,
         commands=commands,
         logs_dir=logs_dir,
@@ -562,6 +584,7 @@ def _run_scenarios(
 
 
 def _run_scenarios_with_budget(
+    args: argparse.Namespace,
     scenarios: list[ValidationScenario],
     *,
     commands: dict[str, list[str]],
@@ -570,15 +593,25 @@ def _run_scenarios_with_budget(
     memory_budget_gb: float,
 ) -> None:
     pending = list(scenarios)
+    scenario_by_name = {scenario.name: scenario for scenario in scenarios}
+    completed_names: set[str] = set()
     running: dict[Future[None], ValidationScenario] = {}
     running_memory_gb = 0.0
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         while pending or running:
             while pending and len(running) < max_workers:
-                scenario = pending[0]
+                ready_index = _next_ready_scenario_index(
+                    args,
+                    pending,
+                    completed_names=completed_names,
+                    scenario_by_name=scenario_by_name,
+                )
+                if ready_index is None:
+                    break
+                scenario = pending[ready_index]
                 if running_memory_gb + scenario.memory_estimate_gb > memory_budget_gb:
                     break
-                pending.pop(0)
+                pending.pop(ready_index)
                 future = executor.submit(
                     _run_scenario,
                     commands[scenario.name],
@@ -588,6 +621,17 @@ def _run_scenarios_with_budget(
                 running_memory_gb += scenario.memory_estimate_gb
             if not running:
                 scenario = pending[0]
+                dependencies = _scenario_dependencies(args, scenario)
+                if dependencies and not _scenario_dependencies_satisfied(
+                    args,
+                    scenario,
+                    completed_names=completed_names,
+                    scenario_by_name=scenario_by_name,
+                ):
+                    raise RuntimeError(
+                        f"validation scenario {scenario.name} depends on "
+                        f"{', '.join(dependencies)}, but the dependency output is missing"
+                    )
                 raise RuntimeError(
                     f"validation scenario {scenario.name} requires an estimated "
                     f"{scenario.memory_estimate_gb:.2f} GB, above the configured "
@@ -598,6 +642,45 @@ def _run_scenarios_with_budget(
                 scenario = running.pop(future)
                 running_memory_gb -= scenario.memory_estimate_gb
                 future.result()
+                completed_names.add(scenario.name)
+
+
+def _next_ready_scenario_index(
+    args: argparse.Namespace,
+    pending: list[ValidationScenario],
+    *,
+    completed_names: set[str],
+    scenario_by_name: dict[str, ValidationScenario],
+) -> int | None:
+    for index, scenario in enumerate(pending):
+        if _scenario_dependencies_satisfied(
+            args,
+            scenario,
+            completed_names=completed_names,
+            scenario_by_name=scenario_by_name,
+        ):
+            return index
+    return None
+
+
+def _scenario_dependencies_satisfied(
+    args: argparse.Namespace,
+    scenario: ValidationScenario,
+    *,
+    completed_names: set[str],
+    scenario_by_name: dict[str, ValidationScenario],
+) -> bool:
+    for dependency in _scenario_dependencies(args, scenario):
+        if dependency in completed_names:
+            continue
+        dependency_scenario = scenario_by_name.get(dependency)
+        if dependency_scenario is not None and _scenario_outputs_exist(
+            args,
+            dependency_scenario,
+        ):
+            continue
+        return False
+    return True
 
 
 def _effective_scenario_memory_budget_gb(args: argparse.Namespace) -> float:

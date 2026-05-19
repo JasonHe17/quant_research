@@ -16,6 +16,7 @@ from examples.run_candidate_policy_validation import (
     _policy_leaderboard,
     _prepare_factor_risk_gate,
     _scenario_command,
+    _scenario_score_reuse_source,
     _scenario_outputs_exist,
     _validation_checks,
     _validation_scenarios,
@@ -78,6 +79,21 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     ] == ["candidate", "promoted"]
     assert "--enforce-registry" in command
     assert "--resume-existing" in command
+
+
+def test_candidate_policy_validation_reuses_full_base_scores_for_cost_scenarios(
+    tmp_path: Path,
+) -> None:
+    args = _validation_args(output_dir=str(tmp_path), methods=["equal"])
+    scenario = _validation_scenarios(args, years=[2023])[2]
+
+    command = _scenario_command(args, scenario)
+
+    assert scenario.name == "full_high_cost"
+    assert _scenario_score_reuse_source(args, scenario) == tmp_path / "full_base"
+    assert command[command.index("--reuse-scores-from") + 1] == str(
+        tmp_path / "full_base"
+    )
 
 
 def test_candidate_policy_validation_command_supports_single_calibrated_optimizer(
