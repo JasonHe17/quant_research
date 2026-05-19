@@ -1561,35 +1561,6 @@ def _next_time_by_signal(
     }
 
 
-def _price_execution_rows(
-    bars: pd.DataFrame,
-    *,
-    tracked_instruments: set[str],
-    start_exclusive: object | None,
-    end_inclusive: object,
-) -> pd.DataFrame:
-    if not tracked_instruments:
-        return _empty_tree_score_execution_frame()
-    mask = bars["bar_end_time"] <= end_inclusive
-    if start_exclusive is not None:
-        mask &= bars["bar_end_time"] > start_exclusive
-    prices = bars.loc[
-        mask & bars["instrument_id"].astype(str).isin(tracked_instruments),
-        [
-            "bar_end_time",
-            "instrument_id",
-            "canonical_code",
-            "open_price",
-            "close_price",
-            "turnover",
-            "tradable_bar",
-            "limit_up_open",
-            "limit_down_open",
-        ],
-    ].rename(columns={"bar_end_time": "exec_time"})
-    return prices.assign(target_weight=pd.NA)
-
-
 def _price_execution_rows_from_index(
     bars: pd.DataFrame,
     bar_time_index: BarTimeIndex,

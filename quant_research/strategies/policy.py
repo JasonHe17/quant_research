@@ -12,25 +12,6 @@ DecisionAction = Literal["entry", "exit", "hold", "resize_up", "resize_down", "n
 WeightingMethod = Literal["equal", "score"]
 OptimizerWeightingMethod = Literal["equal", "utility"]
 
-REASON_CODES = (
-    "entry_rank",
-    "hold_buffer",
-    "exit_rank",
-    "resize_up",
-    "resize_down",
-    "below_edge",
-    "below_weight_band",
-    "min_hold_blocked",
-    "t1_sell_blocked",
-    "limit_up_buy_blocked",
-    "limit_down_sell_blocked",
-    "capacity_capped",
-    "risk_reduction",
-    "turnover_budget_limited",
-    "cash_limited",
-    "universe_removed",
-)
-
 PORTFOLIO_STATE_COLUMNS = (
     "instrument_id",
     "current_weight",
@@ -765,15 +746,6 @@ def _expected_edge_bps(row: object) -> float:
     if value is None or pd.isna(value):
         return 0.0
     return float(value)
-
-
-def _risk_penalty_bps(row: object) -> float:
-    for name in ("risk_penalty_bps", "health_risk_bps", "optimizer_risk_penalty_bps"):
-        if hasattr(row, name):
-            value = getattr(row, name)
-            if value is not None and not pd.isna(value):
-                return max(float(value), 0.0)
-    return 0.0
 
 
 def _optimizer_selection_score(

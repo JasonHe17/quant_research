@@ -23,13 +23,6 @@ class RiskConstraint:
             raise ValueError("constraint limit must be non-negative")
 
 
-RegimeGateReason = Literal[
-    "warmup",
-    "full_exposure",
-    "reduced_exposure",
-    "blocked_exposure",
-    "budget_exposure",
-]
 RegimeGateMode = Literal["threshold", "budget"]
 
 
@@ -342,75 +335,6 @@ def _limit_scale_step(
         return target_scale, False, False
     direction = 1.0 if delta > 0 else -1.0
     return previous_scale + direction * step, True, False
-
-
-def _scale_from_rolling_metrics(
-    *,
-    top_return: float,
-    spread: float,
-    rank_ic: float,
-    config: RollingRegimeGateConfig,
-) -> tuple[float, RegimeGateReason, float | None]:
-    if config.gate_mode == "budget":
-        scale, health_score = _budget_scale_from_rolling_metrics(
-            top_return=top_return,
-            spread=spread,
-            rank_ic=rank_ic,
-            config=config,
-        )
-        return scale, "budget_exposure", health_score
-    if (
-        top_return <= config.block_top_return
-        or spread <= config.block_spread
-        or rank_ic <= config.block_rank_ic
-    ):
-        return config.blocked_scale, "blocked_exposure", None
-    if (
-        top_return < config.min_top_return
-        or spread < config.min_spread
-        or rank_ic < config.min_rank_ic
-    ):
-        return config.reduced_scale, "reduced_exposure", None
-    return config.full_scale, "full_exposure", None
-
-
-def _budget_scale_from_rolling_metrics(
-    *,
-    top_return: float,
-    spread: float,
-    rank_ic: float,
-    config: RollingRegimeGateConfig,
-) -> tuple[float, float]:
-    components = [
-        _linear_score(
-            top_return,
-            floor=config.budget_top_return_floor,
-            ceiling=config.budget_top_return_ceiling,
-        ),
-        _linear_score(
-            spread,
-            floor=config.budget_spread_floor,
-            ceiling=config.budget_spread_ceiling,
-        ),
-        _linear_score(
-            rank_ic,
-            floor=config.budget_rank_ic_floor,
-            ceiling=config.budget_rank_ic_ceiling,
-        ),
-    ]
-    health_score = min(components)
-    scale = config.budget_min_scale + (
-        config.budget_max_scale - config.budget_min_scale
-    ) * health_score
-    return scale, health_score
-
-
-def _linear_score(value: float, *, floor: float, ceiling: float) -> float:
-    if value <= floor:
-        return 0.0
-    if value >= ceiling:
-        return 1.0
-    return (value - floor) / (ceiling - floor)
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

@@ -579,7 +579,6 @@ def _run_backtest_jobs_with_budget(
                     job,
                     running_memory_gb=running_memory_gb,
                     memory_budget_gb=memory_budget_gb,
-                    running_count=len(running),
                 ):
                     break
                 pending.pop(0)
@@ -605,7 +604,6 @@ def _can_launch_backtest_job(
     *,
     running_memory_gb: float,
     memory_budget_gb: float,
-    running_count: int,
 ) -> bool:
     return running_memory_gb + job.memory_estimate_gb <= memory_budget_gb
 

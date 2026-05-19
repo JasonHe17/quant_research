@@ -256,19 +256,16 @@ def test_backtest_memory_gate_blocks_jobs_over_budget(
         job,
         running_memory_gb=0.0,
         memory_budget_gb=4.0,
-        running_count=0,
     )
     assert not _can_launch_backtest_job(
         job,
         running_memory_gb=6.0,
         memory_budget_gb=10.0,
-        running_count=1,
     )
     assert _can_launch_backtest_job(
         job,
         running_memory_gb=2.0,
         memory_budget_gb=10.0,
-        running_count=1,
     )
 
 

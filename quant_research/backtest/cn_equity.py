@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Literal
+from typing import Iterable
 
 import pandas as pd
-
-
-SameBarPolicy = Literal["explicit", "forbidden"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -852,37 +849,6 @@ def _roll_lots_to_sellable(
     state.previous_date = trade_date
 
 
-def _column_by_instrument(
-    group: pd.DataFrame,
-    column: str | None,
-) -> dict[str, float]:
-    if column is None:
-        return {}
-    if column not in group.columns:
-        return {}
-    return {
-        str(row.instrument_id): float(getattr(row, column))
-        for row in group.loc[:, ["instrument_id", column]].itertuples(index=False)
-    }
-
-
-def _bool_column_by_instrument(
-    group: pd.DataFrame,
-    column: str,
-    *,
-    default: bool,
-) -> dict[str, bool]:
-    if column not in group.columns:
-        return {}
-    values = {
-        str(row.instrument_id): bool(getattr(row, column))
-        for row in group.loc[:, ["instrument_id", column]].itertuples(index=False)
-    }
-    if default:
-        return values
-    return values
-
-
 def _target_weights_by_instrument(group: pd.DataFrame) -> dict[str, float]:
     targets: dict[str, float] = {}
     instrument_values = group["instrument_id"].to_numpy(copy=False)
@@ -1001,22 +967,6 @@ def _below_min_trade_weight(
         config.min_trade_weight > 0
         and equity > 0
         and abs(delta_value) / equity < config.min_trade_weight
-    )
-
-
-def _buy_shares(
-    delta_value: float,
-    *,
-    price: float,
-    capacity_notional: float | None,
-    config: TargetWeightExecutionConfig,
-) -> int:
-    shares = int(delta_value / price / config.lot_size) * config.lot_size
-    return cap_trade_shares_by_notional(
-        shares,
-        price=price,
-        capacity_notional=capacity_notional,
-        config=config,
     )
 
 
