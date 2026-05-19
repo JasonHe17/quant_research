@@ -143,10 +143,10 @@ def _positions_for_backtest(
     output = final_positions.copy()
     output["timestamp"] = timestamp
     output["quantity"] = output["shares"].astype(float)
-    output["market_value"] = output.apply(
-        lambda row: float(row["quantity"]) * last_prices.get(str(row["instrument_id"]), 0.0),
-        axis=1,
+    prices = (
+        output["instrument_id"].astype(str).map(last_prices).fillna(0.0).astype(float)
     )
+    output["market_value"] = output["quantity"] * prices
     return output.loc[:, [*columns, *[c for c in output.columns if c not in columns]]]
 
 
