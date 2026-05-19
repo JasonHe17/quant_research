@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_right
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -113,6 +114,14 @@ class TargetWeightBuildResult:
     policy_state: pd.DataFrame
     budget_state: PolicyBudgetState
     diagnostics: pd.DataFrame
+
+
+@dataclass(frozen=True, slots=True)
+class BarTimeIndex:
+    """Row lookup index for repeated time-window slices inside one bars chunk."""
+
+    bar_times: list[object]
+    row_indices_by_time: dict[object, object]
 
 
 def main() -> None:
@@ -457,10 +466,12 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
         if ranked_signals.empty:
             continue
         grouped_signals = list(ranked_signals.groupby("signal_time", sort=True))
-        bar_times = sorted(bars["bar_end_time"].unique().tolist())
+        bar_time_index = _bar_time_index(bars)
+        bar_times = bar_time_index.bar_times
         for index, (signal_time, group) in enumerate(grouped_signals):
-            mark_rows = _price_execution_rows(
+            mark_rows = _price_execution_rows_from_index(
                 bars,
+                bar_time_index,
                 tracked_instruments=set(state.lots),
                 start_exclusive=last_simulated_time,
                 end_inclusive=signal_time,
@@ -501,19 +512,14 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
                 next_signal_time=next_signal_time,
                 bar_times=bar_times,
             )
-            executions = _build_tree_score_executions(
+            executions = _build_segment_tree_score_executions(
                 bars,
+                bar_time_index,
                 signals,
                 tracked_instruments=set(state.lots),
-                sparse=True,
+                start_exclusive=signal_time,
+                end_inclusive=segment_end,
             )
-            if segment_end is None:
-                executions = executions.iloc[0:0].copy()
-            else:
-                executions = executions.loc[
-                    (executions["exec_time"] > signal_time)
-                    & (executions["exec_time"] <= segment_end)
-                ].copy()
             run_execution_batch(executions)
             if not executions.empty:
                 last_simulated_time = executions["exec_time"].max()
@@ -1493,6 +1499,68 @@ def _build_tree_score_executions(
     return prices.merge(target_weights, on=["exec_time", "instrument_id"], how="left")
 
 
+def _bar_time_index(bars: pd.DataFrame) -> BarTimeIndex:
+    return BarTimeIndex(
+        bar_times=sorted(bars["bar_end_time"].unique().tolist()),
+        row_indices_by_time=dict(bars.groupby("bar_end_time", sort=False).indices),
+    )
+
+
+def _build_segment_tree_score_executions(
+    bars: pd.DataFrame,
+    bar_time_index: BarTimeIndex,
+    signals: pd.DataFrame,
+    *,
+    tracked_instruments: set[str],
+    start_exclusive: object,
+    end_inclusive: object | None,
+) -> pd.DataFrame:
+    if end_inclusive is None:
+        return _empty_tree_score_execution_frame()
+    relevant_instruments = {str(value) for value in tracked_instruments}
+    if not signals.empty:
+        relevant_instruments.update(signals["instrument_id"].astype(str).unique())
+    if not relevant_instruments:
+        return _empty_tree_score_execution_frame()
+    prices = _price_execution_rows_from_index(
+        bars,
+        bar_time_index,
+        tracked_instruments=relevant_instruments,
+        start_exclusive=start_exclusive,
+        end_inclusive=end_inclusive,
+    )
+    if prices.empty or signals.empty:
+        return prices
+    shifted = signals.copy()
+    shifted["exec_time"] = shifted["signal_time"].map(
+        _next_time_by_signal(signals, bar_time_index.bar_times)
+    )
+    shifted = shifted.loc[shifted["exec_time"].notna()]
+    if shifted.empty:
+        return prices
+    target_weights = shifted.loc[
+        :,
+        ["exec_time", "instrument_id", "target_weight"],
+    ].copy()
+    return prices.drop(columns=["target_weight"]).merge(
+        target_weights,
+        on=["exec_time", "instrument_id"],
+        how="left",
+    )
+
+
+def _next_time_by_signal(
+    signals: pd.DataFrame,
+    bar_times: list[object],
+) -> dict[object, object]:
+    signal_times = set(signals["signal_time"].unique().tolist())
+    return {
+        signal_time: bar_times[index + 1]
+        for index, signal_time in enumerate(bar_times[:-1])
+        if signal_time in signal_times
+    }
+
+
 def _price_execution_rows(
     bars: pd.DataFrame,
     *,
@@ -1501,20 +1569,7 @@ def _price_execution_rows(
     end_inclusive: object,
 ) -> pd.DataFrame:
     if not tracked_instruments:
-        return pd.DataFrame(
-            columns=[
-                "exec_time",
-                "instrument_id",
-                "canonical_code",
-                "open_price",
-                "close_price",
-                "turnover",
-                "tradable_bar",
-                "limit_up_open",
-                "limit_down_open",
-                "target_weight",
-            ]
-        )
+        return _empty_tree_score_execution_frame()
     mask = bars["bar_end_time"] <= end_inclusive
     if start_exclusive is not None:
         mask &= bars["bar_end_time"] > start_exclusive
@@ -1533,6 +1588,76 @@ def _price_execution_rows(
         ],
     ].rename(columns={"bar_end_time": "exec_time"})
     return prices.assign(target_weight=pd.NA)
+
+
+def _price_execution_rows_from_index(
+    bars: pd.DataFrame,
+    bar_time_index: BarTimeIndex,
+    *,
+    tracked_instruments: set[str],
+    start_exclusive: object | None,
+    end_inclusive: object,
+) -> pd.DataFrame:
+    if not tracked_instruments:
+        return _empty_tree_score_execution_frame()
+    row_indices = _time_window_row_indices(
+        bar_time_index,
+        start_exclusive=start_exclusive,
+        end_inclusive=end_inclusive,
+    )
+    if not row_indices:
+        return _empty_tree_score_execution_frame()
+    candidate = bars.take(row_indices)
+    prices = candidate.loc[
+        candidate["instrument_id"].astype(str).isin(tracked_instruments),
+        [
+            "bar_end_time",
+            "instrument_id",
+            "canonical_code",
+            "open_price",
+            "close_price",
+            "turnover",
+            "tradable_bar",
+            "limit_up_open",
+            "limit_down_open",
+        ],
+    ].rename(columns={"bar_end_time": "exec_time"})
+    return prices.assign(target_weight=pd.NA)
+
+
+def _time_window_row_indices(
+    bar_time_index: BarTimeIndex,
+    *,
+    start_exclusive: object | None,
+    end_inclusive: object,
+) -> list[int]:
+    start_index = (
+        0
+        if start_exclusive is None
+        else bisect_right(bar_time_index.bar_times, start_exclusive)
+    )
+    end_index = bisect_right(bar_time_index.bar_times, end_inclusive)
+    row_indices: list[int] = []
+    for bar_time in bar_time_index.bar_times[start_index:end_index]:
+        row_indices.extend(bar_time_index.row_indices_by_time[bar_time])
+    return row_indices
+
+
+def _empty_tree_score_execution_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "exec_time",
+            "instrument_id",
+            "canonical_code",
+            "open_price",
+            "close_price",
+            "turnover",
+            "tradable_bar",
+            "limit_up_open",
+            "limit_down_open",
+            "target_weight",
+        ]
+    )
 
 
 def _next_segment_end(

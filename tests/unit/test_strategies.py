@@ -20,6 +20,8 @@ from quant_research.strategies import (
 )
 from examples.run_tree_score_backtest import (
     TreeScoreBacktestParams,
+    _bar_time_index,
+    _build_segment_tree_score_executions,
     _build_tree_score_executions,
     _build_target_weights,
     _load_ranked_score_signals,
@@ -1081,6 +1083,51 @@ def test_tree_score_sparse_executions_keep_only_targets_and_tracked_holdings() -
     ]
     assert target.iloc[0] == pytest.approx(1.0)
     assert pd.isna(held.iloc[0])
+
+
+def test_tree_score_segment_executions_match_sparse_filtered_window() -> None:
+    bars = pd.DataFrame(
+        [
+            _bar("t0", "inst-a"),
+            _bar("t0", "inst-held"),
+            _bar("t0", "inst-unused"),
+            _bar("t1", "inst-a"),
+            _bar("t1", "inst-held"),
+            _bar("t1", "inst-unused"),
+            _bar("t2", "inst-a"),
+            _bar("t2", "inst-held"),
+            _bar("t2", "inst-unused"),
+        ]
+    )
+    signals = pd.DataFrame(
+        [
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-a",
+                "target_weight": 1.0,
+            }
+        ]
+    )
+
+    sparse = _build_tree_score_executions(
+        bars,
+        signals,
+        tracked_instruments={"inst-held"},
+        sparse=True,
+    )
+    expected = sparse.loc[
+        (sparse["exec_time"] > "t0") & (sparse["exec_time"] <= "t2")
+    ].reset_index(drop=True)
+    segment = _build_segment_tree_score_executions(
+        bars,
+        _bar_time_index(bars),
+        signals,
+        tracked_instruments={"inst-held"},
+        start_exclusive="t0",
+        end_inclusive="t2",
+    ).reset_index(drop=True)
+
+    pd.testing.assert_frame_equal(segment, expected)
 
 
 def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
