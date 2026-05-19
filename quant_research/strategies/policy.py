@@ -637,11 +637,19 @@ def _prepare_portfolio_state(portfolio_state: pd.DataFrame | None) -> pd.DataFra
 
 def _forecast_mapping(ranked: pd.DataFrame) -> dict[str, dict[str, object]]:
     mapping: dict[str, dict[str, object]] = {}
-    for row in ranked.itertuples(index=False):
-        expected_edge = _expected_edge_bps(row)
-        mapping[str(row.instrument_id)] = {
-            "rank": int(row.rank),
-            "score": float(row.score),
+    instrument_values = ranked["instrument_id"].to_numpy(copy=False)
+    rank_values = ranked["rank"].to_numpy(copy=False)
+    score_values = ranked["score"].to_numpy(copy=False)
+    edge_values = _expected_edge_values(ranked)
+    for index, instrument_id in enumerate(instrument_values):
+        expected_edge = (
+            _coerce_optional_float(edge_values[index])
+            if edge_values is not None
+            else 0.0
+        )
+        mapping[str(instrument_id)] = {
+            "rank": int(rank_values[index]),
+            "score": float(score_values[index]),
             "expected_edge_bps": expected_edge,
         }
     return mapping
@@ -652,15 +660,25 @@ def _optimizer_forecast_mapping(
     config: CostAwareOptimizerConfig,
 ) -> dict[str, dict[str, object]]:
     mapping: dict[str, dict[str, object]] = {}
-    for row in ranked.itertuples(index=False):
-        score = float(row.score)
-        expected_edge = _expected_edge_bps(row)
+    instrument_values = ranked["instrument_id"].to_numpy(copy=False)
+    rank_values = ranked["rank"].to_numpy(copy=False)
+    score_values = ranked["score"].to_numpy(copy=False)
+    edge_values = _expected_edge_values(ranked)
+    risk_penalty_values = _risk_penalty_value_arrays(ranked)
+    for index, instrument_id in enumerate(instrument_values):
+        score = float(score_values[index])
+        expected_edge = (
+            _coerce_optional_float(edge_values[index])
+            if edge_values is not None
+            else 0.0
+        )
         if expected_edge == 0.0:
             expected_edge = max(score, 0.0) * config.score_to_edge_bps
-        risk_penalty = _risk_penalty_bps(row) * config.risk_penalty_multiplier
+        risk_penalty = _risk_penalty_value_at(risk_penalty_values, index)
+        risk_penalty = max(risk_penalty, 0.0) * config.risk_penalty_multiplier
         net_edge = expected_edge - config.estimated_cost_bps - risk_penalty
-        mapping[str(row.instrument_id)] = {
-            "rank": int(row.rank),
+        mapping[str(instrument_id)] = {
+            "rank": int(rank_values[index]),
             "score": score,
             "expected_edge_bps": expected_edge,
             "risk_penalty_bps": risk_penalty,
@@ -671,14 +689,60 @@ def _optimizer_forecast_mapping(
 
 def _state_mapping(state: pd.DataFrame) -> dict[str, dict[str, object]]:
     mapping: dict[str, dict[str, object]] = {}
-    for row in state.itertuples(index=False):
-        sellable = getattr(row, "sellable_weight", pd.NA)
-        mapping[str(row.instrument_id)] = {
-            "current_weight": float(row.current_weight),
-            "sellable_weight": sellable,
-            "holding_bars": int(getattr(row, "holding_bars", 0) or 0),
+    if state.empty:
+        return mapping
+    instrument_values = state["instrument_id"].to_numpy(copy=False)
+    current_values = state["current_weight"].to_numpy(copy=False)
+    sellable_values = (
+        state["sellable_weight"].to_numpy(copy=False)
+        if "sellable_weight" in state.columns
+        else None
+    )
+    holding_values = (
+        state["holding_bars"].to_numpy(copy=False)
+        if "holding_bars" in state.columns
+        else None
+    )
+    for index, instrument_id in enumerate(instrument_values):
+        holding_bars = holding_values[index] if holding_values is not None else 0
+        mapping[str(instrument_id)] = {
+            "current_weight": float(current_values[index]),
+            "sellable_weight": (
+                sellable_values[index] if sellable_values is not None else pd.NA
+            ),
+            "holding_bars": int(holding_bars or 0),
         }
     return mapping
+
+
+def _expected_edge_values(frame: pd.DataFrame) -> object | None:
+    if "expected_edge_bps" in frame.columns:
+        return frame["expected_edge_bps"].to_numpy(copy=False)
+    if "expected_return_bps" in frame.columns:
+        return frame["expected_return_bps"].to_numpy(copy=False)
+    return None
+
+
+def _risk_penalty_value_arrays(frame: pd.DataFrame) -> list[object]:
+    return [
+        frame[name].to_numpy(copy=False)
+        for name in ("risk_penalty_bps", "health_risk_bps", "optimizer_risk_penalty_bps")
+        if name in frame.columns
+    ]
+
+
+def _risk_penalty_value_at(values: list[object], index: int) -> float:
+    for column_values in values:
+        value = column_values[index]  # type: ignore[index]
+        if value is not None and not pd.isna(value):
+            return float(value)
+    return 0.0
+
+
+def _coerce_optional_float(value: object) -> float:
+    if value is None or pd.isna(value):
+        return 0.0
+    return float(value)
 
 
 def _rank_for(
@@ -1201,7 +1265,7 @@ def _rows_to_frame(
     if not rows:
         return pd.DataFrame(columns=columns)
     mapped = [mapper(row) for row in rows]  # type: ignore[misc]
-    return pd.DataFrame(mapped).loc[:, columns]
+    return pd.DataFrame.from_records(mapped, columns=columns)
 
 
 def _intent_row(row: dict[str, object]) -> dict[str, object]:
@@ -1285,7 +1349,7 @@ def _order_intents_from_rows(
         )
     if not order_rows:
         return empty_order_intents()
-    return pd.DataFrame(order_rows).loc[:, ORDER_INTENT_COLUMNS]
+    return pd.DataFrame.from_records(order_rows, columns=ORDER_INTENT_COLUMNS)
 
 
 def _client_order_id(
@@ -1302,12 +1366,50 @@ def _diagnostics_from_rows(
     rows: list[dict[str, object]],
     config: RankBufferDropConfig | CostAwareOptimizerConfig,
 ) -> pd.DataFrame:
-    decisions = [_trade_decision_row(row) for row in rows]
-    planned_gross_turnover = sum(abs(float(row["delta_weight"])) for row in decisions)
-    action_counts = pd.Series([row["action"] for row in decisions]).value_counts()
-    reason_counts = pd.Series([row["decision_reason"] for row in decisions]).value_counts()
-    flags = ",".join(str(row.get("constraint_flags") or "") for row in rows)
-    target_gross_exposure = sum(float(row["target_weight"]) for row in rows)
+    action_counts = {
+        "entry": 0,
+        "exit": 0,
+        "resize_up": 0,
+        "resize_down": 0,
+        "hold": 0,
+        "no_trade": 0,
+    }
+    reason_counts = {
+        "below_edge": 0,
+        "below_weight_band": 0,
+        "t1_sell_blocked": 0,
+        "risk_reduction": 0,
+        "turnover_budget_limited": 0,
+    }
+    planned_gross_turnover = 0.0
+    order_intent_count = 0
+    target_gross_exposure = 0.0
+    gross_exposure_scaled_count = 0
+    turnover_scaled_count = 0
+    turnover_budget_limited_flag_count = 0
+    for row in rows:
+        current = float(row["current_weight"])
+        target = float(row["target_weight"])
+        delta = target - current
+        action = _action(
+            current=current,
+            target=target,
+            reason=str(row["decision_reason"]),
+        )
+        action_counts[action] = action_counts.get(action, 0) + 1
+        reason = str(row["decision_reason"])
+        if reason in reason_counts:
+            reason_counts[reason] += 1
+        planned_gross_turnover += abs(delta)
+        if abs(delta) > 1e-12:
+            order_intent_count += 1
+        target_gross_exposure += target
+        constraint_flags = str(row.get("constraint_flags") or "")
+        gross_exposure_scaled_count += constraint_flags.count("gross_exposure_scaled")
+        turnover_scaled_count += constraint_flags.count("turnover_scaled")
+        turnover_budget_limited_flag_count += constraint_flags.count(
+            "turnover_budget_limited"
+        )
     diagnostic = {
         "timestamp": timestamp,
         "policy_id": config.policy_id,
@@ -1317,25 +1419,23 @@ def _diagnostics_from_rows(
         "target_gross_exposure": target_gross_exposure,
         "active_count": sum(float(row["target_weight"]) > 0 for row in rows),
         "decision_count": len(rows),
-        "order_intent_count": sum(abs(float(row["delta_weight"])) > 1e-12 for row in decisions),
+        "order_intent_count": order_intent_count,
         "planned_gross_turnover": planned_gross_turnover,
-        "entry_count": int(action_counts.get("entry", 0)),
-        "exit_count": int(action_counts.get("exit", 0)),
-        "resize_count": int(action_counts.get("resize_up", 0) + action_counts.get("resize_down", 0)),
-        "hold_count": int(action_counts.get("hold", 0)),
-        "no_trade_count": int(action_counts.get("no_trade", 0)),
-        "below_edge_count": int(reason_counts.get("below_edge", 0)),
-        "below_weight_band_count": int(reason_counts.get("below_weight_band", 0)),
-        "t1_sell_blocked_count": int(reason_counts.get("t1_sell_blocked", 0)),
-        "risk_reduction_count": int(reason_counts.get("risk_reduction", 0)),
-        "turnover_budget_limited_count": int(
-            reason_counts.get("turnover_budget_limited", 0)
-        ),
-        "gross_exposure_scaled_count": flags.count("gross_exposure_scaled"),
-        "turnover_scaled_count": flags.count("turnover_scaled"),
-        "turnover_budget_limited_flag_count": flags.count("turnover_budget_limited"),
+        "entry_count": action_counts["entry"],
+        "exit_count": action_counts["exit"],
+        "resize_count": action_counts["resize_up"] + action_counts["resize_down"],
+        "hold_count": action_counts["hold"],
+        "no_trade_count": action_counts["no_trade"],
+        "below_edge_count": reason_counts["below_edge"],
+        "below_weight_band_count": reason_counts["below_weight_band"],
+        "t1_sell_blocked_count": reason_counts["t1_sell_blocked"],
+        "risk_reduction_count": reason_counts["risk_reduction"],
+        "turnover_budget_limited_count": reason_counts["turnover_budget_limited"],
+        "gross_exposure_scaled_count": gross_exposure_scaled_count,
+        "turnover_scaled_count": turnover_scaled_count,
+        "turnover_budget_limited_flag_count": turnover_budget_limited_flag_count,
     }
-    return pd.DataFrame([diagnostic])
+    return pd.DataFrame.from_records([diagnostic])
 
 
 def _next_policy_state(
@@ -1361,7 +1461,7 @@ def _next_policy_state(
         )
     if not state_rows:
         return empty_portfolio_state()
-    return pd.DataFrame(state_rows).loc[:, PORTFOLIO_STATE_COLUMNS]
+    return pd.DataFrame.from_records(state_rows, columns=PORTFOLIO_STATE_COLUMNS)
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...], *, name: str) -> None:
