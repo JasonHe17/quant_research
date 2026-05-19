@@ -44,7 +44,9 @@ def apply_cn_t1_constraints(
     output["executable_delta_weight"] = executable_delta.astype(float)
     output["blocked_sell_weight"] = blocked_sell_weight.astype(float)
     output["t1_blocked"] = output["blocked_sell_weight"] > 0.0
-    output["trade_action"] = output["executable_delta_weight"].apply(_trade_action)
+    output["trade_action"] = "hold"
+    output.loc[output["executable_delta_weight"] > 0.0, "trade_action"] = "buy"
+    output.loc[output["executable_delta_weight"] < 0.0, "trade_action"] = "sell"
     return output.loc[
         :,
         [
@@ -75,15 +77,6 @@ def _positions_frame(current_positions: pd.DataFrame | None) -> pd.DataFrame:
     positions = current_positions.loc[:, ["instrument_id", "sellable_weight"]].copy()
     positions["sellable_weight"] = positions["sellable_weight"].astype(float)
     return positions
-
-
-def _trade_action(delta_weight: float) -> str:
-    if delta_weight > 0:
-        return "buy"
-    if delta_weight < 0:
-        return "sell"
-    return "hold"
-
 
 def _require_columns(
     frame: pd.DataFrame, columns: tuple[str, ...], *, name: str
