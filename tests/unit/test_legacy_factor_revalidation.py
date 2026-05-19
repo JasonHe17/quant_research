@@ -39,6 +39,9 @@ def test_legacy_factor_revalidation_dry_run_plans_shared_and_factor_jobs(
     assert alpha_command[
         alpha_command.index("--backtest-policies") + 1 : alpha_command.index("--resume-existing")
     ] == ["partial_rebalance_daily", "cost_aware_optimizer_daily"]
+    assert "--backtest-memory-estimate-gb" not in alpha_command
+    assert alpha_command[alpha_command.index("--full-backtest-memory-gb") + 1] == "5.0"
+    assert alpha_command[alpha_command.index("--yearly-backtest-memory-gb") + 1] == "5.0"
 
 
 def test_legacy_factor_revalidation_filters_status_and_factor_ids(tmp_path: Path) -> None:
@@ -161,8 +164,8 @@ def _args(**overrides: object) -> object:
         "cost_stress_multiplier": 2.0,
         "dataset_workers": 1,
         "dataset_worker_memory_estimate_gb": 10.0,
-        "evaluation_workers": 8,
-        "shared_backtest_workers": 2,
+        "evaluation_workers": 6,
+        "shared_backtest_workers": 6,
         "full_backtest_memory_gb": 8.0,
         "yearly_backtest_memory_gb": 6.0,
         "factor_workers": 2,

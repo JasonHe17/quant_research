@@ -428,7 +428,9 @@ def _candidate_policy_validation_command(config: FrameworkV1BenchmarkConfig) -> 
         str(config.streaming_chunk_padding_days),
         "--backtest-workers",
         str(config.backtest_workers),
-        "--backtest-memory-estimate-gb",
+        "--full-backtest-memory-gb",
+        str(config.candidate_policy_validation_memory_gb),
+        "--yearly-backtest-memory-gb",
         str(config.candidate_policy_validation_memory_gb),
     ]
     if config.exclude_st:
@@ -1225,7 +1227,7 @@ def _parse_args() -> argparse.Namespace:
             "builder auto-detect available memory"
         ),
     )
-    parser.add_argument("--evaluation-workers", type=int, default=8)
+    parser.add_argument("--evaluation-workers", type=int, default=6)
     parser.add_argument(
         "--evaluation-backend",
         choices=("process",),
@@ -1270,7 +1272,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--backtest-workers",
         type=int,
-        default=2,
+        default=6,
         help="maximum number of backtest subprocesses to run concurrently",
     )
     parser.add_argument(

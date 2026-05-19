@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 
 import pytest
+import pandas as pd
 
+from examples.evaluate_alpha_dataset import _CorrelationStats
 from examples.run_framework_v1_benchmark import (
     BacktestJob,
     _can_launch_backtest_job,
@@ -58,8 +60,8 @@ def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
     }
     assert summary["config"]["profile"] == "standard"
     assert summary["config"]["label_horizon_bars"] == [48, 240]
-    assert summary["config"]["evaluation_workers"] == 8
-    assert summary["config"]["backtest_workers"] == 2
+    assert summary["config"]["evaluation_workers"] == 6
+    assert summary["config"]["backtest_workers"] == 6
     assert summary["config"]["backtest_memory_budget_gb"] is None
     assert "acceptance_plan" in summary
     assert "full_high_cost" in summary["backtests"]
@@ -142,6 +144,9 @@ def test_framework_v1_benchmark_can_plan_candidate_policy_validation(
         command.index("--methods") + 1 : command.index("--primary-method")
     ] == ["decorrelated", "equal"]
     assert command[command.index("--policy") + 1] == "partial_rebalance_daily"
+    assert "--backtest-memory-estimate-gb" not in command
+    assert command[command.index("--full-backtest-memory-gb") + 1] == "5.0"
+    assert command[command.index("--yearly-backtest-memory-gb") + 1] == "5.0"
 
 
 def test_framework_v1_benchmark_can_plan_auto_factor_admission(
@@ -188,6 +193,39 @@ def test_framework_v1_benchmark_can_plan_auto_factor_admission(
     assert summary["config"]["effective_candidate_admission_report"] == str(
         admission_path
     )
+
+
+def test_factor_correlation_stats_match_pandas_pairwise_corr() -> None:
+    frame = pd.DataFrame(
+        {
+            "alpha_a": [1.0, 2.0, None, 4.0, 5.0],
+            "alpha_b": [5.0, 4.0, 3.0, None, 1.0],
+            "alpha_c": [2.0, 2.0, 2.0, 2.0, 2.0],
+        }
+    )
+
+    for method in ("spearman", "pearson"):
+        stats = _CorrelationStats(("alpha_a", "alpha_b", "alpha_c"), method=method)
+        stats.update(frame)
+
+        actual = stats.to_frame()
+        expected = frame.loc[:, ["alpha_a", "alpha_b", "alpha_c"]].corr(method=method)
+        pd.testing.assert_series_equal(
+            actual["alpha_a"].iloc[:2],
+            expected["alpha_a"].iloc[:2],
+            check_dtype=False,
+        )
+        pd.testing.assert_series_equal(
+            actual["alpha_b"].iloc[:2],
+            expected["alpha_b"].iloc[:2],
+            check_dtype=False,
+        )
+        assert actual.loc["alpha_a", "alpha_a"] == 1.0
+        assert actual.loc["alpha_b", "alpha_b"] == 1.0
+        if method == "spearman":
+            assert actual.loc["alpha_c", "alpha_c"] == 1.0
+        else:
+            assert pd.isna(actual.loc["alpha_c", "alpha_c"])
 
 
 def test_framework_v1_benchmark_command_failures_raise(tmp_path: Path) -> None:

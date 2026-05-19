@@ -327,10 +327,9 @@ class _CorrelationStats:
                 }
 
     def update(self, frame: pd.DataFrame) -> None:
-        for left in self.feature_columns:
-            for right in self.feature_columns:
+        for left_index, left in enumerate(self.feature_columns):
+            for right in self.feature_columns[left_index:]:
                 pair = frame.loc[:, [left, right]].dropna()
-                stats = self.values[(left, right)]
                 if pair.empty:
                     continue
                 if self.method == "spearman":
@@ -340,17 +339,40 @@ class _CorrelationStats:
                         else pair[left].corr(pair[right], method="spearman")
                     )
                     if pd.notna(corr):
-                        stats["weighted_corr"] += float(corr) * len(pair)
-                        stats["weight"] += float(len(pair))
+                        self._add_symmetric(
+                            left,
+                            right,
+                            {
+                                "weighted_corr": float(corr) * len(pair),
+                                "weight": float(len(pair)),
+                            },
+                        )
                     continue
                 x = pair.iloc[:, 0].astype(float)
                 y = pair.iloc[:, 1].astype(float)
-                stats["count"] += float(len(pair))
-                stats["sum_x"] += float(x.sum())
-                stats["sum_y"] += float(y.sum())
-                stats["sum_x2"] += float((x * x).sum())
-                stats["sum_y2"] += float((y * y).sum())
-                stats["sum_xy"] += float((x * y).sum())
+                self._add_symmetric(
+                    left,
+                    right,
+                    {
+                        "count": float(len(pair)),
+                        "sum_x": float(x.sum()),
+                        "sum_y": float(y.sum()),
+                        "sum_x2": float((x * x).sum()),
+                        "sum_y2": float((y * y).sum()),
+                        "sum_xy": float((x * y).sum()),
+                    },
+                )
+
+    def _add_symmetric(
+        self,
+        left: str,
+        right: str,
+        updates: dict[str, float],
+    ) -> None:
+        for key in ((left, right),) if left == right else ((left, right), (right, left)):
+            stats = self.values[key]
+            for name, value in updates.items():
+                stats[name] += value
 
     def merge(self, other: "_CorrelationStats") -> None:
         if self.feature_columns != other.feature_columns:
@@ -421,7 +443,7 @@ def _parse_args() -> argparse.Namespace:
         default="spearman",
     )
     parser.add_argument("--skip-feature-correlation", action="store_true")
-    parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--workers", type=int, default=6)
     parser.add_argument(
         "--backend",
         choices=("process",),

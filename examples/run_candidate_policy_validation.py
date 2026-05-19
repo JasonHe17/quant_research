@@ -1486,8 +1486,8 @@ def _parse_args() -> argparse.Namespace:
         default="month",
     )
     parser.add_argument("--streaming-chunk-padding-days", type=int, default=10)
-    parser.add_argument("--backtest-workers", type=int, default=2)
-    parser.add_argument("--backtest-memory-budget-gb", type=float, default=12.0)
+    parser.add_argument("--backtest-workers", type=int, default=6)
+    parser.add_argument("--backtest-memory-budget-gb", type=float, default=30.0)
     parser.add_argument("--full-backtest-memory-gb", type=float, default=5.0)
     parser.add_argument("--yearly-backtest-memory-gb", type=float, default=5.0)
     parser.add_argument(

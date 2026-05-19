@@ -233,7 +233,9 @@ def _factor_revalidation_command(
         str(args.cost_stress_multiplier),
         "--backtest-workers",
         str(args.factor_backtest_workers),
-        "--backtest-memory-estimate-gb",
+        "--full-backtest-memory-gb",
+        str(args.factor_job_memory_gb),
+        "--yearly-backtest-memory-gb",
         str(args.factor_job_memory_gb),
         "--data-access-mode",
         args.data_access_mode,
@@ -563,8 +565,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--cost-stress-multiplier", type=float, default=2.0)
     parser.add_argument("--dataset-workers", type=int, default=1)
     parser.add_argument("--dataset-worker-memory-estimate-gb", type=float, default=10.0)
-    parser.add_argument("--evaluation-workers", type=int, default=8)
-    parser.add_argument("--shared-backtest-workers", type=int, default=2)
+    parser.add_argument("--evaluation-workers", type=int, default=6)
+    parser.add_argument("--shared-backtest-workers", type=int, default=6)
     parser.add_argument("--full-backtest-memory-gb", type=float, default=8.0)
     parser.add_argument("--yearly-backtest-memory-gb", type=float, default=6.0)
     parser.add_argument("--factor-workers", type=int, default=2)
