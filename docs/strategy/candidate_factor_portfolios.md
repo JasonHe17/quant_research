@@ -1,5 +1,12 @@
 # Candidate Factor Portfolio Experiments
 
+Status note, 2026-05-19: this file is a historical experiment log. It contains
+older "current default" decisions from optimizer and turnover-budget branches.
+For new factor promotion or framework compatibility work, follow
+`docs/validation/factor_development_standard.md` and use
+`examples/run_candidate_policy_validation.py` with the standard comparison set
+unless the task explicitly selects one of the historical branches below.
+
 This document defines the first portfolio-layer experiment for factors that pass
 the standard admission gates.
 
@@ -115,7 +122,8 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --policy-set-exit-rank 150 \
   --policy-set-rebalance-every-n-bars 48 \
   --policy-set-partial-rebalance-rate 0.5 \
-  --backtest-workers 2 \
+  --backtest-workers 6 \
+  --backtest-memory-budget-gb 30 \
   --backtest-memory-estimate-gb 5 \
   --resume-existing
 ```
@@ -125,9 +133,10 @@ The `comparison` set writes nested results under
 writes a flat `backtest_summary.csv` for ranking and review. Use
 `--backtest-workers` together with `--backtest-memory-budget-gb` and
 `--backtest-memory-estimate-gb` to run independent score backtests concurrently
-without exceeding local memory. `--resume-existing` skips policy runs whose
-`summary.json` already exists and is the default operational mode for long
-promotion-grade sweeps.
+without exceeding local memory. On the current research machine, the standard
+score-backtest setting is six workers with a 30 GB budget. `--resume-existing`
+skips policy runs whose `summary.json` already exists and is the default
+operational mode for long promotion-grade sweeps.
 
 The standard comparison set currently covers:
 
@@ -199,7 +208,8 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --policy-set-exit-rank 150 \
   --policy-set-rebalance-every-n-bars 48 \
   --policy-set-partial-rebalance-rate 0.5 \
-  --backtest-workers 2 \
+  --backtest-workers 6 \
+  --backtest-memory-budget-gb 30 \
   --backtest-memory-estimate-gb 5 \
   --resume-existing
 ```
@@ -547,7 +557,7 @@ runs/candidate_factor_portfolios/promoted_combination_methods_full_base_quick
 | Method | Return | Max drawdown | Gross turnover | Trades | Cost | Avg target gross | Read |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | equal | 36.40% | -7.89% | 166.00 | 14,357 | 150,913 | 0.395 | Highest return, but above 160 turnover gate |
-| decorrelated | 32.21% | -8.49% | 156.37 | 13,663 | 141,100 | 0.397 | Current promoted default; passes gate |
+| decorrelated | 32.21% | -8.49% | 156.37 | 13,663 | 141,100 | 0.397 | Then-promoted default in this experiment branch; passes gate |
 | ic_weighted | 16.15% | -9.69% | 157.91 | 14,260 | 138,315 | 0.369 | Weaker risk-adjusted result |
 
 The quick sweep changes the candidate ranking under the new framework:
@@ -625,7 +635,7 @@ failed checks.
 | Method | Control | Full return | Full drawdown | Full turnover | High-cost return | 2023 | 2024 | 2025 | Read |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | equal | Path budget 155 | 33.86% | -7.89% | 148.11 | 22.21% | 8.93% | 16.69% | 7.07% | Best standard result; budget exhausted from 2025-09 |
-| decorrelated | Per-rebalance budget 0.10 | 32.21% | -8.49% | 156.37 | 20.31% | 7.97% | 12.18% | 5.10% | Current promoted default remains valid |
+| decorrelated | Per-rebalance budget 0.10 | 32.21% | -8.49% | 156.37 | 20.31% | 7.97% | 12.18% | 5.10% | Then-promoted default remains valid inside this branch |
 
 Decision: `equal` with a path-level gross-turnover budget of `155` becomes the
 leading promoted candidate, but not yet a live default. The full-path budget is
@@ -672,8 +682,9 @@ Standard validation for `equal`, annual budget `52`:
 | 2024 | 16.69% | -7.23% | 48.33 | 50.08 | 4,987 | 44,267 | Same strong 2024 profile as path budget |
 | 2025 | 6.83% | -4.89% | 49.13 | 52.00 | 4,476 | 41,337 | Budget spent without late-year path exhaustion |
 
-Decision: promote `equal` with annual gross-turnover budget `52` as the current
-combination-layer candidate. It is slightly lower return than full-path budget
+Historical branch decision: promote `equal` with annual gross-turnover budget
+`52` as the combination-layer candidate inside this optimizer branch. It is
+slightly lower return than full-path budget
 `155` (`33.44%` vs. `33.86%`) but removes the production flaw where a
 multi-year path budget can be depleted before the end of the operating horizon.
 Annual replenishment is also a better match for how a live strategy would be

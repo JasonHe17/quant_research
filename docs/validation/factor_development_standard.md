@@ -121,7 +121,7 @@ The validator treats missing active-factor safety metadata as a hard error.
      --end 2025-12-31T15:00:00+08:00 \
      --output-dir runs/framework_v1_acceptance/<batch>/alpha_dataset \
      --factor-groups intraday_new_group another_new_group \
-     --workers 4 \
+     --workers 1 \
      --memory-budget-gb 0 \
      --worker-memory-estimate-gb 10
    ```
@@ -132,14 +132,14 @@ The validator treats missing active-factor safety metadata as a hard error.
    ```bash
    conda run -n quant python examples/run_framework_v1_benchmark.py \
      --output-dir runs/framework_v1_acceptance/standard \
+     --auto-factor-admission \
      --resume-existing \
      --enforce-gates
-
-   conda run -n quant python examples/analyze_framework_v1_acceptance.py \
-     --benchmark-summary runs/framework_v1_acceptance/standard/benchmark_summary.json \
-     --output-dir runs/framework_v1_acceptance/standard/factor_admission \
-     --enforce-candidates
    ```
+
+   If the benchmark was run without `--auto-factor-admission`, run
+   `examples/analyze_framework_v1_acceptance.py` manually against the completed
+   `benchmark_summary.json`.
 
 5. Render a candidate review.
 
@@ -151,11 +151,33 @@ The validator treats missing active-factor safety metadata as a hard error.
    ```
 
 6. Run portfolio-level validation only after the review is ready.
-   The current downstream framework default for combination-layer review is the
-   cost-aware optimizer with `equal` score combination and annual gross-turnover
-   budget `52`. Portfolio validation must use the promoted framework unless a
-   framework issue is explicitly being tested. For factor-derived risk controls,
-   prefer the integrated
+   The current controlled default for combination-layer review is
+   `examples/run_candidate_policy_validation.py` with the standard comparison
+   set, methods `decorrelated equal ic_weighted`, and primary gate
+   `decorrelated + partial_rebalance_daily`. Keep scenario construction serial
+   unless a task explicitly opts into scenario parallelism; the expensive
+   score-backtest subprocess layer defaults to six workers. Historical strategy
+   notes about the cost-aware optimizer, `equal` score combination, or annual
+   gross-turnover budget `52` are research branches, not the default factor
+   promotion path.
+
+   ```bash
+   conda run -n quant python examples/run_candidate_policy_validation.py \
+     --dataset-dir runs/framework_v1_acceptance/standard/alpha_dataset \
+     --label-column forward_return \
+     --admission-report runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json \
+     --factor-correlation runs/framework_v1_acceptance/standard/factor_evaluation/feature_correlation.csv \
+     --output-dir runs/framework_v1_acceptance/standard/candidate_policy_validation \
+     --profile standard \
+     --methods decorrelated equal ic_weighted \
+     --primary-method decorrelated \
+     --policy partial_rebalance_daily \
+     --resume-existing
+   ```
+
+   Portfolio validation must use the current framework unless a framework issue
+   is explicitly being tested. For factor-derived risk controls, prefer the
+   integrated
    `examples/run_candidate_policy_validation.py --factor-risk-gate-feature ...`
    path so the gate schedule is rebuilt from the validation dataset and passed
    consistently to every full, yearly, and cost-stress scenario. If the

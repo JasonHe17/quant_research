@@ -41,15 +41,20 @@ Default settings:
   smoke run.
 - Dataset partitioning: monthly, with 30 calendar days of warmup padding.
 - Factors: all currently implemented intraday factor groups.
-- Labels: one-bar delayed entry, 48 five-minute-bar forward return.
-- Factor evaluation: eight worker processes by default; reduce with
+- Labels: one-bar delayed entry. The benchmark default is a 48 five-minute-bar
+  forward return for backward compatibility. Multi-horizon research runs should
+  pass `--label-horizon-bars 48 240 960`; when multiple horizons are supplied,
+  labels are written as `forward_return_48b`, `forward_return_240b`, and
+  `forward_return_960b`, and the current single-factor gates use the first
+  horizon as the primary label.
+- Factor evaluation: six worker processes by default; reduce with
   `--evaluation-workers` on memory-constrained machines.
 - Backtest streaming: fast parquet runs use monthly chunks by default, with
   10 calendar days of boundary padding for lookback and next-bar continuity.
   Increase memory headroom before switching `--streaming-chunk year`.
 - Backtest scheduling: after dataset and factor evaluation complete, backtest
   scenarios run through a resource-aware scheduler. `--backtest-workers`
-  defaults to `2`, while `--backtest-memory-budget-gb 0` auto-detects available
+  defaults to `6`, while `--backtest-memory-budget-gb 0` auto-detects available
   memory and uses a conservative fraction. Tune `--full-backtest-memory-gb` and
   `--yearly-backtest-memory-gb` when a machine has known memory headroom. A
   backtest whose estimate exceeds the configured budget is rejected before
@@ -72,6 +77,40 @@ The `robust` profile additionally runs:
 
 Use `--profile quick` only for development smoke checks.
 
+## Candidate Policy Validation
+
+Baseline A backtests are plumbing regression checks. For strategy-level review,
+run candidate policy validation from an admission report:
+
+```bash
+conda run -n quant python examples/run_framework_v1_benchmark.py \
+  --output-dir runs/framework_v1_acceptance/standard \
+  --auto-factor-admission \
+  --resume-existing
+```
+
+or, when the admission report already exists:
+
+```bash
+conda run -n quant python examples/run_candidate_policy_validation.py \
+  --dataset-dir runs/framework_v1_acceptance/standard/alpha_dataset \
+  --label-column forward_return \
+  --admission-report runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json \
+  --factor-correlation runs/framework_v1_acceptance/standard/factor_evaluation/feature_correlation.csv \
+  --output-dir runs/framework_v1_acceptance/standard/candidate_policy_validation \
+  --profile standard \
+  --methods decorrelated equal ic_weighted \
+  --primary-method decorrelated \
+  --policy partial_rebalance_daily \
+  --resume-existing
+```
+
+This wrapper keeps scenario construction serial by default
+(`--scenario-workers 1`) and runs score-backtest subprocesses with
+`--backtest-workers 6 --backtest-memory-budget-gb 30.0`. The primary gate is
+currently `decorrelated + partial_rebalance_daily`; the leaderboard should still
+be reviewed because higher-return policies can be less cost-robust.
+
 ## Required Outputs
 
 The benchmark writes:
@@ -82,6 +121,8 @@ The benchmark writes:
 - `factor_evaluation/`: single-factor diagnostics.
 - `backtests/<scenario>/`: trades, equity curve, final positions, and summary
   for each execution scenario.
+- `candidate_policy_validation/`: optional combination-method and policy
+  comparison outputs when candidate policy validation is enabled.
 - `logs/`: stdout/stderr for every stage.
 
 Interrupted runs can continue with `--resume-existing`; completed stages are
@@ -122,6 +163,8 @@ Review at least:
   trade counts, transaction costs, and turnover.
 - Cost sensitivity between `full_base`, `full_high_cost`, and, in robust mode,
   `full_zero_cost`.
+- Candidate policy validation leaderboard, monthly summaries, and yearly slices
+  when the task is factor promotion or compatibility revalidation.
 
 The acceptance suite establishes that the framework is operational and stable
 enough for factor research. It is not a production trading approval process.

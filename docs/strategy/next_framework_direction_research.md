@@ -1,5 +1,11 @@
 # Next Framework Direction Research
 
+Status note, 2026-05-19: this is a strategy-framework research log, not the
+canonical factor-development workflow. Some sections describe historical
+"promoted" candidates inside optimizer and turnover-budget experiments. The
+current compatibility and factor-promotion workflow is documented in
+`docs/validation/factor_development_standard.md`.
+
 This note decides the next framework task after the first policy-level
 gross-exposure gate experiments.
 

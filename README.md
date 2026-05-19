@@ -63,12 +63,21 @@ Run the standard multi-year acceptance suite before promoting framework changes:
 
 ```bash
 conda run -n quant python examples/run_framework_v1_benchmark.py \
-  --output-dir runs/framework_v1_acceptance/standard
+  --output-dir runs/framework_v1_acceptance/standard \
+  --auto-factor-admission \
+  --resume-existing
 ```
 
 Use `--profile quick --max-symbols 2` only for smoke checks.
 
-After the standard suite passes, generate a factor admission report:
+The Baseline A backtests inside this suite are regression checks for data,
+execution, and cost plumbing. They are not the strategy benchmark used to
+promote factors. The end-to-end run writes the admission report and candidate
+policy validation artifacts under `factor_admission/` and
+`candidate_policy_validation/`.
+
+If a benchmark was run without `--auto-factor-admission`, generate the factor
+admission report explicitly:
 
 ```bash
 conda run -n quant python examples/analyze_framework_v1_acceptance.py \
@@ -90,15 +99,22 @@ conda run -n quant python examples/run_factor_candidate_review.py \
   --output-dir runs/factor_candidate_reviews/intraday_volatility_5m_w24
 ```
 
-Then build candidate-factor portfolio scores:
+For full old-factor compatibility checks after framework changes, use the
+legacy revalidation wrapper. It rebuilds the shared benchmark, produces the
+admission report, and runs combination-level validation with bounded
+parallelism:
 
 ```bash
-conda run -n quant python examples/run_candidate_factor_portfolios.py \
-  --dataset-dir runs/framework_v1_acceptance/standard/alpha_dataset \
-  --admission-report runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json \
-  --output-dir runs/candidate_factor_portfolios/smoke_2023_01 \
-  --max-partitions 1
+conda run -n quant python examples/run_legacy_factor_revalidation.py \
+  --registry configs/factors/factor_registry.json \
+  --output-dir runs/legacy_factor_revalidation/current \
+  --resume-existing
 ```
+
+The current operational combination-validation baseline is
+`decorrelated + partial_rebalance_daily` over the standard comparison set.
+Older strategy notes about cost-aware optimizer or annual turnover-budget
+branches are historical experiments unless a task explicitly selects them.
 
 ## DataPortal v0
 
