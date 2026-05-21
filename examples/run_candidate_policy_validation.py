@@ -73,6 +73,7 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
             monthly_rows=[],
             factor_health_rows=[],
             factor_contribution_rows=[],
+            factor_health_attribution_rows=[],
             factor_risk_gate_summary=factor_risk_gate_summary,
         )
         _write_summary(output_dir, summary)
@@ -87,12 +88,21 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
     monthly_rows = _collect_monthly_summary_rows(args, scenarios)
     factor_health_rows = _collect_factor_health_summary_rows(args, scenarios)
     factor_contribution_rows = _collect_factor_contribution_summary_rows(args, scenarios)
+    factor_health_attribution_rows = _collect_factor_health_attribution_rows(
+        args,
+        scenarios,
+        monthly_rows,
+    )
     _write_summary_csv(output_dir / "validation_summary.csv", rows)
     _write_summary_csv(output_dir / "validation_monthly_summary.csv", monthly_rows)
     _write_summary_csv(output_dir / "validation_factor_health_summary.csv", factor_health_rows)
     _write_summary_csv(
         output_dir / "validation_factor_contribution_summary.csv",
         factor_contribution_rows,
+    )
+    _write_summary_csv(
+        output_dir / "validation_factor_health_attribution.csv",
+        factor_health_attribution_rows,
     )
     summary = _validation_summary(
         args,
@@ -104,6 +114,7 @@ def run_candidate_policy_validation(args: argparse.Namespace) -> dict[str, Any]:
         monthly_rows=monthly_rows,
         factor_health_rows=factor_health_rows,
         factor_contribution_rows=factor_contribution_rows,
+        factor_health_attribution_rows=factor_health_attribution_rows,
         factor_risk_gate_summary=factor_risk_gate_summary,
     )
     _write_summary(output_dir, summary)
@@ -260,6 +271,8 @@ def _scenario_command(
         args.registry,
         "--registry-statuses",
         *args.registry_statuses,
+        "--statuses",
+        *args.admission_statuses,
         "--output-dir",
         str(_scenario_output_dir(args, scenario)),
         "--methods",
@@ -786,6 +799,27 @@ def _collect_factor_health_summary_rows(
         if frame.empty:
             continue
         for feature, group in frame.groupby("feature", sort=True):
+            health_score = pd.to_numeric(
+                group.get("health_score", pd.Series(dtype=float)),
+                errors="coerce",
+            )
+            recommended_scale = pd.to_numeric(
+                group.get("recommended_weight_scale", pd.Series(dtype=float)),
+                errors="coerce",
+            )
+            rolling_rank_ic = pd.to_numeric(
+                group.get("rolling_rank_ic", pd.Series(dtype=float)),
+                errors="coerce",
+            )
+            rolling_spread = pd.to_numeric(
+                group.get("rolling_top_minus_bottom_label", pd.Series(dtype=float)),
+                errors="coerce",
+            )
+            rolling_top_label = pd.to_numeric(
+                group.get("rolling_top_label", pd.Series(dtype=float)),
+                errors="coerce",
+            )
+            health_state = group.get("health_state", pd.Series(dtype=object))
             rows.append(
                 {
                     "scenario": scenario.name,
@@ -793,8 +827,27 @@ def _collect_factor_health_summary_rows(
                     "observation_count": int(len(group)),
                     "average_weight_scale": float(group["weight_scale"].mean()),
                     "min_weight_scale": float(group["weight_scale"].min()),
+                    "average_recommended_weight_scale": _optional_mean(
+                        recommended_scale
+                    ),
+                    "min_recommended_weight_scale": _optional_min(recommended_scale),
+                    "average_health_score": _optional_mean(health_score),
+                    "min_health_score": _optional_min(health_score),
+                    "rolling_rank_ic_inversion_count": int(
+                        (rolling_rank_ic < 0.0).sum()
+                    ),
+                    "rolling_spread_inversion_count": int((rolling_spread < 0.0).sum()),
+                    "rolling_top_label_negative_count": int(
+                        (rolling_top_label < 0.0).sum()
+                    ),
+                    "healthy_count": int((health_state == "healthy").sum()),
+                    "watch_count": int((health_state == "watch").sum()),
+                    "impaired_count": int((health_state == "impaired").sum()),
                     "lagged_health_shrink_count": int(
                         (group["shrink_reason"] == "lagged_health_shrink").sum()
+                    ),
+                    "monitor_only_count": int(
+                        (group["shrink_reason"] == "monitor_only").sum()
                     ),
                     "warmup_count": int((group["shrink_reason"] == "warmup").sum()),
                 }
@@ -848,6 +901,243 @@ def _collect_factor_contribution_summary_rows(
                 }
             )
     return rows
+
+
+def _collect_factor_health_attribution_rows(
+    args: argparse.Namespace,
+    scenarios: list[ValidationScenario],
+    monthly_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Join monthly performance, factor health, and contribution concentration."""
+
+    rows: list[dict[str, Any]] = []
+    monthly_by_scenario: dict[str, list[dict[str, Any]]] = {}
+    for row in monthly_rows:
+        monthly_by_scenario.setdefault(str(row["scenario"]), []).append(row)
+    for scenario in scenarios:
+        performance_rows = monthly_by_scenario.get(scenario.name, [])
+        if not performance_rows:
+            continue
+        summary_path = _scenario_output_dir(args, scenario) / "summary.json"
+        if not summary_path.exists():
+            continue
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        health = _monthly_factor_health(payload)
+        if health.empty:
+            continue
+        contributions = _monthly_factor_contributions(payload)
+        for performance in performance_rows:
+            method = str(performance["method"])
+            month = str(performance["month"])
+            health_month = health[health["month"] == month]
+            if health_month.empty:
+                continue
+            contribution_month = contributions[
+                (contributions["method"] == method)
+                & (contributions["month"] == month)
+            ]
+            contribution_by_feature = (
+                contribution_month.set_index("feature").to_dict("index")
+                if not contribution_month.empty
+                else {}
+            )
+            for health_record in health_month.to_dict("records"):
+                feature = str(health_record["feature"])
+                contribution = contribution_by_feature.get(feature, {})
+                rows.append(
+                    {
+                        "scenario": scenario.name,
+                        "method": method,
+                        "policy": performance["policy"],
+                        "month": month,
+                        "feature": feature,
+                        "month_return": performance["return"],
+                        "month_max_drawdown": performance["max_drawdown"],
+                        "month_trade_count": performance["trade_count"],
+                        "month_total_transaction_cost": performance[
+                            "total_transaction_cost"
+                        ],
+                        "month_loss_flag": bool(float(performance["return"]) < 0.0),
+                        "month_drawdown_flag": bool(
+                            float(performance["max_drawdown"]) <= -0.05
+                        ),
+                        **{
+                            key: value
+                            for key, value in health_record.items()
+                            if key not in {"month", "feature"}
+                        },
+                        "largest_contribution_count": int(
+                            contribution.get("largest_contribution_count", 0)
+                        ),
+                        "average_largest_abs_contribution_share_when_largest": (
+                            contribution.get(
+                                "average_largest_abs_contribution_share_when_largest"
+                            )
+                        ),
+                        "average_method_largest_abs_contribution_share": (
+                            contribution.get(
+                                "average_method_largest_abs_contribution_share"
+                            )
+                        ),
+                        "average_method_top_two_abs_contribution_share": (
+                            contribution.get(
+                                "average_method_top_two_abs_contribution_share"
+                            )
+                        ),
+                    }
+                )
+    return rows
+
+
+def _monthly_factor_health(payload: dict[str, Any]) -> pd.DataFrame:
+    schedule_path = payload.get("factor_health_schedule")
+    if not schedule_path:
+        return pd.DataFrame()
+    path = Path(str(schedule_path))
+    if not path.exists():
+        return pd.DataFrame()
+    frame = pd.read_csv(path)
+    if frame.empty:
+        return pd.DataFrame()
+    timestamps = pd.to_datetime(frame["timestamp"], errors="coerce")
+    frame = frame.loc[timestamps.notna()].copy()
+    if frame.empty:
+        return pd.DataFrame()
+    frame["month"] = (
+        timestamps.loc[timestamps.notna()].dt.strftime("%Y-%m").to_numpy()
+    )
+    numeric_columns = [
+        "health_score",
+        "recommended_weight_scale",
+        "weight_scale",
+        "rolling_rank_ic",
+        "rolling_top_minus_bottom_label",
+        "rolling_top_label",
+        "rolling_bottom_label",
+    ]
+    for column in numeric_columns:
+        if column in frame:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    rows: list[dict[str, Any]] = []
+    for (month, feature), group in frame.groupby(["month", "feature"], sort=True):
+        health_state = group.get("health_state", pd.Series(dtype=object))
+        rows.append(
+            {
+                "month": month,
+                "feature": feature,
+                "health_observation_count": int(len(group)),
+                "average_health_score": _optional_mean(
+                    group.get("health_score", pd.Series(dtype=float))
+                ),
+                "min_health_score": _optional_min(
+                    group.get("health_score", pd.Series(dtype=float))
+                ),
+                "average_recommended_weight_scale": _optional_mean(
+                    group.get("recommended_weight_scale", pd.Series(dtype=float))
+                ),
+                "min_recommended_weight_scale": _optional_min(
+                    group.get("recommended_weight_scale", pd.Series(dtype=float))
+                ),
+                "average_weight_scale": _optional_mean(
+                    group.get("weight_scale", pd.Series(dtype=float))
+                ),
+                "average_rolling_rank_ic": _optional_mean(
+                    group.get("rolling_rank_ic", pd.Series(dtype=float))
+                ),
+                "average_rolling_top_minus_bottom_label": _optional_mean(
+                    group.get(
+                        "rolling_top_minus_bottom_label",
+                        pd.Series(dtype=float),
+                    )
+                ),
+                "average_rolling_top_label": _optional_mean(
+                    group.get("rolling_top_label", pd.Series(dtype=float))
+                ),
+                "average_rolling_bottom_label": _optional_mean(
+                    group.get("rolling_bottom_label", pd.Series(dtype=float))
+                ),
+                "healthy_count": int((health_state == "healthy").sum()),
+                "watch_count": int((health_state == "watch").sum()),
+                "impaired_count": int((health_state == "impaired").sum()),
+                "warmup_count": int((health_state == "warmup").sum()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _monthly_factor_contributions(payload: dict[str, Any]) -> pd.DataFrame:
+    methods = payload.get("methods", {})
+    if not isinstance(methods, dict):
+        return pd.DataFrame()
+    rows: list[dict[str, Any]] = []
+    for method, method_payload in methods.items():
+        if not isinstance(method_payload, dict):
+            continue
+        paths = method_payload.get("factor_contribution_diagnostics", [])
+        if not isinstance(paths, list):
+            continue
+        frames = [
+            pd.read_csv(path)
+            for path in paths
+            if isinstance(path, str) and Path(path).exists()
+        ]
+        if not frames:
+            continue
+        frame = pd.concat(frames, ignore_index=True)
+        if frame.empty:
+            continue
+        timestamps = pd.to_datetime(frame["timestamp"], errors="coerce")
+        frame = frame.loc[timestamps.notna()].copy()
+        if frame.empty:
+            continue
+        frame["month"] = (
+            timestamps.loc[timestamps.notna()].dt.strftime("%Y-%m").to_numpy()
+        )
+        frame["largest_abs_contribution_share"] = pd.to_numeric(
+            frame["largest_abs_contribution_share"],
+            errors="coerce",
+        )
+        frame["top_two_abs_contribution_share"] = pd.to_numeric(
+            frame["top_two_abs_contribution_share"],
+            errors="coerce",
+        )
+        method_month = frame.groupby("month", sort=True).agg(
+            average_method_largest_abs_contribution_share=(
+                "largest_abs_contribution_share",
+                "mean",
+            ),
+            average_method_top_two_abs_contribution_share=(
+                "top_two_abs_contribution_share",
+                "mean",
+            ),
+        )
+        for (month, feature), group in frame.groupby(
+            ["month", "largest_contribution_feature"],
+            sort=True,
+        ):
+            method_summary = method_month.loc[month]
+            rows.append(
+                {
+                    "method": method,
+                    "month": month,
+                    "feature": feature,
+                    "largest_contribution_count": int(len(group)),
+                    "average_largest_abs_contribution_share_when_largest": (
+                        _optional_mean(group["largest_abs_contribution_share"])
+                    ),
+                    "average_method_largest_abs_contribution_share": float(
+                        method_summary[
+                            "average_method_largest_abs_contribution_share"
+                        ]
+                    ),
+                    "average_method_top_two_abs_contribution_share": float(
+                        method_summary[
+                            "average_method_top_two_abs_contribution_share"
+                        ]
+                    ),
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def _monthly_summary_rows_for_backtest(
@@ -935,6 +1225,7 @@ def _validation_summary(
     monthly_rows: list[dict[str, Any]],
     factor_health_rows: list[dict[str, Any]],
     factor_contribution_rows: list[dict[str, Any]],
+    factor_health_attribution_rows: list[dict[str, Any]],
     factor_risk_gate_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
@@ -948,6 +1239,7 @@ def _validation_summary(
             "registry": args.registry,
             "enforce_registry": args.enforce_registry,
             "registry_statuses": args.registry_statuses,
+            "admission_statuses": args.admission_statuses,
             "methods": args.methods,
             "primary_method": args.primary_method,
             "backtest_policy_set": args.backtest_policy_set,
@@ -1085,6 +1377,7 @@ def _validation_summary(
         "policy_leaderboard": _policy_leaderboard(rows),
         "factor_health_summary": factor_health_rows,
         "factor_contribution_summary": factor_contribution_rows,
+        "factor_health_attribution": factor_health_attribution_rows,
         "validation": _validation_checks(args, rows),
     }
 
@@ -1295,6 +1588,20 @@ def _finite_or_none(value: float) -> float | None:
     return value if math.isfinite(value) else None
 
 
+def _optional_mean(values: pd.Series) -> float | None:
+    finite = pd.to_numeric(values, errors="coerce").dropna()
+    if finite.empty:
+        return None
+    return float(finite.mean())
+
+
+def _optional_min(values: pd.Series) -> float | None:
+    finite = pd.to_numeric(values, errors="coerce").dropna()
+    if finite.empty:
+        return None
+    return float(finite.min())
+
+
 def _mean_finite(values: list[float]) -> float | None:
     finite = [value for value in values if math.isfinite(value)]
     if not finite:
@@ -1382,6 +1689,12 @@ def _parse_args() -> argparse.Namespace:
         help="registry statuses eligible for candidate portfolio validation",
     )
     parser.add_argument(
+        "--admission-statuses",
+        nargs="+",
+        default=["candidate"],
+        help="factor admission statuses eligible for score construction",
+    )
+    parser.add_argument(
         "--output-dir",
         default="runs/candidate_factor_portfolios/partial_rebalance_validation",
     )
@@ -1428,8 +1741,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--factor-max-contribution-share", type=float)
     parser.add_argument(
         "--factor-health-mode",
-        choices=("off", "shrink"),
-        default="off",
+        choices=("off", "monitor", "shrink"),
+        default="monitor",
+        help=(
+            "lagged factor-leg health mode for scenario score builds; monitor "
+            "writes diagnostics without changing scores"
+        ),
     )
     parser.add_argument("--factor-health-lookback-windows", type=int, default=20)
     parser.add_argument("--factor-health-min-periods", type=int, default=5)

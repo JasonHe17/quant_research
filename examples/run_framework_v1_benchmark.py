@@ -703,6 +703,7 @@ def _collect_completed_summary(
         dataset=dataset,
         factor_evaluation=factor_evaluation,
         backtests=backtest_summaries,
+        factor_admission=factor_admission,
         candidate_policy_validation=candidate_policy_validation,
         acceptance=acceptance,
     )
@@ -802,6 +803,7 @@ def _acceptance_checks(
     *,
     dataset: dict[str, Any],
     factor_evaluation: dict[str, Any],
+    factor_admission: dict[str, Any] | None = None,
     backtests: dict[str, Any],
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
@@ -825,6 +827,18 @@ def _acceptance_checks(
         status="pass" if int(factor_evaluation.get("feature_count", 0)) > 0 else "fail",
         details={"feature_count": factor_evaluation.get("feature_count", 0)},
     )
+    if config.auto_factor_admission:
+        admission_factors = (
+            factor_admission.get("factors", [])
+            if isinstance(factor_admission, dict)
+            else []
+        )
+        _add_check(
+            checks,
+            name="factor_admission_present",
+            status="pass" if len(admission_factors) > 0 else "fail",
+            details={"factor_count": len(admission_factors)},
+        )
     _add_check(
         checks,
         name="backtest_scenarios_present",

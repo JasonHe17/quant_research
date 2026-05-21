@@ -8,6 +8,7 @@ from examples.run_candidate_policy_validation import (
     ValidationScenario,
     _backtest_output_dir,
     _collect_factor_contribution_summary_rows,
+    _collect_factor_health_attribution_rows,
     _collect_factor_health_summary_rows,
     _collect_monthly_summary_rows,
     _effective_scenario_memory_budget_gb,
@@ -75,8 +76,11 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     assert command[command.index("--score-diagnostics-top-n") + 1] == "50"
     assert command[command.index("--registry") + 1] == "configs/factors/factor_registry.json"
     assert command[
-        command.index("--registry-statuses") + 1 : command.index("--output-dir")
+        command.index("--registry-statuses") + 1 : command.index("--statuses")
     ] == ["candidate", "promoted"]
+    assert command[
+        command.index("--statuses") + 1 : command.index("--output-dir")
+    ] == ["candidate"]
     assert "--enforce-registry" in command
     assert "--resume-existing" in command
 
@@ -506,6 +510,89 @@ def test_candidate_policy_validation_collects_factor_summaries(tmp_path: Path) -
     )
 
 
+def test_candidate_policy_validation_collects_factor_health_attribution(
+    tmp_path: Path,
+) -> None:
+    args = _validation_args(output_dir=str(tmp_path))
+    scenario = _validation_scenarios(args, years=[2024])[0]
+    scenario_dir = tmp_path / scenario.name
+    scenario_dir.mkdir(parents=True)
+    health_path = scenario_dir / "factor_health.csv"
+    health_path.write_text(
+        "\n".join(
+            [
+                (
+                    "timestamp,feature,health_score,recommended_weight_scale,"
+                    "weight_scale,rolling_rank_ic,rolling_top_minus_bottom_label,"
+                    "rolling_top_label,rolling_bottom_label,health_state,shrink_reason"
+                ),
+                (
+                    "2024-01-02T09:35:00+08:00,alpha_a,0.2,0.4,1.0,"
+                    "-0.01,-0.02,-0.03,-0.01,impaired,monitor_only"
+                ),
+                (
+                    "2024-01-02T09:35:00+08:00,alpha_b,0.9,1.0,1.0,"
+                    "0.02,0.03,0.04,0.01,healthy,monitor_only"
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    diagnostics_dir = scenario_dir / "scores" / "decorrelated" / "diagnostics"
+    diagnostics_dir.mkdir(parents=True)
+    diagnostics_path = diagnostics_dir / "factor_contribution_2024_01.csv"
+    diagnostics_path.write_text(
+        "\n".join(
+            [
+                (
+                    "timestamp,largest_contribution_feature,"
+                    "largest_abs_contribution_share,top_two_abs_contribution_share"
+                ),
+                "2024-01-02T09:35:00+08:00,alpha_a,0.6,0.9",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (scenario_dir / "summary.json").write_text(
+        (
+            "{"
+            f"\"factor_health_schedule\": \"{health_path}\","
+            "\"methods\": {"
+            "\"decorrelated\": {"
+            "\"factor_contribution_diagnostics\": ["
+            f"\"{diagnostics_path}\""
+            "]"
+            "}"
+            "}"
+            "}"
+        ),
+        encoding="utf-8",
+    )
+    monthly_rows = [
+        {
+            "scenario": scenario.name,
+            "method": "decorrelated",
+            "policy": "partial_rebalance_daily",
+            "month": "2024-01",
+            "return": -0.02,
+            "max_drawdown": -0.06,
+            "trade_count": 12,
+            "total_transaction_cost": 34.0,
+        }
+    ]
+
+    rows = _collect_factor_health_attribution_rows(args, [scenario], monthly_rows)
+
+    alpha_a = next(row for row in rows if row["feature"] == "alpha_a")
+    assert alpha_a["month_loss_flag"] is True
+    assert alpha_a["month_drawdown_flag"] is True
+    assert alpha_a["average_health_score"] == pytest.approx(0.2)
+    assert alpha_a["largest_contribution_count"] == 1
+    assert alpha_a["average_method_top_two_abs_contribution_share"] == pytest.approx(0.9)
+
+
 def _validation_args(**overrides: object) -> object:
     defaults = {
         "dataset_dir": "dataset",
@@ -515,6 +602,7 @@ def _validation_args(**overrides: object) -> object:
         "registry": "configs/factors/factor_registry.json",
         "enforce_registry": True,
         "registry_statuses": ["candidate", "promoted"],
+        "admission_statuses": ["candidate"],
         "output_dir": "runs/validation",
         "profile": "standard",
         "years": None,
@@ -528,7 +616,7 @@ def _validation_args(**overrides: object) -> object:
         "score_diagnostics_top_n": 50,
         "factor_max_weight": None,
         "factor_max_contribution_share": None,
-        "factor_health_mode": "off",
+        "factor_health_mode": "monitor",
         "factor_health_lookback_windows": 20,
         "factor_health_min_periods": 5,
         "factor_health_label_lag_windows": 48,

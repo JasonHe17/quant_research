@@ -74,7 +74,8 @@ def run_legacy_factor_revalidation(args: argparse.Namespace) -> dict[str, Any]:
     if not args.skip_shared_benchmark:
         if not (args.resume_existing and _shared_benchmark_complete(args)):
             _run_command(shared_command, log_path=logs_dir / "shared_benchmark.log")
-    _run_factor_jobs(args, jobs)
+    runnable_jobs = _admission_eligible_jobs(args, factors, jobs)
+    _run_factor_jobs(args, runnable_jobs)
     results = _collect_factor_results(args, factors, jobs)
     summary = _summary_payload(
         args,
@@ -207,6 +208,10 @@ def _factor_revalidation_command(
         str(shared_dir / "factor_evaluation" / "feature_correlation.csv"),
         "--registry",
         args.registry,
+        "--registry-statuses",
+        *args.statuses,
+        "--admission-statuses",
+        *args.admission_statuses,
         "--output-dir",
         str(output_dir),
         "--profile",
@@ -217,6 +222,8 @@ def _factor_revalidation_command(
         args.methods[0],
         "--policy",
         args.primary_policy,
+        "--factor-health-mode",
+        args.factor_health_mode,
         "--include-features",
         *entry.feature_columns,
         "--top-n",
@@ -302,6 +309,27 @@ def _run_jobs_with_budget(
                 future.result()
 
 
+def _admission_eligible_jobs(
+    args: argparse.Namespace,
+    factors: list[FactorRegistryEntry],
+    jobs: list[RevalidationJob],
+) -> list[RevalidationJob]:
+    admission_by_feature = _admission_by_feature(args)
+    allowed_statuses = set(args.admission_statuses)
+    factor_by_id = {entry.factor_id: entry for entry in factors}
+    eligible_jobs = []
+    for job in jobs:
+        entry = factor_by_id[job.factor_id]
+        statuses = [
+            str(admission_by_feature[column].get("admission_status"))
+            for column in entry.feature_columns
+            if column in admission_by_feature
+        ]
+        if _combined_admission_status(statuses) in allowed_statuses:
+            eligible_jobs.append(job)
+    return eligible_jobs
+
+
 def _run_command(command: list[str], *, log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8") as log:
@@ -327,14 +355,7 @@ def _collect_factor_results(
     factors: list[FactorRegistryEntry],
     jobs: list[RevalidationJob],
 ) -> list[dict[str, Any]]:
-    admission = _read_json(
-        _shared_benchmark_dir(args) / "factor_admission" / "factor_admission_report.json"
-    )
-    admission_by_feature = {
-        str(row.get("feature")): row
-        for row in admission.get("factors", [])
-        if isinstance(row, dict)
-    }
+    admission_by_feature = _admission_by_feature(args)
     job_by_factor = {job.factor_id: job for job in jobs}
     rows = []
     for entry in factors:
@@ -348,14 +369,22 @@ def _collect_factor_results(
             if column in admission_by_feature
         ]
         new_statuses = [str(row.get("admission_status")) for row in new_rows]
+        new_status = _combined_admission_status(new_statuses)
+        if job.summary_path.exists():
+            validation_status = payload.get("status", "completed")
+        elif new_status not in set(args.admission_statuses):
+            validation_status = "admission_filtered"
+        else:
+            validation_status = "missing"
         rows.append(
             {
                 "factor_id": entry.factor_id,
                 "feature_columns": list(entry.feature_columns),
                 "legacy_status": entry.status,
                 "legacy_admission_status": entry.evaluation.get("admission_status"),
-                "new_admission_status": _combined_admission_status(new_statuses),
+                "new_admission_status": new_status,
                 "new_admission_rows": new_rows,
+                "validation_status": validation_status,
                 "best_method": best_policy.get("method"),
                 "best_policy": best_policy.get("policy"),
                 "best_full_base_return": best_policy.get("full_base_return"),
@@ -363,13 +392,24 @@ def _collect_factor_results(
                 "best_mean_gross_turnover": best_policy.get("mean_gross_turnover"),
                 "recommended_action": _recommended_action(
                     legacy_status=entry.status,
-                    new_status=_combined_admission_status(new_statuses),
+                    new_status=new_status,
                     best_policy=best_policy,
                 ),
                 "validation_summary": str(job.summary_path),
             }
         )
     return rows
+
+
+def _admission_by_feature(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
+    admission = _read_json(
+        _shared_benchmark_dir(args) / "factor_admission" / "factor_admission_report.json"
+    )
+    return {
+        str(row.get("feature")): row
+        for row in admission.get("factors", [])
+        if isinstance(row, dict)
+    }
 
 
 def _combined_admission_status(statuses: list[str]) -> str:
@@ -419,11 +459,13 @@ def _summary_payload(
         "params": {
             "registry": args.registry,
             "statuses": args.statuses,
+            "admission_statuses": args.admission_statuses,
             "factor_ids": args.factor_ids,
             "profile": args.profile,
             "label_horizon_bars": args.label_horizon_bars,
             "methods": args.methods,
             "backtest_policies": args.backtest_policies,
+            "factor_health_mode": args.factor_health_mode,
             "factor_workers": args.factor_workers,
             "factor_memory_budget_gb": args.factor_memory_budget_gb,
             "factor_job_memory_gb": args.factor_job_memory_gb,
@@ -532,6 +574,11 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         default=["candidate", "promoted", "watchlist"],
     )
+    parser.add_argument(
+        "--admission-statuses",
+        nargs="+",
+        default=["candidate", "watchlist"],
+    )
     parser.add_argument("--factor-ids", nargs="+")
     parser.add_argument("--max-factors", type=int)
     parser.add_argument(
@@ -557,6 +604,11 @@ def _parse_args() -> argparse.Namespace:
         default=["partial_rebalance_daily", "cost_aware_optimizer_daily"],
     )
     parser.add_argument("--primary-policy", default="partial_rebalance_daily")
+    parser.add_argument(
+        "--factor-health-mode",
+        choices=("off", "monitor", "shrink"),
+        default="monitor",
+    )
     parser.add_argument("--top-n", type=int, default=50)
     parser.add_argument("--commission-bps", type=float, default=3.0)
     parser.add_argument("--slippage-bps", type=float, default=1.0)

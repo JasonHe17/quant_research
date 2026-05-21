@@ -12,7 +12,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate"
+        "admission_status": "candidate",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_volatility_5m_w24/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.2304320668888091,
+        "legacy_revalidation_high_cost_return": 0.1792369551716879,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "confirmed",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_volatility_5m_w24",
@@ -40,7 +49,10 @@
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_volatility_5m_w24/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -51,7 +63,8 @@
       "tags": [
         "seed",
         "current_candidate",
-        "intraday"
+        "intraday",
+        "legacy_revalidation_confirmed"
       ]
     },
     {
@@ -66,7 +79,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate"
+        "admission_status": "candidate",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_volatility_5m_w12/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.2521862396649978,
+        "legacy_revalidation_high_cost_return": 0.1995038365107746,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "confirmed",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_volatility_5m_w12",
@@ -94,7 +116,10 @@
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_volatility_5m_w12/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -105,7 +130,8 @@
       "tags": [
         "seed",
         "current_candidate",
-        "intraday"
+        "intraday",
+        "legacy_revalidation_confirmed"
       ]
     },
     {
@@ -120,7 +146,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate"
+        "admission_status": "candidate",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_volatility_5m_w6/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.4247409266130095,
+        "legacy_revalidation_high_cost_return": 0.3653370968149116,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "confirmed",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_volatility_5m_w6",
@@ -148,7 +183,10 @@
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_volatility_5m_w6/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -159,7 +197,8 @@
       "tags": [
         "seed",
         "current_candidate",
-        "intraday"
+        "intraday",
+        "legacy_revalidation_confirmed"
       ]
     },
     {
@@ -174,7 +213,16 @@
       "evaluation": {
         "admission_direction": "long",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate"
+        "admission_status": "candidate",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_amihud_5m/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.4097350784707931,
+        "legacy_revalidation_high_cost_return": 0.3524624782840546,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "confirmed",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "long",
       "factor_id": "intraday_amihud_5m",
@@ -199,7 +247,10 @@
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_amihud_5m/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -212,7 +263,8 @@
       "tags": [
         "seed",
         "current_candidate",
-        "intraday"
+        "intraday",
+        "legacy_revalidation_confirmed"
       ]
     },
     {
@@ -227,7 +279,16 @@
       "evaluation": {
         "admission_direction": "long",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate"
+        "admission_status": "watchlist",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_turnover_ratio_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.1924862831237224,
+        "legacy_revalidation_high_cost_return": 0.14095670997859,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "long",
       "factor_id": "intraday_turnover_ratio_5m_w48",
@@ -255,18 +316,36 @@
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_turnover_ratio_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
         "bar_end_time",
         "turnover"
       ],
-      "status": "candidate",
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+          "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+          "runs/legacy_factor_revalidation/current/factors/intraday_turnover_ratio_5m_w48/validation_summary.json"
+        ],
+        "negative_findings": "The 2026-05-20 legacy revalidation kept the factor on watchlist. Full and high-cost returns were positive, but admission remained watchlist and the factor belongs in horizon or policy review rather than the confirmed core.",
+        "retry_conditions": "Retest only with stricter turnover controls or entry/exit buffers, and require positive incremental contribution after correlation and contribution caps.",
+        "similar_to": [
+          "intraday_volume_ratio_5m_w48",
+          "intraday_turnover_zscore_5m_w48"
+        ]
+      },
+      "status": "watchlist",
       "tags": [
         "seed",
         "current_candidate",
-        "intraday"
+        "intraday",
+        "policy_review"
       ]
     },
     {
@@ -281,7 +360,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "watchlist"
+        "admission_status": "watchlist",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_turnover_zscore_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": -0.0288237913859351,
+        "legacy_revalidation_high_cost_return": -0.0599503171662165,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_turnover_zscore_5m_w48",
@@ -309,7 +397,10 @@
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_turnover_zscore_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -332,7 +423,9 @@
       "tags": [
         "seed",
         "watchlist",
-        "intraday"
+        "intraday",
+        "negative_validation",
+        "policy_review"
       ]
     },
     {
@@ -347,7 +440,16 @@
       "evaluation": {
         "admission_direction": "long",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "watchlist"
+        "admission_status": "watchlist",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_volume_ratio_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.2573984574174961,
+        "legacy_revalidation_high_cost_return": 0.2050625848301694,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "long",
       "factor_id": "intraday_volume_ratio_5m_w48",
@@ -375,7 +477,10 @@
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_volume_ratio_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -398,7 +503,8 @@
       "tags": [
         "seed",
         "watchlist",
-        "intraday"
+        "intraday",
+        "policy_review"
       ]
     },
     {
@@ -413,7 +519,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "watchlist"
+        "admission_status": "watchlist",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_momentum_5m_lb12/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": -0.0297647108190277,
+        "legacy_revalidation_high_cost_return": -0.0705085761244582,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_momentum_5m_lb12",
@@ -441,7 +556,10 @@
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_admission.md",
-        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_momentum_5m_lb12/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -462,7 +580,9 @@
       "tags": [
         "seed",
         "watchlist",
-        "intraday"
+        "intraday",
+        "negative_validation",
+        "policy_review"
       ]
     },
     {
@@ -546,7 +666,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate"
+        "admission_status": "candidate",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_range_volatility_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.1307152605278236,
+        "legacy_revalidation_high_cost_return": 0.0859706065185612,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "confirmed",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_range_volatility_5m_w48",
@@ -575,7 +704,10 @@
       "references": [
         "docs/validation/factor_admission.md",
         "docs/strategy/factor_research_batch_2026_05_15.md",
-        "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_range_volatility_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -588,7 +720,9 @@
       "tags": [
         "batch_2026_05_15",
         "intraday",
-        "research"
+        "research",
+        "current_candidate",
+        "legacy_revalidation_confirmed"
       ]
     },
     {
@@ -603,7 +737,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate"
+        "admission_status": "candidate",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_efficiency_ratio_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.3054732439624061,
+        "legacy_revalidation_high_cost_return": 0.2468690220665519,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "confirmed",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_efficiency_ratio_5m_w48",
@@ -632,7 +775,10 @@
       "references": [
         "docs/validation/factor_admission.md",
         "docs/strategy/factor_research_batch_2026_05_15.md",
-        "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/factor_batch_2026_05_15/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_efficiency_ratio_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -643,7 +789,9 @@
       "tags": [
         "batch_2026_05_15",
         "intraday",
-        "research"
+        "research",
+        "current_candidate",
+        "legacy_revalidation_confirmed"
       ]
     },
     {
@@ -729,6 +877,15 @@
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
         "admission_status": "candidate",
         "candidate_review": "runs/factor_candidate_reviews/intraday_downside_volatility_5m_w48/factor_candidate_review.json",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_downside_volatility_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.062031026437417,
+        "legacy_revalidation_high_cost_return": 0.0215607864215232,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "confirmed",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed",
         "portfolio_validation": "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
         "portfolio_validation_status": "risk_gate_validated",
         "risk_gate_schedule": "runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1/gross_exposure_schedule.csv",
@@ -757,6 +914,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 48,
+      "notes": "Formal 2023-2025 admission cleared all gates in inverted direction. The equal two-factor candidate portfolio was negative and the isolated alpha sleeve lost 34.96%, so do not promote it as standalone alpha. A lagged downside-volatility gross-exposure gate improved the promoted decorrelated policy from 32.21% to 38.77% full-window return, improved high-cost return from 20.31% to 27.31%, reduced drawdown, and passed all standard validation checks.",
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_development_standard.md",
@@ -766,7 +924,10 @@
         "runs/factor_candidate_reviews/intraday_downside_volatility_5m_w48/factor_candidate_review.json",
         "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
         "runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1/summary.json",
-        "runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1_promoted_standard/validation_summary.json"
+        "runs/candidate_factor_portfolios/downside_volatility_w48_risk_gate_v1_promoted_standard/validation_summary.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_downside_volatility_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -779,9 +940,10 @@
         "candidate",
         "intraday",
         "research",
-        "risk_penalty"
-      ],
-      "notes": "Formal 2023-2025 admission cleared all gates in inverted direction. The equal two-factor candidate portfolio was negative and the isolated alpha sleeve lost 34.96%, so do not promote it as standalone alpha. A lagged downside-volatility gross-exposure gate improved the promoted decorrelated policy from 32.21% to 38.77% full-window return, improved high-cost return from 20.31% to 27.31%, reduced drawdown, and passed all standard validation checks."
+        "risk_penalty",
+        "current_candidate",
+        "legacy_revalidation_confirmed"
+      ]
     },
     {
       "a_share_constraints": {
@@ -796,7 +958,16 @@
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
         "admission_status": "watchlist",
-        "candidate_review": "runs/factor_candidate_reviews/intraday_return_skewness_5m_w48/factor_candidate_review.json"
+        "candidate_review": "runs/factor_candidate_reviews/intraday_return_skewness_5m_w48/factor_candidate_review.json",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_return_skewness_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.0528411832183692,
+        "legacy_revalidation_high_cost_return": 0.0169828176098774,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_return_skewness_5m_w48",
@@ -827,7 +998,10 @@
         "docs/validation/factor_admission.md",
         "docs/strategy/factor_research_batch_2026_05_16.md",
         "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
-        "runs/factor_candidate_reviews/intraday_return_skewness_5m_w48/factor_candidate_review.json"
+        "runs/factor_candidate_reviews/intraday_return_skewness_5m_w48/factor_candidate_review.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_return_skewness_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -853,7 +1027,8 @@
         "watchlist",
         "intraday",
         "research",
-        "distribution_shape"
+        "distribution_shape",
+        "policy_review"
       ]
     },
     {
@@ -940,7 +1115,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
-        "admission_status": "watchlist"
+        "admission_status": "watchlist",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_signed_turnover_imbalance_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.0998487602726692,
+        "legacy_revalidation_high_cost_return": 0.0490534229666497,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_signed_turnover_imbalance_5m_w48",
@@ -970,7 +1154,10 @@
         "docs/validation/factor_development_standard.md",
         "docs/validation/factor_admission.md",
         "docs/strategy/factor_research_batch_2026_05_16.md",
-        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_signed_turnover_imbalance_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -996,7 +1183,8 @@
         "watchlist",
         "intraday",
         "research",
-        "turnover_confirmed"
+        "turnover_confirmed",
+        "policy_review"
       ]
     },
     {
@@ -1011,7 +1199,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
-        "admission_status": "watchlist"
+        "admission_status": "watchlist",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_risk_adjusted_momentum_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.1083662814933579,
+        "legacy_revalidation_high_cost_return": 0.0630394370408127,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_risk_adjusted_momentum_5m_w48",
@@ -1041,7 +1238,10 @@
         "docs/validation/factor_development_standard.md",
         "docs/validation/factor_admission.md",
         "docs/strategy/factor_research_batch_2026_05_16.md",
-        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_risk_adjusted_momentum_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1066,7 +1266,8 @@
         "watchlist",
         "intraday",
         "research",
-        "risk_adjusted"
+        "risk_adjusted",
+        "policy_review"
       ]
     },
     {
@@ -1083,8 +1284,26 @@
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
         "admission_status": "candidate",
         "candidate_review": "runs/factor_candidate_reviews/intraday_volume_confirmed_momentum_5m_w48/factor_candidate_review.json",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_volume_confirmed_momentum_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.0814988755892711,
+        "legacy_revalidation_high_cost_return": 0.037645407303839,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "upgrade_to_candidate",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed",
         "portfolio_validation": "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
-        "portfolio_validation_status": "negative_combo_demoted"
+        "portfolio_validation_status": "negative_combo_demoted",
+        "compact_core_incremental_validation": "runs/candidate_factor_portfolios/compact_core_plus_volume_confirmed_momentum_2026_05_20_standard/validation_summary.json",
+        "compact_core_incremental_review": "docs/validation/compact_core_plus_volume_confirmed_momentum_2026_05_20.md",
+        "compact_core_incremental_status": "not_added_to_core",
+        "compact_core_incremental_primary_full_base_return": 0.3558138857233168,
+        "compact_core_incremental_primary_high_cost_return": 0.2942978179797324,
+        "compact_core_incremental_primary_year_2024_return": -0.0517512314964212,
+        "compact_core_incremental_baseline_full_base_return": 0.4292401077056083,
+        "compact_core_incremental_baseline_high_cost_return": 0.3638932313844429,
+        "compact_core_incremental_baseline_year_2024_return": -0.0596178913241112
       },
       "expected_direction": "invert",
       "factor_id": "intraday_volume_confirmed_momentum_5m_w48",
@@ -1116,7 +1335,12 @@
         "docs/strategy/factor_research_batch_2026_05_16.md",
         "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
         "runs/factor_candidate_reviews/intraday_volume_confirmed_momentum_5m_w48/factor_candidate_review.json",
-        "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json"
+        "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_volume_confirmed_momentum_5m_w48/validation_summary.json",
+        "docs/validation/compact_core_plus_volume_confirmed_momentum_2026_05_20.md",
+        "runs/candidate_factor_portfolios/compact_core_plus_volume_confirmed_momentum_2026_05_20_standard/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1125,27 +1349,34 @@
         "volume"
       ],
       "research_memory": {
-        "decision_reason": "portfolio_negative",
+        "decision_reason": "other",
         "evidence_artifacts": [
           "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
           "runs/factor_candidate_reviews/intraday_volume_confirmed_momentum_5m_w48/factor_candidate_review.json",
           "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
-          "docs/strategy/factor_research_batch_2026_05_16.md"
+          "docs/strategy/factor_research_batch_2026_05_16.md",
+          "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+          "runs/legacy_factor_revalidation/current/factors/intraday_volume_confirmed_momentum_5m_w48/validation_summary.json",
+          "docs/validation/compact_core_plus_volume_confirmed_momentum_2026_05_20.md",
+          "runs/candidate_factor_portfolios/compact_core_plus_volume_confirmed_momentum_2026_05_20_standard/validation_summary.json"
         ],
-        "negative_findings": "The factor passed single-factor admission only in inverted direction, with weak IC and high top-N turnover; the registered two-factor candidate portfolio lost 11.3% after costs over 2023-2025.",
-        "retry_conditions": "Retry only with calibrated forecast scaling, stricter turnover gating, or as a conditional overlay with positive isolated and incremental portfolio contribution.",
+        "negative_findings": "The 2026-05-20 compact-core incremental test did not justify adding this factor to the compact core. Adding it to the four-factor baseline reduced full_base return from 42.92% to 35.58% and full high-cost return from 36.39% to 29.43%. It improved year_2024_base only from -5.96% to -5.18%, worsened January 2024, and left sell-pressure absorption as the largest contribution feature in all 11,033 observed 2024 bars.",
+        "retry_conditions": "Keep as candidate but do not add to the compact-core baseline. Retry only after a sell-pressure contribution cap, health-gated overlay, or execution policy change shows better January/June 2024 robustness without diluting full-window and high-cost returns versus the four-factor compact core.",
         "similar_to": [
           "intraday_momentum_5m_lb12",
           "intraday_volume_ratio_5m_w48"
         ]
       },
-      "status": "watchlist",
+      "status": "candidate",
       "tags": [
         "batch_2026_05_16",
-        "watchlist",
         "intraday",
         "research",
-        "volume_confirmed"
+        "volume_confirmed",
+        "candidate",
+        "upgrade_review",
+        "incremental_tested",
+        "not_core_incremental"
       ]
     },
     {
@@ -1226,7 +1457,16 @@
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
         "admission_status": "watchlist",
-        "candidate_review": "runs/factor_candidate_reviews/intraday_return_turnover_corr_5m_w48/factor_candidate_review.json"
+        "candidate_review": "runs/factor_candidate_reviews/intraday_return_turnover_corr_5m_w48/factor_candidate_review.json",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_return_turnover_corr_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.0853699714735678,
+        "legacy_revalidation_high_cost_return": 0.0362987387157247,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_return_turnover_corr_5m_w48",
@@ -1257,7 +1497,10 @@
         "docs/validation/factor_admission.md",
         "docs/strategy/factor_research_batch_2026_05_16.md",
         "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
-        "runs/factor_candidate_reviews/intraday_return_turnover_corr_5m_w48/factor_candidate_review.json"
+        "runs/factor_candidate_reviews/intraday_return_turnover_corr_5m_w48/factor_candidate_review.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_return_turnover_corr_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1285,7 +1528,8 @@
         "watchlist",
         "intraday",
         "research",
-        "turnover_confirmed"
+        "turnover_confirmed",
+        "policy_review"
       ]
     },
     {
@@ -1302,6 +1546,15 @@
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_negative_return_persistence/factor_admission/factor_admission_report.json",
         "admission_status": "watchlist",
         "candidate_review": "runs/factor_candidate_reviews/intraday_negative_return_persistence_5m_w48/factor_candidate_review.json",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_negative_return_persistence_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.0318678282587949,
+        "legacy_revalidation_high_cost_return": -0.0117121290715788,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed",
         "portfolio_validation_status": "risk_gate_incremental_watchlist",
         "risk_gate_schedule": "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1/gross_exposure_schedule.csv",
         "risk_gate_validation": "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_promoted_standard/validation_summary.json"
@@ -1347,7 +1600,10 @@
         "runs/candidate_factor_portfolios/budget_deadband_regime_gate_promoted_standard_recheck/validation_summary.json",
         "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_drawdown_brake_7pct_promoted_standard/validation_summary.json",
         "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_drawdown_brake_7pct_week_chunk_quick/validation_summary.json",
-        "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_drawdown_brake_7pct_rebalance_level_standard/validation_summary.json"
+        "runs/candidate_factor_portfolios/negative_return_persistence_w48_plus_downside_volatility_gate_v1_drawdown_brake_7pct_rebalance_level_standard/validation_summary.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_negative_return_persistence_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1384,7 +1640,9 @@
         "intraday",
         "research",
         "risk_penalty",
-        "persistence"
+        "persistence",
+        "negative_validation",
+        "policy_review"
       ]
     },
     {
@@ -1397,8 +1655,8 @@
       "description": "Rolling 48-bar downside beta against the cross-sectional median market return.",
       "display_name": "Intraday market downside beta, 48-bar window",
       "evaluation": {
-        "admission_status": "reject",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_market_downside_beta/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
         "candidate_review": "runs/factor_candidate_reviews/intraday_market_downside_beta_5m_w48/factor_candidate_review.json"
       },
       "expected_direction": "invert",
@@ -1472,15 +1730,21 @@
       "display_name": "Intraday limit-pressure resilience, 48-bar window",
       "evaluation": {
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_limit_pressure_resilience/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate",
+        "admission_status": "reject",
         "candidate_review": "runs/factor_candidate_reviews/intraday_limit_pressure_resilience_5m_w48/factor_candidate_review.json",
+        "diagnostic_summary": "runs/factor_diagnostics/intraday_limit_pressure_resilience_5m_w48/diagnostic_summary.json",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_limit_pressure_resilience_5m_w48/validation_summary.json",
+        "legacy_revalidation_new_admission_status": "reject",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "deprecated_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "admission_filtered",
         "portfolio_validation": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/full_base/summary.json",
-        "portfolio_validation_status": "watchlist_portfolio_unstable",
         "portfolio_validation_high_cost": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/full_high_cost/summary.json",
+        "portfolio_validation_status": "watchlist_portfolio_unstable",
         "portfolio_validation_year_2023": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2023_base/summary.json",
         "portfolio_validation_year_2024": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2024_base/summary.json",
-        "portfolio_validation_year_2025": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2025_base/summary.json",
-        "diagnostic_summary": "runs/factor_diagnostics/intraday_limit_pressure_resilience_5m_w48/diagnostic_summary.json"
+        "portfolio_validation_year_2025": "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2025_base/summary.json"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_limit_pressure_resilience_5m_w48",
@@ -1510,7 +1774,10 @@
       "references": [
         "docs/validation/factor_development_standard.md",
         "docs/validation/factor_admission.md",
-        "docs/strategy/factor_research_batch_2026_05_17_limit_pressure_resilience.md"
+        "docs/strategy/factor_research_batch_2026_05_17_limit_pressure_resilience.md",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_limit_pressure_resilience_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1520,7 +1787,7 @@
         "limit_down_open"
       ],
       "research_memory": {
-        "decision_reason": "unstable_years",
+        "decision_reason": "data_quality",
         "evidence_artifacts": [
           "runs/framework_v1_acceptance/factor_batch_2026_05_17_limit_pressure_resilience/factor_admission/factor_admission_report.json",
           "runs/factor_candidate_reviews/intraday_limit_pressure_resilience_5m_w48/factor_candidate_review.json",
@@ -1529,22 +1796,25 @@
           "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/full_high_cost/summary.json",
           "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2023_base/summary.json",
           "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2024_base/summary.json",
-          "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2025_base/summary.json"
+          "runs/candidate_factor_portfolios/limit_pressure_resilience_validation/year_2025_base/summary.json",
+          "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+          "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json"
         ],
-        "negative_findings": "Single-factor evidence was strong and full-window portfolio validation was positive, but standalone annual portfolio slices were negative in 2023 and 2024 while positive only in the 2025 bull market.",
-        "retry_conditions": "Retry as a conditional regime input or exposure gate only after adding non-bull-market controls that improve 2023 and 2024 annual portfolio slices without relying on 2025 bull-market upside.",
+        "negative_findings": "The 2026-05-20 legacy revalidation rejected the factor because coverage was only about 21.64%, below the 95% hard admission gate. This is a data coverage failure, not a fresh economic-signal rejection.",
+        "retry_conditions": "Retry only after feature coverage is fixed and the shared admission report passes the 95% coverage gate.",
         "similar_to": [
           "intraday_market_downside_beta_5m_w48"
         ]
       },
-      "status": "watchlist",
+      "status": "reject",
       "tags": [
         "batch_2026_05_17_limit_pressure_resilience",
         "watchlist",
         "intraday",
         "market_regime",
         "limit_pressure",
-        "resilience"
+        "resilience",
+        "coverage_failed"
       ]
     },
     {
@@ -1637,10 +1907,28 @@
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_absorption/factor_admission/factor_admission_report.json",
         "admission_status": "candidate",
         "candidate_review": "runs/factor_candidate_reviews/intraday_sell_pressure_absorption_5m_w48/factor_candidate_review.json",
+        "compact_core_overlay_cap_045": "runs/candidate_factor_portfolios/compact_core_contribution_cap_045_2026_05_21_standard/validation_summary.json",
+        "compact_core_overlay_cap_050": "runs/candidate_factor_portfolios/compact_core_contribution_cap_050_2026_05_21_standard/validation_summary.json",
+        "compact_core_overlay_health_shrink": "runs/candidate_factor_portfolios/compact_core_factor_health_shrink_2026_05_21_standard/validation_summary.json",
+        "compact_core_overlay_review": "docs/validation/compact_core_overlay_experiments_2026_05_21.md",
+        "compact_core_sell_pressure_regime_guard_mild_slow": "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_mild_slow_2026_05_21_standard/validation_summary.json",
+        "compact_core_sell_pressure_regime_guard_review": "docs/validation/compact_core_sell_pressure_regime_guard_2026_05_21.md",
+        "compact_core_sell_pressure_regime_guard_schedule": "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_v1_2026_05_21/gate_threshold_mild_slow/gross_exposure_schedule.csv",
+        "compact_core_sell_pressure_regime_guard_v2_rank_080": "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_v2_rank_080_2026_05_21_standard/validation_summary.json",
+        "compact_core_sell_pressure_regime_guard_v2_schedule": "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_v2_2026_05_21/gate_combined_rank_080/gross_exposure_schedule.csv",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_sell_pressure_absorption_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "cost_aware_optimizer_daily",
+        "legacy_revalidation_full_base_return": 0.8153798306491815,
+        "legacy_revalidation_high_cost_return": 0.6479353405046291,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "confirmed",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed",
         "portfolio_validation": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/validation_summary.json",
-        "portfolio_validation_status": "standalone_validated_drawdown_watch",
         "portfolio_validation_full_base": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/full_base/summary.json",
         "portfolio_validation_high_cost": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/full_high_cost/summary.json",
+        "portfolio_validation_status": "standalone_validated_drawdown_watch",
         "portfolio_validation_year_2023": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/year_2023_base/summary.json",
         "portfolio_validation_year_2024": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/year_2024_base/summary.json",
         "portfolio_validation_year_2025": "runs/candidate_factor_portfolios/sell_pressure_absorption_validation_decorrelated/year_2025_base/summary.json",
@@ -1671,7 +1959,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 48,
-      "notes": "This is not a plain turnover ratio or a market beta proxy. It measures downside-only turnover per unit of cumulative negative return over the same rolling window. The standard admission run found a strong inverted direction, suggesting high turnover during downside bars behaves more like crowded distribution than healthy absorption. Standalone decorrelated portfolio validation was positive in full-window, high-cost, and all annual slices, but 2024 max drawdown remained high enough to keep this as a drawdown-watch candidate rather than an immediate promoted factor. A simple -7% drawdown brake with 0.5x exposure reduced full-window drawdown from -31.84% to -20.76%, but lowered full-window return from 60.79% to 33.70% and made 2024 annual return negative, so it is not the preferred risk-control path. A 2024 quick test using downside-volatility state gating improved the 2024 slice from 4.17% return and -29.66% max drawdown to 11.52% return and -21.53% max drawdown. The same downside-volatility gate failed the standard full-window risk-reward check: full_base return fell to 39.69% while max drawdown only improved to -30.27%, versus the standalone 60.79% and -31.84%. Do not continue this gate configuration without a materially different state variable or exposure rule.",
+      "notes": "This is not a plain turnover ratio or a market beta proxy. It measures downside-only turnover per unit of cumulative negative return over the same rolling window. The standard admission run found a strong inverted direction, suggesting high turnover during downside bars behaves more like crowded distribution than healthy absorption. Standalone decorrelated portfolio validation was positive in full-window, high-cost, and all annual slices, but 2024 max drawdown remained high enough to keep this as a drawdown-watch candidate rather than an immediate promoted factor. A simple -7% drawdown brake with 0.5x exposure reduced full-window drawdown from -31.84% to -20.76%, but lowered full-window return from 60.79% to 33.70% and made 2024 annual return negative, so it is not the preferred risk-control path. A 2024 quick test using downside-volatility state gating improved the 2024 slice from 4.17% return and -29.66% max drawdown to 11.52% return and -21.53% max drawdown. The same downside-volatility gate failed the standard full-window risk-reward check: full_base return fell to 39.69% while max drawdown only improved to -30.27%, versus the standalone 60.79% and -31.84%. Do not continue this gate configuration without a materially different state variable or exposure rule. The compact-core overlay test found that generic contribution caps diluted full-window and high-cost returns, while health shrink left year_2024_base negative and increased sell-pressure contribution concentration. A sell-pressure-specific mild-slow regime guard improved year_2024_base from -5.96% to -1.96%, but full_base fell from 42.92% to 33.52% and full high-cost fell from 36.39% to 27.88%. A narrower combined-rank v2 guard improved year_2024_base to -3.94% with smaller full-window drag, but missed January 2024 and still left 2024 negative. Do not adopt either guard; move next to complementary factor development or a higher-level regime state.",
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_development_standard.md",
@@ -1684,7 +1972,19 @@
         "runs/candidate_factor_portfolios/sell_pressure_absorption_drawdown_brake_7pct/year_2024_base/summary.json",
         "runs/candidate_factor_portfolios/sell_pressure_absorption_downside_vol_gate_2024_quick/validation_summary.json",
         "runs/candidate_factor_portfolios/sell_pressure_absorption_downside_vol_gate_standard/factor_risk_gate/summary.json",
-        "runs/candidate_factor_portfolios/sell_pressure_absorption_downside_vol_gate_standard/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv"
+        "runs/candidate_factor_portfolios/sell_pressure_absorption_downside_vol_gate_standard/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_sell_pressure_absorption_5m_w48/validation_summary.json",
+        "docs/validation/compact_core_overlay_experiments_2026_05_21.md",
+        "runs/candidate_factor_portfolios/compact_core_contribution_cap_045_2026_05_21_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/compact_core_contribution_cap_050_2026_05_21_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/compact_core_factor_health_shrink_2026_05_21_standard/validation_summary.json",
+        "docs/validation/compact_core_sell_pressure_regime_guard_2026_05_21.md",
+        "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_v1_2026_05_21/gate_threshold_mild_slow/gross_exposure_schedule.csv",
+        "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_mild_slow_2026_05_21_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_v2_2026_05_21/gate_combined_rank_080/gross_exposure_schedule.csv",
+        "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_v2_rank_080_2026_05_21_standard/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1692,7 +1992,24 @@
         "close_price",
         "turnover"
       ],
-      "research_memory": {},
+      "research_memory": {
+        "decision_reason": "controlled_overlay_review",
+        "evidence_artifacts": [
+          "docs/validation/compact_core_overlay_experiments_2026_05_21.md",
+          "runs/candidate_factor_portfolios/compact_core_contribution_cap_045_2026_05_21_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/compact_core_contribution_cap_050_2026_05_21_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/compact_core_factor_health_shrink_2026_05_21_standard/validation_summary.json",
+          "docs/validation/compact_core_sell_pressure_regime_guard_2026_05_21.md",
+          "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_mild_slow_2026_05_21_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/compact_core_sell_pressure_regime_guard_v2_rank_080_2026_05_21_standard/validation_summary.json"
+        ],
+        "negative_findings": "The 2026-05-21 compact-core overlay tests did not justify a generic contribution cap, framework-wide health shrink default, or the first targeted mild-slow sell-pressure regime guard. Contribution cap 0.45 improved year_2024_base from -5.96% to -4.21%, but full_base fell from 42.92% to 34.42% and full high-cost fell from 36.39% to 28.85%. Contribution cap 0.50 reduced full_base to 32.05% and year_2024_base to -6.19%. Health shrink preserved full_base at 42.79% and high-cost at 37.14%, but year_2024_base stayed negative at -5.79% and the average largest 2024 contribution share rose from 0.534 to 0.657. The targeted mild-slow regime guard improved year_2024_base to -1.96% and reduced drawdown, but full_base fell to 33.52%, full high-cost fell to 27.88%, and 2025 fell from 31.85% to 23.08%. The narrower combined-rank v2 guard reduced the full-window cost, but year_2024_base remained negative at -3.94% and January 2024 worsened slightly versus baseline.",
+        "retry_conditions": "Do not continue timestamp-level sell-pressure exposure overlays without a materially different state definition. Prefer complementary factor development or a higher-level day/rebalance regime that explicitly protects January and June 2024 without false positives in September and November.",
+        "similar_to": [
+          "intraday_sell_pressure_recovery_5m_w48",
+          "intraday_limit_pressure_resilience_5m_w48"
+        ]
+      },
       "status": "candidate",
       "tags": [
         "batch_2026_05_17_sell_pressure_absorption",
@@ -1700,7 +2017,9 @@
         "intraday",
         "liquidity",
         "sell_pressure",
-        "absorption"
+        "absorption",
+        "current_candidate",
+        "legacy_revalidation_confirmed"
       ]
     },
     {
@@ -1717,6 +2036,15 @@
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
         "admission_status": "candidate",
         "candidate_review": "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_downside_turnover_decay_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.0224934998408727,
+        "legacy_revalidation_high_cost_return": -0.0196471756383755,
+        "legacy_revalidation_new_admission_status": "candidate",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "upgrade_to_candidate",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed",
         "portfolio_validation_full_base_equity": "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv",
         "portfolio_validation_status": "full_base_failed_risk_reward",
         "research_memory_check": "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json"
@@ -1753,7 +2081,10 @@
         "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json",
         "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
         "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
-        "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv"
+        "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_downside_turnover_decay_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1762,15 +2093,17 @@
         "turnover"
       ],
       "research_memory": {
-        "decision_reason": "other",
+        "decision_reason": "cost_fragile",
         "evidence_artifacts": [
           "runs/factor_research_memory/intraday_downside_turnover_decay_5m_w48/factor_research_memory_check.json",
           "runs/framework_v1_acceptance/factor_batch_2026_05_17_downside_turnover_decay/factor_admission/factor_admission_report.json",
           "runs/factor_candidate_reviews/intraday_downside_turnover_decay_5m_w48/factor_candidate_review.json",
-          "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv"
+          "runs/candidate_factor_portfolios/downside_turnover_decay_validation_decorrelated/full_base/backtests/decorrelated/partial_rebalance_daily/equity_curve.csv",
+          "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+          "runs/legacy_factor_revalidation/current/factors/intraday_downside_turnover_decay_5m_w48/validation_summary.json"
         ],
-        "negative_findings": "The factor passed single-factor admission but failed the first standard portfolio validation gate. The standalone decorrelated full_base policy returned only 0.73% over 2023-2025 with -34.29% max drawdown. Score diagnostics show annual average top-score forward labels were negative in 2023, 2024, and 2025, so the positive admission spread mostly came from bottom names being worse rather than top names being good long-only buys.",
-        "retry_conditions": "Retry only as a conditional overlay or interaction feature, for example gated by broader market drawdown, downside volatility, or liquidity state. Do not rerun the same standalone decay factor without a materially different portfolio construction rule.",
+        "negative_findings": "Latest legacy revalidation upgraded single-factor admission to candidate, but high-cost portfolio return remained negative at -1.96%. Treat as cost-fragile and do not promote before a lower-turnover policy fixes the weakness.",
+        "retry_conditions": "Retry only with stricter turnover controls, entry/exit buffers, or as a conditional liquidity-state overlay with positive high-cost validation.",
         "similar_to": [
           "intraday_signed_turnover_imbalance_5m_w48",
           "intraday_return_turnover_corr_5m_w48",
@@ -1785,7 +2118,8 @@
         "intraday",
         "liquidity",
         "sell_pressure",
-        "decay"
+        "decay",
+        "cost_fragile"
       ]
     },
     {
@@ -1800,7 +2134,16 @@
       "evaluation": {
         "admission_direction": "invert",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json",
-        "admission_status": "pending",
+        "admission_status": "watchlist",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json",
+        "legacy_revalidation_best_policy": "partial_rebalance_daily",
+        "legacy_revalidation_full_base_return": 0.1178292312932081,
+        "legacy_revalidation_high_cost_return": 0.0701382033495325,
+        "legacy_revalidation_new_admission_status": "watchlist",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "horizon_or_policy_review",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "completed",
         "long_only_top_bucket_health_status": "failed_two_of_three_years_positive_top_bucket",
         "research_memory_check": "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json"
       },
@@ -1834,7 +2177,10 @@
         "docs/validation/factor_admission.md",
         "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_recovery.md",
         "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json",
-        "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1865,7 +2211,8 @@
         "liquidity",
         "sell_pressure",
         "recovery",
-        "long_only_quality"
+        "long_only_quality",
+        "policy_review"
       ]
     },
     {
@@ -1878,17 +2225,24 @@
       "description": "Multi-dimensional daily moving-average state broadcast onto the 5-minute research grid using only completed prior trading sessions.",
       "display_name": "Daily moving-average state, 5/10/20-day windows",
       "evaluation": {
-        "admission_status": "candidate",
-        "research_memory_check": "runs/factor_research_memory/intraday_daily_moving_average_state_5m/factor_research_memory_check.json",
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_19_daily_ma/factor_admission/factor_admission_report.json",
+        "admission_status": "missing",
         "candidate_review": "runs/factor_candidate_reviews/intraday_daily_moving_average_state_5m/factor_candidate_review.json",
-        "portfolio_validation_status": "promoted_challenger_review_passed",
+        "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_daily_moving_average_state_5m/validation_summary.json",
+        "legacy_revalidation_missing_reason": "shared_admission_report_missing_daily_ma_feature_rows",
+        "legacy_revalidation_new_admission_status": "missing",
+        "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "legacy_revalidation_status": "separate_data_review_required",
+        "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "legacy_revalidation_validation_status": "admission_filtered",
         "portfolio_validation": "runs/candidate_factor_portfolios/daily_ma_equal_score_budget_gate_v1_standard/validation_summary.json",
+        "portfolio_validation_status": "promoted_challenger_review_passed",
+        "promoted_candidate_review": "runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/promoted_candidate_review.json",
+        "promotion_check": "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_promotion_checks_v1/promotion_check_summary.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_daily_moving_average_state_5m/factor_research_memory_check.json",
         "risk_gate_schedule": "runs/candidate_factor_portfolios/daily_ma_score_gate_v1_plus_ribbon_dispersion_risk_standard/factor_risk_gate/ribbon_dispersion/gross_exposure_schedule.csv",
         "risk_gate_validation": "runs/candidate_factor_portfolios/daily_ma_score_gate_v1_plus_ribbon_dispersion_risk_standard/validation_summary.json",
-        "walk_forward_validation": "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_walk_forward_v1/walk_forward_summary.json",
-        "promotion_check": "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_promotion_checks_v1/promotion_check_summary.json",
-        "promoted_candidate_review": "runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/promoted_candidate_review.json"
+        "walk_forward_validation": "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_walk_forward_v1/walk_forward_summary.json"
       },
       "expected_direction": "mixed",
       "factor_id": "intraday_daily_moving_average_state_5m",
@@ -1947,7 +2301,10 @@
         "runs/candidate_factor_portfolios/daily_ma_score_gate_v1_plus_ribbon_dispersion_risk_standard/validation_summary.json",
         "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_walk_forward_v1/walk_forward_summary.json",
         "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_promotion_checks_v1/promotion_check_summary.json",
-        "runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/promoted_candidate_review.json"
+        "runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/promoted_candidate_review.json",
+        "docs/validation/legacy_factor_revalidation_2026_05_20.md",
+        "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/current/factors/intraday_daily_moving_average_state_5m/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1966,7 +2323,8 @@
         "trend_state",
         "promoted_challenger",
         "risk_gate",
-        "review_passed"
+        "review_passed",
+        "separate_data_review_required"
       ]
     }
   ],
@@ -1985,6 +2343,6 @@
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-19T11:28:59+00:00",
+  "updated_at": "2026-05-20",
   "version": 18
 }

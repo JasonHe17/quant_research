@@ -27,6 +27,13 @@ practice:
   with long-only operation, T+1 holding rules, ST filtering, price-limit-aware
   entry/exit logic, and liquidity-aware execution.
 
+Latest legacy-factor revalidation:
+
+- `docs/validation/legacy_factor_revalidation_2026_05_20.md` records the first
+  full revalidation run under factor-health monitor mode. Use it as the current
+  source for confirmed legacy factors, upgrade-review candidates, and
+  horizon/policy review queues before starting the next discovery batch.
+
 Reference links:
 
 - Harvey, Liu, Zhu, "... and the Cross-Section of Expected Returns":
@@ -193,6 +200,19 @@ The validator treats missing active-factor safety metadata as a hard error.
    notes about the cost-aware optimizer, `equal` score combination, or annual
    gross-turnover budget `52` are research branches, not the default factor
    promotion path.
+
+   Standard policy validation now builds lagged factor-leg health diagnostics in
+   `monitor` mode by default. This writes per-factor rolling IC,
+   top-minus-bottom, top-bucket label, health-state, contribution-concentration,
+   and recommended-weight-scale artifacts, but it keeps applied factor
+   `weight_scale=1.0` and does not change composite alpha scores. Use
+   `--factor-health-mode shrink` only for an explicit score-construction
+   experiment, and report it as an alpha-transform variant rather than as the
+   default validation baseline. The validation wrapper also writes
+   `validation_factor_health_attribution.csv`, which joins month-level
+   performance with factor health and contribution dominance so failure months
+   can be reviewed without manually joining score diagnostics, health schedules,
+   and backtest equity curves.
 
    Before running portfolio validation, identify the baseline stack for the
    research family:

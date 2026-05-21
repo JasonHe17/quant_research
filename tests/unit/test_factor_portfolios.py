@@ -332,8 +332,51 @@ def test_build_factor_health_schedule_uses_only_lagged_labels(tmp_path: Path) ->
 
     assert schedule.loc[0, "shrink_reason"] == "warmup"
     assert schedule.loc[0, "label_column"] == "forward_return_240b"
+    assert schedule.loc[0, "health_state"] == "warmup"
+    assert "recommended_weight_scale" in schedule.columns
     assert schedule.loc[1, "weight_scale"] == pytest.approx(1.0)
     assert schedule.loc[2, "weight_scale"] == pytest.approx(0.25)
+
+
+def test_build_factor_health_schedule_can_monitor_without_shrinking(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": f"t{index}",
+                "instrument_id": instrument,
+                "alpha_a": value,
+                "forward_return": value if index == 0 else -value,
+            }
+            for index in range(3)
+            for instrument, value in (("a", 1.0), ("b", 2.0), ("c", 3.0))
+        ]
+    ).to_parquet(dataset_path, index=False)
+
+    schedule = build_factor_health_schedule(
+        [dataset_path],
+        candidates=(CandidateFactor("alpha_a", 1, 0.02),),
+        config=FactorHealthConfig(
+            lookback_windows=1,
+            min_periods=1,
+            label_lag_windows=1,
+            min_scale=0.25,
+            max_scale=1.0,
+            rank_ic_floor=-1.0,
+            rank_ic_ceiling=1.0,
+            spread_floor=-1.0,
+            spread_ceiling=1.0,
+        ),
+        top_n=1,
+        apply_shrink=False,
+    )
+
+    assert schedule["weight_scale"].tolist() == pytest.approx([1.0, 1.0, 1.0])
+    assert schedule.loc[2, "recommended_weight_scale"] == pytest.approx(0.25)
+    assert schedule.loc[2, "shrink_reason"] == "monitor_only"
+    assert schedule.loc[2, "health_state"] == "impaired"
 
 
 def test_factor_contribution_diagnostics_reports_top_concentration() -> None:
@@ -510,6 +553,42 @@ def test_candidate_factor_builds_factor_health_schedule_when_enabled(tmp_path: P
 
     assert schedule is not None
     assert len(schedule) == 2
+
+
+def test_candidate_factor_monitor_mode_does_not_apply_health_scales(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": f"t{index}",
+                "instrument_id": instrument,
+                "alpha_a": value,
+                "forward_return": value if index == 0 else -value,
+            }
+            for index in range(3)
+            for instrument, value in (("a", 1.0), ("b", 2.0), ("c", 3.0))
+        ]
+    ).to_parquet(dataset_path, index=False)
+    args = _portfolio_args(
+        dataset_dir=str(tmp_path),
+        factor_health_mode="monitor",
+        factor_health_lookback_windows=1,
+        factor_health_min_periods=1,
+        factor_health_label_lag_windows=1,
+        score_diagnostics_top_n=1,
+    )
+
+    schedule = _build_factor_health_schedule(
+        args,
+        [dataset_path],
+        (CandidateFactor("alpha_a", 1, 0.02),),
+    )
+
+    assert schedule is not None
+    assert schedule["weight_scale"].max() == pytest.approx(1.0)
+    assert schedule["recommended_weight_scale"].min() < 1.0
 
 
 def test_candidate_factor_script_filters_dataset_partitions(tmp_path: Path) -> None:

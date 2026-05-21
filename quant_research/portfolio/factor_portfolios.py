@@ -35,7 +35,7 @@ class CandidateFactor:
 
 @dataclass(frozen=True, slots=True)
 class FactorHealthConfig:
-    """Lagged rolling factor-leg health shrinkage configuration."""
+    """Lagged rolling factor-leg health monitoring/shrinkage configuration."""
 
     lookback_windows: int = 20
     min_periods: int = 5
@@ -180,8 +180,9 @@ def build_factor_health_schedule(
     config: FactorHealthConfig,
     top_n: int,
     label_column: str = "forward_return",
+    apply_shrink: bool = True,
 ) -> pd.DataFrame:
-    """Build lagged rolling per-factor health scales from matured labels."""
+    """Build lagged rolling per-factor health diagnostics from matured labels."""
 
     if not label_column:
         raise ValueError("label_column must be non-empty")
@@ -208,11 +209,20 @@ def build_factor_health_schedule(
             columns=[
                 "timestamp",
                 "feature",
+                "label_column",
+                "factor_valid_count",
+                "factor_top_count",
                 "factor_rank_ic",
+                "factor_top_label",
+                "factor_bottom_label",
                 "factor_top_minus_bottom_label",
                 "rolling_rank_ic",
+                "rolling_top_label",
+                "rolling_bottom_label",
                 "rolling_top_minus_bottom_label",
                 "health_score",
+                "health_state",
+                "recommended_weight_scale",
                 "weight_scale",
                 "shrink_reason",
             ]
@@ -223,6 +233,18 @@ def build_factor_health_schedule(
         current = group.sort_values("timestamp").reset_index(drop=True).copy()
         current["rolling_rank_ic"] = (
             current["factor_rank_ic"]
+            .shift(config.label_lag_windows)
+            .rolling(config.lookback_windows, min_periods=config.min_periods)
+            .mean()
+        )
+        current["rolling_top_label"] = (
+            current["factor_top_label"]
+            .shift(config.label_lag_windows)
+            .rolling(config.lookback_windows, min_periods=config.min_periods)
+            .mean()
+        )
+        current["rolling_bottom_label"] = (
+            current["factor_bottom_label"]
             .shift(config.label_lag_windows)
             .rolling(config.lookback_windows, min_periods=config.min_periods)
             .mean()
@@ -245,17 +267,34 @@ def build_factor_health_schedule(
         )
         health_score = pd.concat([rank_score, spread_score], axis=1).min(axis=1)
         current["health_score"] = health_score
-        current["weight_scale"] = (
+        current["recommended_weight_scale"] = (
             config.min_scale
             + (config.max_scale - config.min_scale) * health_score.fillna(1.0)
         )
-        current.loc[health_score.isna(), "shrink_reason"] = "warmup"
-        current.loc[health_score.notna() & (health_score >= 0.999), "shrink_reason"] = (
+        current["health_state"] = "warmup"
+        current.loc[health_score.notna() & (health_score >= 0.75), "health_state"] = (
             "healthy"
         )
-        current.loc[health_score.notna() & (health_score < 0.999), "shrink_reason"] = (
-            "lagged_health_shrink"
+        current.loc[
+            health_score.notna() & (health_score >= 0.25) & (health_score < 0.75),
+            "health_state",
+        ] = "watch"
+        current.loc[health_score.notna() & (health_score < 0.25), "health_state"] = (
+            "impaired"
         )
+        if apply_shrink:
+            current["weight_scale"] = current["recommended_weight_scale"]
+            current.loc[health_score.isna(), "shrink_reason"] = "warmup"
+            current.loc[
+                health_score.notna() & (health_score >= 0.999), "shrink_reason"
+            ] = "healthy"
+            current.loc[
+                health_score.notna() & (health_score < 0.999), "shrink_reason"
+            ] = "lagged_health_shrink"
+        else:
+            current["weight_scale"] = 1.0
+            current["shrink_reason"] = "monitor_only"
+            current.loc[health_score.isna(), "shrink_reason"] = "warmup"
         current["feature"] = feature
         schedules.append(current)
     return (
@@ -537,7 +576,10 @@ def _factor_health_observations(
             valid = group.dropna(subset=[factor.feature, label_column]).copy()
             if valid.empty:
                 rank_ic = None
+                top_label = None
+                bottom_label = None
                 spread = None
+                top_count = 0
             else:
                 ranks = valid[factor.feature].rank(method="average", pct=True)
                 oriented = (ranks - 0.5) * factor.direction
@@ -545,13 +587,24 @@ def _factor_health_observations(
                 n = min(top_n, len(valid))
                 top = valid.loc[oriented.nlargest(n).index] if n else valid
                 bottom = valid.loc[oriented.nsmallest(n).index] if n else valid
-                spread = _mean(top[label_column]) - _mean(bottom[label_column])
+                top_label = _mean(top[label_column])
+                bottom_label = _mean(bottom[label_column])
+                spread = (
+                    top_label - bottom_label
+                    if top_label is not None and bottom_label is not None
+                    else None
+                )
+                top_count = int(n)
             rows.append(
                 {
                     "timestamp": timestamp,
                     "feature": factor.feature,
                     "label_column": label_column,
+                    "factor_valid_count": int(len(valid)),
+                    "factor_top_count": top_count,
                     "factor_rank_ic": rank_ic,
+                    "factor_top_label": top_label,
+                    "factor_bottom_label": bottom_label,
                     "factor_top_minus_bottom_label": spread,
                 }
             )

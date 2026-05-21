@@ -396,7 +396,7 @@ def _build_factor_health_schedule(
 ) -> pd.DataFrame | None:
     if args.factor_health_mode == "off":
         return None
-    if args.factor_health_mode != "shrink":
+    if args.factor_health_mode not in {"monitor", "shrink"}:
         raise ValueError(f"unsupported factor health mode: {args.factor_health_mode}")
     return build_factor_health_schedule(
         dataset_paths,
@@ -414,6 +414,7 @@ def _build_factor_health_schedule(
         ),
         top_n=args.score_diagnostics_top_n or args.top_n,
         label_column=args.label_column,
+        apply_shrink=args.factor_health_mode == "shrink",
     )
 
 
@@ -1069,9 +1070,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--factor-health-mode",
-        choices=("off", "shrink"),
+        choices=("off", "monitor", "shrink"),
         default="off",
-        help="optional lagged rolling factor-leg health shrinkage",
+        help=(
+            "optional lagged rolling factor-leg health diagnostics; monitor writes "
+            "diagnostics without changing scores, shrink applies health scales"
+        ),
     )
     parser.add_argument("--factor-health-lookback-windows", type=int, default=20)
     parser.add_argument("--factor-health-min-periods", type=int, default=5)

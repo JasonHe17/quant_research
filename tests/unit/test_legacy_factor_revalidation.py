@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 from examples.run_legacy_factor_revalidation import (
+    _admission_eligible_jobs,
+    _collect_factor_results,
     _factor_jobs,
     _primary_label_column,
     _selected_factors,
@@ -33,6 +35,21 @@ def test_legacy_factor_revalidation_dry_run_plans_shared_and_factor_jobs(
     assert set(commands["factor_revalidations"]) == {"alpha_a", "alpha_b"}
     alpha_command = commands["factor_revalidations"]["alpha_a"]
     assert "run_candidate_policy_validation.py" in alpha_command[1]
+    assert alpha_command[
+        alpha_command.index("--registry-statuses") + 1 : alpha_command.index(
+            "--admission-statuses"
+        )
+    ] == ["candidate", "promoted"]
+    assert alpha_command[
+        alpha_command.index("--admission-statuses") + 1 : alpha_command.index(
+            "--output-dir"
+        )
+    ] == ["candidate", "watchlist"]
+    assert alpha_command[
+        alpha_command.index("--factor-health-mode") + 1 : alpha_command.index(
+            "--include-features"
+        )
+    ] == ["monitor"]
     assert alpha_command[
         alpha_command.index("--include-features") + 1 : alpha_command.index("--top-n")
     ] == ["alpha_a_feature"]
@@ -97,6 +114,41 @@ def test_legacy_factor_revalidation_factor_jobs_use_memory_estimate(
     assert jobs[0].summary_path.name == "validation_summary.json"
 
 
+def test_legacy_factor_revalidation_skips_admission_filtered_jobs(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "out"
+    args = _args(
+        registry=str(_registry_path(tmp_path)),
+        output_dir=str(output_dir),
+        statuses=["candidate", "promoted"],
+        admission_statuses=["candidate", "watchlist"],
+    )
+    factors = _selected_factors(args)
+    jobs = _factor_jobs(args, factors)
+    admission_dir = output_dir / "shared_benchmark" / "factor_admission"
+    admission_dir.mkdir(parents=True)
+    (admission_dir / "factor_admission_report.json").write_text(
+        json.dumps(
+            {
+                "factors": [
+                    {"feature": "alpha_a_feature", "admission_status": "reject"},
+                    {"feature": "alpha_b_feature", "admission_status": "candidate"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    eligible = _admission_eligible_jobs(args, factors, jobs)
+    results = _collect_factor_results(args, factors, jobs)
+
+    assert [job.factor_id for job in eligible] == ["alpha_b"]
+    alpha_a = next(row for row in results if row["factor_id"] == "alpha_a")
+    assert alpha_a["new_admission_status"] == "reject"
+    assert alpha_a["validation_status"] == "admission_filtered"
+
+
 def _registry_path(tmp_path: Path) -> Path:
     path = tmp_path / "factor_registry.json"
     payload = {
@@ -141,6 +193,7 @@ def _args(**overrides: object) -> object:
         "registry": "configs/factors/factor_registry.json",
         "output_dir": "runs/legacy_factor_revalidation/current",
         "statuses": ["candidate", "promoted"],
+        "admission_statuses": ["candidate", "watchlist"],
         "factor_ids": None,
         "max_factors": None,
         "profile": "quick",
@@ -156,6 +209,7 @@ def _args(**overrides: object) -> object:
             "cost_aware_optimizer_daily",
         ],
         "primary_policy": "partial_rebalance_daily",
+        "factor_health_mode": "monitor",
         "top_n": 50,
         "commission_bps": 3.0,
         "slippage_bps": 1.0,
