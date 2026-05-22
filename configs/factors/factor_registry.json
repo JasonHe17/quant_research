@@ -2129,6 +2129,103 @@
         "st_aware": true,
         "t_plus_one_safe": true
       },
+      "description": "Slow sell-pressure exhaustion persistence after penalizing short-window relief rallies.",
+      "display_name": "Intraday sell-pressure exhaustion persistence, 96/24/48 bars",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/sell_pressure_exhaustion_2026_05_21/persistence_official_factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "compact_core_incremental_full_base_return": 0.3135966106815455,
+        "compact_core_incremental_high_cost_return": 0.2614876021192782,
+        "compact_core_incremental_review": "docs/validation/sell_pressure_exhaustion_persistence_2026_05_21.md",
+        "compact_core_incremental_status": "failed_core_inclusion",
+        "compact_core_incremental_validation": "runs/factor_research/sell_pressure_exhaustion_2026_05_21/compact_core_plus_persistence_policy_validation_standard/validation_summary.json",
+        "factor_evaluation": "runs/factor_research/sell_pressure_exhaustion_2026_05_21/persistence_official_factor_evaluation/summary.json",
+        "portfolio_validation": "runs/factor_research/sell_pressure_exhaustion_2026_05_21/persistence_policy_validation_standard/validation_summary.json",
+        "portfolio_validation_full_base_return": 0.1621532721393364,
+        "portfolio_validation_high_cost_return": 0.1163889235646384,
+        "portfolio_validation_status": "standalone_positive_yearly_fragile"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_sell_pressure_exhaustion_persistence_5m_l96_s24_m48",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_sell_pressure_exhaustion_persistence_5m_l96_s24_m48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Durable seller exhaustion should be more useful for long-only selection when heavy earlier downside turnover fades, price recovers with upside turnover participation, and the signal is not dominated by short-window relief rallies.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "sell_pressure_exhaustion_persistence"
+          ],
+          "sell_pressure_exhaustion_persistence_specs": [
+            [
+              96,
+              24,
+              48
+            ]
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 96,
+      "notes": "This factor extends the downside-turnover-decay and sell-pressure-recovery research path by requiring price recovery, upside turnover participation, and fading downside turnover, then subtracting short-window exhaustion components to avoid chasing transient relief rallies. Formal admission passed as a long candidate with 0.00812 rank IC, 19.87 t-stat, 56.03% directional hit rate, 7.71 bps cost-adjusted spread, and 3/3 stable years. Standalone primary validation was positive in full-base and high-cost stress, but 2023 and 2024 annual primary returns were negative. The compact-core incremental test reduced contribution concentration and drawdown but cut full-base return from 42.92% to 31.36% and high-cost return from 36.39% to 26.15%, so do not add it to the compact-core default.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md",
+        "docs/validation/sell_pressure_exhaustion_persistence_2026_05_21.md",
+        "runs/factor_research/sell_pressure_exhaustion_2026_05_21/persistence_official_factor_admission/factor_admission_report.json",
+        "runs/factor_research/sell_pressure_exhaustion_2026_05_21/persistence_official_factor_evaluation/summary.json",
+        "runs/factor_research/sell_pressure_exhaustion_2026_05_21/persistence_policy_validation_standard/validation_summary.json",
+        "runs/factor_research/sell_pressure_exhaustion_2026_05_21/compact_core_plus_persistence_policy_validation_standard/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "statistical_candidate_but_core_incremental_rejected",
+        "evidence_artifacts": [
+          "docs/validation/sell_pressure_exhaustion_persistence_2026_05_21.md",
+          "runs/factor_research/sell_pressure_exhaustion_2026_05_21/persistence_official_factor_admission/factor_admission_report.json",
+          "runs/factor_research/sell_pressure_exhaustion_2026_05_21/persistence_policy_validation_standard/validation_summary.json",
+          "runs/factor_research/sell_pressure_exhaustion_2026_05_21/compact_core_plus_persistence_policy_validation_standard/validation_summary.json"
+        ],
+        "negative_findings": "The factor passed statistical admission and has low correlation to the compact-core factors, but it failed the economic incremental bar. Adding it to the four-factor compact core lowered full-base return by 11.56 percentage points and full high-cost return by 10.24 percentage points. It improved January and June 2024 but worsened March, September, and December, leaving the year_2024_base slice slightly worse than the baseline. Its full-base monitor health score was also the weakest of the five-factor run.",
+        "retry_conditions": "Retry only as a conditional overlay, a gated entry signal, or under a lower-turnover policy that preserves compact-core full-window and high-cost returns. Do not add another plain sell-pressure exhaustion variant to the compact-core default without showing positive incremental economics.",
+        "similar_to": [
+          "intraday_downside_turnover_decay_5m_w48",
+          "intraday_sell_pressure_recovery_5m_w48",
+          "intraday_sell_pressure_absorption_5m_w48"
+        ]
+      },
+      "status": "candidate",
+      "tags": [
+        "batch_2026_05_21_sell_pressure_exhaustion",
+        "candidate",
+        "intraday",
+        "liquidity",
+        "sell_pressure",
+        "exhaustion",
+        "persistence",
+        "complementary_review",
+        "compact_core_rejected"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
       "description": "Rolling 48-bar price recovery after sell pressure, confirmed by upside turnover participation.",
       "display_name": "Intraday sell-pressure recovery, 48-bar window",
       "evaluation": {
@@ -2326,6 +2423,436 @@
         "review_passed",
         "separate_data_review_required"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Residual return resilience during weak-breadth and breadth-shock states.",
+      "display_name": "Intraday breadth-shock residual resilience, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/breadth_shock_residual_resilience_2026_05_21/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "factor_evaluation": "runs/factor_research/breadth_shock_residual_resilience_2026_05_21/factor_evaluation/summary.json",
+        "validation_review": "docs/validation/complementary_factor_development_2026_05_21.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_breadth_shock_residual_resilience_5m_w48",
+      "family": "market_regime",
+      "feature_columns": [
+        "intraday_breadth_shock_residual_resilience_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Stocks with positive residual returns during weak-breadth shocks should be more resilient long-only holdings than names that only rise with the broad tape.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "breadth_shock_residual_resilience_windows": [
+            48
+          ],
+          "factor_groups": [
+            "breadth_shock_residual_resilience"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Rejected after the 2026-05-21 complementary-factor run. The factor was point-in-time safe and materially different from the older breadth_resilience construction because it used residual stock return versus the cross-sectional median and a lagged breadth-shock component. Formal admission rejected all tested windows. The 48-bar member had rank IC -0.00237, directional hit rate 49.31%, and only one stable annual IC slice; 2025 moved strongly against 2023-2024.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/complementary_factor_development_2026_05_21.md",
+        "runs/factor_research_memory/intraday_breadth_shock_residual_resilience_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/breadth_shock_residual_resilience_2026_05_21/factor_admission/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "unstable_years",
+        "evidence_artifacts": [
+          "docs/validation/complementary_factor_development_2026_05_21.md",
+          "runs/factor_research_memory/intraday_breadth_shock_residual_resilience_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/breadth_shock_residual_resilience_2026_05_21/factor_admission/factor_admission_report.json"
+        ],
+        "negative_findings": "All tested breadth-shock residual resilience windows were rejected. The direction selected by admission was inverted, hit rate was below threshold, and yearly IC direction was not stable, especially in 2025.",
+        "retry_conditions": "Retry only with a materially different regime-conditioned design that proves positive annual direction and cost-aware portfolio contribution; do not rerun plain weak-breadth residual resilience.",
+        "similar_to": [
+          "intraday_breadth_resilience_5m_w48",
+          "intraday_market_downside_beta_5m_w48"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "market_regime",
+        "breadth",
+        "residual",
+        "reject",
+        "batch_2026_05_21_complementary"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling log-turnover signal-to-noise ratio used as a liquidity stability proxy.",
+      "display_name": "Intraday turnover stability, 24/48/96-bar windows",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/turnover_stability_2026_05_21/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "factor_evaluation": "runs/factor_research/turnover_stability_2026_05_21/factor_evaluation/summary.json",
+        "portfolio_validation_full_base": "runs/factor_research/turnover_stability_2026_05_21/policy_validation_standard/full_base/backtest_summary.csv",
+        "portfolio_validation_status": "cost_aware_full_base_failed",
+        "validation_review": "docs/validation/complementary_factor_development_2026_05_21.md"
+      },
+      "expected_direction": "mixed",
+      "factor_id": "intraday_turnover_stability_5m",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_turnover_stability_5m_w24",
+        "intraday_turnover_stability_5m_w48",
+        "intraday_turnover_stability_5m_w96"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Stable turnover supply may proxy stable liquidity participation and execution quality, but only if the relationship is monotonic and survives transaction costs.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "turnover_stability"
+          ],
+          "turnover_stability_windows": [
+            24,
+            48,
+            96
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 96,
+      "notes": "The 2026-05-21 run showed this ratio is not a clean linear alpha. Admission put all three windows on watchlist with inverted direction and failed cost-adjusted spread. Full-base partial rebalance was positive, but cost-aware optimizer lost roughly 75%-76% across decorrelated, equal, and ic_weighted methods. Treat this as a diagnostic liquidity-state variable, not as a tradable factor.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/complementary_factor_development_2026_05_21.md",
+        "runs/factor_research_memory/intraday_turnover_stability_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/turnover_stability_2026_05_21/factor_admission/factor_admission_report.json",
+        "runs/factor_research/turnover_stability_2026_05_21/policy_validation_standard/full_base/backtest_summary.csv"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/validation/complementary_factor_development_2026_05_21.md",
+          "runs/factor_research_memory/intraday_turnover_stability_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/turnover_stability_2026_05_21/factor_admission/factor_admission_report.json",
+          "runs/factor_research/turnover_stability_2026_05_21/policy_validation_standard/full_base/backtest_summary.csv"
+        ],
+        "negative_findings": "The current turnover-stability ratio is non-linear and cost fragile. It passed hard statistical checks only as a watchlist inverted signal, while cost-aware optimizer full-base validation lost more than 75%.",
+        "retry_conditions": "Retry only as a non-linear liquidity-state or capacity filter with explicit cost-aware positive validation; do not promote the raw mean/std ratio.",
+        "similar_to": [
+          "intraday_turnover_ratio_5m_w48",
+          "intraday_turnover_zscore_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "liquidity",
+        "turnover",
+        "watchlist",
+        "cost_fragile",
+        "batch_2026_05_21_complementary"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling conservative lower bound on log turnover supply.",
+      "display_name": "Intraday liquidity reliability, 24-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/liquidity_reliability_2026_05_21/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "factor_evaluation": "runs/factor_research/liquidity_reliability_2026_05_21/factor_evaluation/summary.json",
+        "portfolio_validation_quick": "runs/factor_research/liquidity_reliability_2026_05_21/policy_validation_quick/validation_summary.json",
+        "portfolio_validation_status": "cost_aware_full_base_failed",
+        "validation_review": "docs/validation/complementary_factor_development_2026_05_21.md"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_liquidity_reliability_5m_w24",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_liquidity_reliability_5m_w24"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Low conservative liquidity reliability may proxy a risk premium or small-name elasticity, but it must pass strict capacity and cost-aware checks before use in a long-only A-share strategy.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "liquidity_reliability"
+          ],
+          "liquidity_reliability_windows": [
+            24
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 24,
+      "notes": "Formal admission was strong in the inverted direction, with rank IC -0.05998, t-stat -65.08, hit rate 66.01%, stable 3/3 annual IC, and cost-adjusted spread 11.56 bps. The original long-side liquidity-quality hypothesis failed; the admitted effect is a low-reliability risk premium. Quick full-base policy validation kept partial rebalance positive at 46.01%, but cost-aware optimizer returned -33.91% with -43.53% drawdown. Keep on watchlist until a capacity-aware transform or policy proves the premium can be traded after costs.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/complementary_factor_development_2026_05_21.md",
+        "runs/factor_research_memory/intraday_liquidity_reliability_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/liquidity_reliability_2026_05_21/factor_admission/factor_admission_report.json",
+        "runs/factor_research/liquidity_reliability_2026_05_21/policy_validation_quick/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/validation/complementary_factor_development_2026_05_21.md",
+          "runs/factor_research_memory/intraday_liquidity_reliability_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/liquidity_reliability_2026_05_21/factor_admission/factor_admission_report.json",
+          "runs/factor_research/liquidity_reliability_2026_05_21/policy_validation_quick/validation_summary.json"
+        ],
+        "negative_findings": "The statistically strong inverted liquidity-reliability premium is not cost robust in quick policy validation. Cost-aware optimizer full-base return was -33.91% with -43.53% max drawdown.",
+        "retry_conditions": "Retry only with capacity-aware gating, stricter turnover controls, or a price-confirmed transform that produces positive cost-aware full and annual validation.",
+        "similar_to": [
+          "intraday_turnover_ratio_5m_w48",
+          "intraday_downside_turnover_decay_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "liquidity",
+        "turnover",
+        "watchlist",
+        "cost_fragile",
+        "batch_2026_05_21_complementary"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Low liquidity-reliability premium gated by recent turnover capacity and price recovery.",
+      "display_name": "Intraday liquidity-reliability recovery, 48/96-bar windows",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/liquidity_reliability_recovery_2026_05_21/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "factor_evaluation": "runs/factor_research/liquidity_reliability_recovery_2026_05_21/factor_evaluation/summary.json",
+        "portfolio_validation_status": "not_run_cost_adjusted_spread_failed",
+        "validation_review": "docs/validation/complementary_factor_development_2026_05_21.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_liquidity_reliability_recovery_5m",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_liquidity_reliability_recovery_5m_l48_c12_r24",
+        "intraday_liquidity_reliability_recovery_5m_l96_c24_r48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Low conservative liquidity reliability may be tradable only when recent turnover capacity exists and price has started to recover after sell pressure.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "liquidity_reliability_recovery"
+          ],
+          "liquidity_reliability_recovery_specs": [
+            [
+              48,
+              12,
+              24
+            ],
+            [
+              96,
+              24,
+              48
+            ]
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 96,
+      "notes": "This first capacity-and-recovery transform improved the raw low-liquidity reliability hypothesis statistically, but remained unsuitable for trading. Admission put both windows on watchlist: l48 had rank IC 0.02631, t-stat 33.78, hit rate 60.12%, stable 3/3 annual IC, but cost-adjusted spread -11.05 bps; l96 had rank IC 0.03413, t-stat 40.29, hit rate 61.83%, stable 3/3 annual IC, but cost-adjusted spread -14.66 bps. Quintile evidence was non-monotonic: the middle quantiles were positive while the top bucket was slightly negative, consistent with overextended recovery and crowding risk.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/complementary_factor_development_2026_05_21.md",
+        "runs/factor_research_memory/intraday_liquidity_reliability_recovery_5m_l48_c12_r24/factor_research_memory_check.json",
+        "runs/factor_research/liquidity_reliability_recovery_2026_05_21/factor_admission/factor_admission_report.json",
+        "runs/factor_research/liquidity_reliability_recovery_2026_05_21/factor_evaluation/single_factor_quantiles.csv"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/validation/complementary_factor_development_2026_05_21.md",
+          "runs/factor_research_memory/intraday_liquidity_reliability_recovery_5m_l48_c12_r24/factor_research_memory_check.json",
+          "runs/factor_research/liquidity_reliability_recovery_2026_05_21/factor_admission/factor_admission_report.json",
+          "runs/factor_research/liquidity_reliability_recovery_2026_05_21/factor_evaluation/single_factor_quantiles.csv"
+        ],
+        "negative_findings": "The plain monotonic recovery gate produced positive IC but failed the cost-adjusted spread gate and had a non-monotonic quantile shape. Extremely strong recovery after low liquidity reliability behaved like overextension rather than a robust long entry.",
+        "retry_conditions": "Retry only with a materially different recovery definition that separates moderate recovery from overextended recovery and proves positive cost-aware full and annual validation.",
+        "similar_to": [
+          "intraday_liquidity_reliability_5m_w24",
+          "intraday_sell_pressure_recovery_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "liquidity",
+        "turnover",
+        "recovery",
+        "watchlist",
+        "cost_fragile",
+        "batch_2026_05_21_complementary"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Balanced low liquidity-reliability recovery signal that rewards moderate recovery and penalizes overextension.",
+      "display_name": "Intraday liquidity-reliability recovery balance, 48/96-bar windows",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "factor_evaluation": "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/factor_evaluation/summary.json",
+        "integration_ablation_l48_quick": "runs/candidate_factor_portfolios/liquidity_recovery_balance_l48_equal_annual_budget52_quick/validation_summary.json",
+        "integration_review": "docs/validation/liquidity_reliability_recovery_balance_integration_2026_05_22.md",
+        "integration_validation_quick": "runs/candidate_factor_portfolios/liquidity_recovery_balance_equal_annual_budget52_quick/validation_summary.json",
+        "portfolio_validation_standard": "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/policy_validation_standard/validation_summary.json",
+        "portfolio_validation_status": "standalone_pass_but_integration_dilutive",
+        "validation_review": "docs/validation/complementary_factor_development_2026_05_21.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_liquidity_reliability_recovery_balance_5m",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_liquidity_reliability_recovery_balance_5m_l48_c12_r24",
+        "intraday_liquidity_reliability_recovery_balance_5m_l96_c24_r48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Low liquidity reliability carries a risk premium only when there is enough recent capacity and the post-sell-pressure recovery is credible but not overextended. Moderate recovery after impaired liquidity can indicate exhausted sellers and tradable elasticity; extreme recovery is more likely crowded rebound or adverse-selection risk.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "liquidity_reliability_recovery_balance"
+          ],
+          "liquidity_reliability_recovery_balance_specs": [
+            [
+              48,
+              12,
+              24
+            ],
+            [
+              96,
+              24,
+              48
+            ]
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 96,
+      "notes": "This factor was developed after the raw low-liquidity reliability and monotonic recovery gates failed cost-aware trading. It uses smooth positive low-reliability scoring, a capacity-balance term peaking near normal recent turnover capacity, and a recovery-balance term peaking near one unit of positive recovery per unit of downside damage. Admission accepted both tested windows as candidates. The l48 member had rank IC 0.05908, t-stat 65.11, hit rate 65.42%, stable 3/3 annual IC, cost-adjusted spread 19.33 bps, and top-N turnover 7.30%. The l96 member had rank IC 0.05618, t-stat 61.08, hit rate 64.44%, stable 3/3 annual IC, cost-adjusted spread 16.26 bps, and top-N turnover 4.30%. Standalone standard policy validation passed with no failed checks: full-base partial return 55.60%, cost-aware return 99.75%, high-cost partial return 48.36%, high-cost cost-aware return 83.36%, and positive primary yearly returns in 2023, 2024, and 2025. Portfolio integration failed the current leading equal annual-budget-52 combination: old leading set plus both balance windows returned only 4.49% with -25.11% max drawdown, and old leading set plus l48 returned 2.80% with -22.85% max drawdown versus the baseline 33.44% with -7.85% max drawdown. Keep on watchlist; do not include in default candidate combinations until a portfolio-level gate or allocator demonstrates incremental value.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/complementary_factor_development_2026_05_21.md",
+        "docs/validation/liquidity_reliability_recovery_balance_integration_2026_05_22.md",
+        "runs/factor_research_memory/intraday_liquidity_reliability_recovery_balance_5m_l48_c12_r24/factor_research_memory_check.json",
+        "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/factor_admission/factor_admission_report.json",
+        "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/factor_evaluation/single_factor_quantiles.csv",
+        "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/policy_validation_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/liquidity_recovery_balance_equal_annual_budget52_quick/validation_summary.json",
+        "runs/candidate_factor_portfolios/liquidity_recovery_balance_l48_equal_annual_budget52_quick/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "portfolio_negative",
+        "evidence_artifacts": [
+          "docs/validation/complementary_factor_development_2026_05_21.md",
+          "docs/validation/liquidity_reliability_recovery_balance_integration_2026_05_22.md",
+          "runs/factor_research_memory/intraday_liquidity_reliability_recovery_balance_5m_l48_c12_r24/factor_research_memory_check.json",
+          "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/factor_admission/factor_admission_report.json",
+          "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/policy_validation_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/liquidity_recovery_balance_equal_annual_budget52_quick/validation_summary.json",
+          "runs/candidate_factor_portfolios/liquidity_recovery_balance_l48_equal_annual_budget52_quick/validation_summary.json"
+        ],
+        "negative_findings": "Despite strong standalone IC and standalone policy validation, direct integration into the current leading equal annual-budget-52 portfolio was strongly dilutive. Adding both l48 and l96 balance windows cut full-base return to 4.49% and widened max drawdown to -25.11%; adding only l48 cut full-base return to 2.80% and widened max drawdown to -22.85%, versus the baseline 33.44% and -7.85%.",
+        "retry_conditions": "Retry only with a portfolio-level allocator, regime gate, or explicit non-equal factor budget that proves incremental value versus the current leading baseline. Do not add more local variants of the same smooth recovery-balance formula.",
+        "similar_to": [
+          "intraday_liquidity_reliability_recovery_5m",
+          "intraday_sell_pressure_recovery_5m_w48",
+          "intraday_downside_turnover_decay_5m_w48"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "liquidity",
+        "turnover",
+        "recovery",
+        "watchlist",
+        "cost_robust",
+        "portfolio_negative",
+        "batch_2026_05_21_complementary"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -2343,6 +2870,6 @@
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-20",
-  "version": 18
+  "updated_at": "2026-05-22",
+  "version": 22
 }

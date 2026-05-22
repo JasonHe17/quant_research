@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import pytest
 
@@ -34,6 +36,10 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "efficiency",
             "volume",
             "turnover",
+            "turnover_stability",
+            "liquidity_reliability",
+            "liquidity_reliability_recovery",
+            "liquidity_reliability_recovery_balance",
             "bar_return",
             "liquidity_impact",
             "vwap_deviation",
@@ -47,12 +53,15 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "market_state",
             "market_downside_beta",
             "breadth_resilience",
+            "breadth_shock_residual_resilience",
             "limit_pressure_resilience",
             "return_turnover_correlation",
             "negative_return_persistence",
             "sell_pressure_absorption",
             "downside_turnover_decay",
             "sell_pressure_recovery",
+            "sell_pressure_exhaustion",
+            "sell_pressure_exhaustion_persistence",
             "daily_moving_average",
         ),
         reversal_lookback_bars=(1,),
@@ -63,6 +72,10 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         efficiency_windows=(3,),
         volume_windows=(3,),
         turnover_windows=(3,),
+        turnover_stability_windows=(3,),
+        liquidity_reliability_windows=(3,),
+        liquidity_reliability_recovery_specs=((4, 2, 3),),
+        liquidity_reliability_recovery_balance_specs=((4, 2, 3),),
         vwap_deviation_windows=(3,),
         downside_volatility_windows=(3,),
         return_skewness_windows=(3,),
@@ -75,11 +88,14 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         sell_pressure_absorption_windows=(3,),
         downside_turnover_decay_windows=(4,),
         sell_pressure_recovery_windows=(3,),
+        sell_pressure_exhaustion_windows=(4,),
+        sell_pressure_exhaustion_persistence_specs=((4, 2, 3),),
         daily_moving_average_windows=(2, 3),
         daily_moving_average_pairs=((2, 3),),
         market_state_windows=(3,),
         market_downside_beta_windows=(3,),
         breadth_resilience_windows=(3,),
+        breadth_shock_residual_resilience_windows=(3,),
         limit_pressure_resilience_windows=(3,),
     )
 
@@ -93,6 +109,10 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_efficiency_ratio_5m_w3" in features
     assert "intraday_volume_ratio_5m_w3" in features
     assert "intraday_turnover_zscore_5m_w3" in features
+    assert "intraday_turnover_stability_5m_w3" in features
+    assert "intraday_liquidity_reliability_5m_w3" in features
+    assert "intraday_liquidity_reliability_recovery_5m_l4_c2_r3" in features
+    assert "intraday_liquidity_reliability_recovery_balance_5m_l4_c2_r3" in features
     assert "intraday_bar_return_5m" in features
     assert "intraday_amihud_5m" in features
     assert "intraday_vwap_deviation_5m_w3" in features
@@ -106,12 +126,15 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "market_state_downside_mean_5m_w3" in features
     assert "intraday_market_downside_beta_5m_w3" in features
     assert "intraday_breadth_resilience_5m_w3" in features
+    assert "intraday_breadth_shock_residual_resilience_5m_w3" in features
     assert "intraday_limit_pressure_resilience_5m_w3" in features
     assert "intraday_return_turnover_corr_5m_w3" in features
     assert "intraday_negative_return_persistence_5m_w3" in features
     assert "intraday_sell_pressure_absorption_5m_w3" in features
     assert "intraday_downside_turnover_decay_5m_w4" in features
     assert "intraday_sell_pressure_recovery_5m_w3" in features
+    assert "intraday_sell_pressure_exhaustion_5m_w4" in features
+    assert "intraday_sell_pressure_exhaustion_persistence_5m_l4_s2_m3" in features
     assert "intraday_daily_ma_deviation_5m_d3" in features
     assert "intraday_daily_ma_spread_5m_s2_l3" in features
     assert features.loc[0, "intraday_bar_return_5m"] == pytest.approx(0.1)
@@ -162,6 +185,10 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_range_volatility_5m_w48" in features
     assert "intraday_efficiency_ratio_5m_w48" in features
     assert "intraday_turnover_ratio_5m_w48" in features
+    assert "intraday_turnover_stability_5m_w48" in features
+    assert "intraday_liquidity_reliability_5m_w48" in features
+    assert "intraday_liquidity_reliability_recovery_5m_l48_c12_r24" in features
+    assert "intraday_liquidity_reliability_recovery_balance_5m_l48_c12_r24" in features
     assert "intraday_vwap_deviation_5m_w48" in features
     assert "intraday_downside_volatility_5m_w48" in features
     assert "intraday_return_skewness_5m_w48" in features
@@ -173,12 +200,15 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "market_state_downside_mean_5m_w48" in features
     assert "intraday_market_downside_beta_5m_w48" in features
     assert "intraday_breadth_resilience_5m_w48" in features
+    assert "intraday_breadth_shock_residual_resilience_5m_w48" in features
     assert "intraday_limit_pressure_resilience_5m_w48" in features
     assert "intraday_return_turnover_corr_5m_w48" in features
     assert "intraday_negative_return_persistence_5m_w48" in features
     assert "intraday_sell_pressure_absorption_5m_w48" in features
     assert "intraday_downside_turnover_decay_5m_w48" in features
     assert "intraday_sell_pressure_recovery_5m_w48" in features
+    assert "intraday_sell_pressure_exhaustion_5m_w48" in features
+    assert "intraday_sell_pressure_exhaustion_persistence_5m_l96_s24_m48" in features
     assert "intraday_daily_ma_deviation_5m_d20" in features
     assert "intraday_daily_ma_ribbon_trend_score_5m" in features
     assert not features.empty
@@ -207,6 +237,150 @@ def test_negative_return_persistence_counts_only_past_intraday_losses() -> None:
 
     assert features["intraday_negative_return_persistence_5m_w3"].tolist() == pytest.approx(
         [2.0 / 3.0, 2.0 / 3.0]
+    )
+
+
+def test_turnover_stability_uses_log_turnover_signal_to_noise() -> None:
+    turnovers = [100.0, 120.0, 90.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": 10.0 + i,
+                "turnover": turnover,
+            }
+            for i, turnover in enumerate(turnovers)
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("turnover_stability",),
+            turnover_stability_windows=(3,),
+        ),
+    )
+
+    values = pd.Series([math.log1p(value) for value in turnovers])
+    expected = values.mean() / values.std()
+    column = "intraday_turnover_stability_5m_w3"
+
+    assert features[column].iloc[-1] == pytest.approx(expected)
+
+
+def test_liquidity_reliability_uses_conservative_log_turnover_bound() -> None:
+    turnovers = [100.0, 120.0, 90.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": 10.0 + i,
+                "turnover": turnover,
+            }
+            for i, turnover in enumerate(turnovers)
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("liquidity_reliability",),
+            liquidity_reliability_windows=(3,),
+        ),
+    )
+
+    values = pd.Series([math.log1p(value) for value in turnovers])
+    expected = values.mean() - values.std()
+    column = "intraday_liquidity_reliability_5m_w3"
+
+    assert features[column].iloc[-1] == pytest.approx(expected)
+
+
+def test_liquidity_reliability_recovery_requires_capacity_and_recovery() -> None:
+    closes = [10.0, 9.0, 9.5, 9.75]
+    turnovers = [100.0, 80.0, 120.0, 150.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+                "turnover": turnover,
+            }
+            for i, (close, turnover) in enumerate(zip(closes, turnovers))
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("liquidity_reliability_recovery",),
+            liquidity_reliability_recovery_specs=((4, 2, 3),),
+        ),
+    )
+
+    log_turnover = pd.Series([math.log1p(value) for value in turnovers])
+    long_values = log_turnover.iloc[0:4]
+    recent_capacity = log_turnover.iloc[2:4].mean()
+    long_mean = long_values.mean()
+    low_reliability_premium = -(long_mean - long_values.std())
+    relative_capacity = recent_capacity / long_mean
+    capacity_gate = math.log1p(recent_capacity) * min(max(relative_capacity, 0.0), 2.0)
+    positive_return = (9.5 - 9.0) / 9.0 + (9.75 - 9.5) / 9.5
+    downside_return = (10.0 - 9.0) / 10.0
+    recovery_confirmation = math.log1p(positive_return / downside_return)
+    column = "intraday_liquidity_reliability_recovery_5m_l4_c2_r3"
+
+    assert features[column].iloc[-1] == pytest.approx(
+        low_reliability_premium * capacity_gate * recovery_confirmation
+    )
+
+
+def test_liquidity_reliability_recovery_balance_penalizes_extreme_recovery() -> None:
+    closes = [10.0, 9.0, 9.5, 9.75]
+    turnovers = [100.0, 80.0, 120.0, 150.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+                "turnover": turnover,
+            }
+            for i, (close, turnover) in enumerate(zip(closes, turnovers))
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("liquidity_reliability_recovery_balance",),
+            liquidity_reliability_recovery_balance_specs=((4, 2, 3),),
+        ),
+    )
+
+    log_turnover = pd.Series([math.log1p(value) for value in turnovers])
+    long_values = log_turnover.iloc[0:4]
+    recent_capacity = log_turnover.iloc[2:4].mean()
+    long_mean = long_values.mean()
+    long_std = long_values.std()
+    low_reliability_score = math.log1p(math.exp(-abs(long_std - long_mean))) + max(
+        long_std - long_mean,
+        0.0,
+    )
+    relative_capacity = recent_capacity / long_mean
+    capacity_balance = 2.0 * relative_capacity / (1.0 + relative_capacity**2)
+    capacity_quality = math.log1p(recent_capacity) * capacity_balance
+    positive_return = (9.5 - 9.0) / 9.0 + (9.75 - 9.5) / 9.5
+    downside_return = (10.0 - 9.0) / 10.0
+    recovery_ratio = positive_return / downside_return
+    recovery_balance = 2.0 * recovery_ratio / (1.0 + recovery_ratio**2)
+    column = "intraday_liquidity_reliability_recovery_balance_5m_l4_c2_r3"
+
+    assert features[column].iloc[-1] == pytest.approx(
+        low_reliability_score * capacity_quality * recovery_balance
     )
 
 
@@ -305,6 +479,80 @@ def test_sell_pressure_recovery_requires_price_recovery_with_turnover_confirmati
     assert features[column].iloc[-1] == pytest.approx(
         (expected_positive_return / expected_downside_return)
         * expected_upside_turnover_share
+    )
+
+
+def test_sell_pressure_exhaustion_requires_recovery_and_downside_turnover_decay() -> None:
+    closes = [10.0, 9.0, 8.8, 8.9, 9.1]
+    turnovers = [100.0, 500.0, 300.0, 100.0, 50.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+                "turnover": turnover,
+            }
+            for i, (close, turnover) in enumerate(zip(closes, turnovers))
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("sell_pressure_exhaustion",),
+            sell_pressure_exhaustion_windows=(4,),
+        ),
+    )
+
+    column = "intraday_sell_pressure_exhaustion_5m_w4"
+    expected_positive_return = (8.9 - 8.8) / 8.8 + (9.1 - 8.9) / 8.9
+    expected_downside_return = (10.0 - 9.0) / 10.0 + (9.0 - 8.8) / 9.0
+    expected_recovery = expected_positive_return / expected_downside_return
+    expected_upside_turnover_share = (100.0 + 50.0) / (500.0 + 300.0 + 100.0 + 50.0)
+    expected_downside_decay = ((500.0 + 300.0) - 0.0) / (500.0 + 300.0)
+
+    assert features[column].iloc[-1] == pytest.approx(
+        math.log1p(expected_recovery)
+        * expected_upside_turnover_share
+        * expected_downside_decay
+    )
+
+
+def test_sell_pressure_exhaustion_persistence_penalizes_short_window_bounces() -> None:
+    closes = [10.0, 9.0, 8.8, 8.9, 9.1, 9.0]
+    turnovers = [100.0, 500.0, 300.0, 100.0, 50.0, 40.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+                "turnover": turnover,
+            }
+            for i, (close, turnover) in enumerate(zip(closes, turnovers))
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("sell_pressure_exhaustion", "sell_pressure_exhaustion_persistence"),
+            sell_pressure_exhaustion_windows=(2, 3, 4),
+            sell_pressure_exhaustion_persistence_specs=((4, 2, 3),),
+        ),
+    )
+
+    values = features.iloc[-1]
+    column = "intraday_sell_pressure_exhaustion_persistence_5m_l4_s2_m3"
+
+    assert values[column] == pytest.approx(
+        values["intraday_sell_pressure_exhaustion_5m_w4"]
+        - 0.5
+        * (
+            values["intraday_sell_pressure_exhaustion_5m_w2"]
+            + values["intraday_sell_pressure_exhaustion_5m_w3"]
+        )
     )
 
 
@@ -427,6 +675,40 @@ def test_breadth_resilience_uses_weak_market_breadth_state() -> None:
     assert values.loc[("b", "t1")] == pytest.approx(-0.05)
     assert values.loc[("c", "t1")] == pytest.approx(0.05)
     assert ("a", "t2") not in values.index
+
+
+def test_breadth_shock_residual_resilience_uses_relative_returns() -> None:
+    rows = []
+    closes = {
+        "a": [100.0, 101.0, 102.01],
+        "b": [100.0, 101.0, 99.99],
+        "c": [100.0, 99.0, 98.01],
+    }
+    for instrument_id, values in closes.items():
+        for index, close in enumerate(values):
+            rows.append(
+                {
+                    "instrument_id": instrument_id,
+                    "bar_end_time": f"t{index}",
+                    "close_price": close,
+                }
+            )
+    bars = pd.DataFrame(rows)
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("breadth_shock_residual_resilience",),
+            breadth_shock_residual_resilience_windows=(1,),
+        ),
+    )
+
+    column = "intraday_breadth_shock_residual_resilience_5m_w1"
+    values = features.set_index(["instrument_id", "timestamp"])[column]
+
+    assert values.loc[("a", "t2")] == pytest.approx(0.02)
+    assert values.loc[("b", "t2")] == pytest.approx(0.0)
+    assert values.loc[("c", "t2")] == pytest.approx(0.0)
 
 
 def test_market_state_features_broadcast_cross_sectional_risk_state() -> None:

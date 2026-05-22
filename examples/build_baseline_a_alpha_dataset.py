@@ -182,6 +182,14 @@ def _build_partition_dataset(
             volume_confirmed_momentum_windows=tuple(
                 args.volume_confirmed_momentum_windows
             ),
+            turnover_stability_windows=tuple(args.turnover_stability_windows),
+            liquidity_reliability_windows=tuple(args.liquidity_reliability_windows),
+            liquidity_reliability_recovery_specs=tuple(
+                args.liquidity_reliability_recovery_specs
+            ),
+            liquidity_reliability_recovery_balance_specs=tuple(
+                args.liquidity_reliability_recovery_balance_specs
+            ),
             return_turnover_correlation_windows=tuple(
                 args.return_turnover_correlation_windows
             ),
@@ -197,11 +205,20 @@ def _build_partition_dataset(
             sell_pressure_recovery_windows=tuple(
                 args.sell_pressure_recovery_windows
             ),
+            sell_pressure_exhaustion_windows=tuple(
+                args.sell_pressure_exhaustion_windows
+            ),
+            sell_pressure_exhaustion_persistence_specs=tuple(
+                args.sell_pressure_exhaustion_persistence_specs
+            ),
             daily_moving_average_windows=tuple(args.daily_moving_average_windows),
             daily_moving_average_pairs=tuple(args.daily_moving_average_pairs),
             market_downside_beta_windows=tuple(args.market_downside_beta_windows),
             market_state_windows=tuple(args.market_state_windows),
             breadth_resilience_windows=tuple(args.breadth_resilience_windows),
+            breadth_shock_residual_resilience_windows=tuple(
+                args.breadth_shock_residual_resilience_windows
+            ),
             limit_pressure_resilience_windows=tuple(
                 args.limit_pressure_resilience_windows
             ),
@@ -421,6 +438,15 @@ def _write_summary(
             "efficiency_windows": args.efficiency_windows,
             "volume_windows": args.volume_windows,
             "turnover_windows": args.turnover_windows,
+            "turnover_stability_windows": args.turnover_stability_windows,
+            "liquidity_reliability_windows": args.liquidity_reliability_windows,
+            "liquidity_reliability_recovery_specs": [
+                list(spec) for spec in args.liquidity_reliability_recovery_specs
+            ],
+            "liquidity_reliability_recovery_balance_specs": [
+                list(spec)
+                for spec in args.liquidity_reliability_recovery_balance_specs
+            ],
             "vwap_deviation_windows": args.vwap_deviation_windows,
             "downside_volatility_windows": args.downside_volatility_windows,
             "return_skewness_windows": args.return_skewness_windows,
@@ -435,6 +461,10 @@ def _write_summary(
             "sell_pressure_absorption_windows": args.sell_pressure_absorption_windows,
             "downside_turnover_decay_windows": args.downside_turnover_decay_windows,
             "sell_pressure_recovery_windows": args.sell_pressure_recovery_windows,
+            "sell_pressure_exhaustion_windows": args.sell_pressure_exhaustion_windows,
+            "sell_pressure_exhaustion_persistence_specs": [
+                list(spec) for spec in args.sell_pressure_exhaustion_persistence_specs
+            ],
             "daily_moving_average_windows": args.daily_moving_average_windows,
             "daily_moving_average_pairs": [
                 list(pair) for pair in args.daily_moving_average_pairs
@@ -442,6 +472,9 @@ def _write_summary(
             "market_downside_beta_windows": args.market_downside_beta_windows,
             "market_state_windows": args.market_state_windows,
             "breadth_resilience_windows": args.breadth_resilience_windows,
+            "breadth_shock_residual_resilience_windows": (
+                args.breadth_shock_residual_resilience_windows
+            ),
             "limit_pressure_resilience_windows": args.limit_pressure_resilience_windows,
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
@@ -492,6 +525,10 @@ def _parse_args() -> argparse.Namespace:
             "efficiency",
             "volume",
             "turnover",
+            "turnover_stability",
+            "liquidity_reliability",
+            "liquidity_reliability_recovery",
+            "liquidity_reliability_recovery_balance",
             "bar_return",
             "liquidity_impact",
             "vwap_deviation",
@@ -505,12 +542,15 @@ def _parse_args() -> argparse.Namespace:
             "market_state",
             "market_downside_beta",
             "breadth_resilience",
+            "breadth_shock_residual_resilience",
             "limit_pressure_resilience",
             "return_turnover_correlation",
             "negative_return_persistence",
             "sell_pressure_absorption",
             "downside_turnover_decay",
             "sell_pressure_recovery",
+            "sell_pressure_exhaustion",
+            "sell_pressure_exhaustion_persistence",
             "daily_moving_average",
         ),
     )
@@ -527,6 +567,33 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--efficiency-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--volume-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--turnover-windows", type=int, nargs="+", default=[12, 48])
+    parser.add_argument("--turnover-stability-windows", type=int, nargs="+", default=[48])
+    parser.add_argument(
+        "--liquidity-reliability-windows",
+        type=int,
+        nargs="+",
+        default=[48],
+    )
+    parser.add_argument(
+        "--liquidity-reliability-recovery-specs",
+        type=_liquidity_reliability_recovery_spec,
+        nargs="+",
+        default=[(48, 12, 24)],
+        help=(
+            "long:capacity:recovery windows, for example 48:12:24; emits "
+            "low reliability premium gated by recent capacity and recovery"
+        ),
+    )
+    parser.add_argument(
+        "--liquidity-reliability-recovery-balance-specs",
+        type=_liquidity_reliability_recovery_spec,
+        nargs="+",
+        default=[(48, 12, 24)],
+        help=(
+            "long:capacity:recovery windows, for example 48:12:24; emits "
+            "low reliability recovery with smooth capacity and recovery balance"
+        ),
+    )
     parser.add_argument("--vwap-deviation-windows", type=int, nargs="+", default=[48])
     parser.add_argument(
         "--downside-volatility-windows",
@@ -585,6 +652,22 @@ def _parse_args() -> argparse.Namespace:
         default=[48],
     )
     parser.add_argument(
+        "--sell-pressure-exhaustion-windows",
+        type=int,
+        nargs="+",
+        default=[48],
+    )
+    parser.add_argument(
+        "--sell-pressure-exhaustion-persistence-specs",
+        type=_sell_pressure_exhaustion_persistence_spec,
+        nargs="+",
+        default=[(96, 24, 48)],
+        help=(
+            "long:short:medium exhaustion windows, for example 96:24:48; "
+            "emits long - 0.5 * (short + medium)"
+        ),
+    )
+    parser.add_argument(
         "--daily-moving-average-windows",
         type=int,
         nargs="+",
@@ -600,6 +683,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--market-downside-beta-windows", type=int, nargs="+", default=[48])
     parser.add_argument("--market-state-windows", type=int, nargs="+", default=[48])
     parser.add_argument("--breadth-resilience-windows", type=int, nargs="+", default=[48])
+    parser.add_argument(
+        "--breadth-shock-residual-resilience-windows",
+        type=int,
+        nargs="+",
+        default=[48],
+    )
     parser.add_argument(
         "--limit-pressure-resilience-windows", type=int, nargs="+", default=[48]
     )
@@ -657,6 +746,34 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--volume-windows values must be positive")
     if any(value <= 0 for value in args.turnover_windows):
         raise ValueError("--turnover-windows values must be positive")
+    if any(value <= 0 for value in args.turnover_stability_windows):
+        raise ValueError("--turnover-stability-windows values must be positive")
+    if any(value <= 0 for value in args.liquidity_reliability_windows):
+        raise ValueError("--liquidity-reliability-windows values must be positive")
+    for long_window, capacity_window, recovery_window in (
+        args.liquidity_reliability_recovery_specs
+    ):
+        if long_window <= 1 or capacity_window <= 1 or recovery_window <= 1:
+            raise ValueError(
+                "--liquidity-reliability-recovery-specs values must be at least 2"
+            )
+        if long_window <= max(capacity_window, recovery_window):
+            raise ValueError(
+                "--liquidity-reliability-recovery-specs must be ordered "
+                "long:capacity:recovery with long greater than capacity and recovery"
+            )
+    for long_window, capacity_window, recovery_window in (
+        args.liquidity_reliability_recovery_balance_specs
+    ):
+        if long_window <= 1 or capacity_window <= 1 or recovery_window <= 1:
+            raise ValueError(
+                "--liquidity-reliability-recovery-balance-specs values must be at least 2"
+            )
+        if long_window <= max(capacity_window, recovery_window):
+            raise ValueError(
+                "--liquidity-reliability-recovery-balance-specs must be ordered "
+                "long:capacity:recovery with long greater than capacity and recovery"
+            )
     if any(value <= 0 for value in args.vwap_deviation_windows):
         raise ValueError("--vwap-deviation-windows values must be positive")
     if any(value <= 0 for value in args.downside_volatility_windows):
@@ -681,6 +798,20 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--downside-turnover-decay-windows values must be at least 2")
     if any(value <= 0 for value in args.sell_pressure_recovery_windows):
         raise ValueError("--sell-pressure-recovery-windows values must be positive")
+    if any(value <= 1 for value in args.sell_pressure_exhaustion_windows):
+        raise ValueError("--sell-pressure-exhaustion-windows values must be at least 2")
+    for long_window, short_window, medium_window in (
+        args.sell_pressure_exhaustion_persistence_specs
+    ):
+        if long_window <= 1 or short_window <= 1 or medium_window <= 1:
+            raise ValueError(
+                "--sell-pressure-exhaustion-persistence-specs values must be at least 2"
+            )
+        if long_window <= max(short_window, medium_window):
+            raise ValueError(
+                "--sell-pressure-exhaustion-persistence-specs must be ordered "
+                "long:short:medium with long greater than short and medium"
+            )
     if any(value <= 0 for value in args.daily_moving_average_windows):
         raise ValueError("--daily-moving-average-windows values must be positive")
     if any(short <= 0 or long <= 0 for short, long in args.daily_moving_average_pairs):
@@ -693,6 +824,10 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--market-state-windows values must be positive")
     if any(value <= 0 for value in args.breadth_resilience_windows):
         raise ValueError("--breadth-resilience-windows values must be positive")
+    if any(value <= 0 for value in args.breadth_shock_residual_resilience_windows):
+        raise ValueError(
+            "--breadth-shock-residual-resilience-windows values must be positive"
+        )
     if any(value <= 0 for value in args.limit_pressure_resilience_windows):
         raise ValueError("--limit-pressure-resilience-windows values must be positive")
     if any(value <= 0 for value in args.horizon_bars):
@@ -725,6 +860,14 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "efficiency_windows": list(args.efficiency_windows),
         "volume_windows": list(args.volume_windows),
         "turnover_windows": list(args.turnover_windows),
+        "turnover_stability_windows": list(args.turnover_stability_windows),
+        "liquidity_reliability_windows": list(args.liquidity_reliability_windows),
+        "liquidity_reliability_recovery_specs": [
+            list(spec) for spec in args.liquidity_reliability_recovery_specs
+        ],
+        "liquidity_reliability_recovery_balance_specs": [
+            list(spec) for spec in args.liquidity_reliability_recovery_balance_specs
+        ],
         "vwap_deviation_windows": list(args.vwap_deviation_windows),
         "downside_volatility_windows": list(args.downside_volatility_windows),
         "return_skewness_windows": list(args.return_skewness_windows),
@@ -745,6 +888,10 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "sell_pressure_absorption_windows": list(args.sell_pressure_absorption_windows),
         "downside_turnover_decay_windows": list(args.downside_turnover_decay_windows),
         "sell_pressure_recovery_windows": list(args.sell_pressure_recovery_windows),
+        "sell_pressure_exhaustion_windows": list(args.sell_pressure_exhaustion_windows),
+        "sell_pressure_exhaustion_persistence_specs": [
+            list(spec) for spec in args.sell_pressure_exhaustion_persistence_specs
+        ],
         "daily_moving_average_windows": list(args.daily_moving_average_windows),
         "daily_moving_average_pairs": [
             list(pair) for pair in args.daily_moving_average_pairs
@@ -752,6 +899,9 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "market_downside_beta_windows": list(args.market_downside_beta_windows),
         "market_state_windows": list(args.market_state_windows),
         "breadth_resilience_windows": list(args.breadth_resilience_windows),
+        "breadth_shock_residual_resilience_windows": list(
+            args.breadth_shock_residual_resilience_windows
+        ),
         "label_name": args.label_name,
         "horizon_bars": list(args.horizon_bars),
         "label_columns": _label_column_names(args),
@@ -786,6 +936,18 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.efficiency_windows,
                     *args.volume_windows,
                     *args.turnover_windows,
+                    *args.turnover_stability_windows,
+                    *args.liquidity_reliability_windows,
+                    *[
+                        window
+                        for spec in args.liquidity_reliability_recovery_specs
+                        for window in spec
+                    ],
+                    *[
+                        window
+                        for spec in args.liquidity_reliability_recovery_balance_specs
+                        for window in spec
+                    ],
                     *args.vwap_deviation_windows,
                     *args.downside_volatility_windows,
                     *args.return_skewness_windows,
@@ -798,10 +960,17 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.sell_pressure_absorption_windows,
                     *args.downside_turnover_decay_windows,
                     *args.sell_pressure_recovery_windows,
+                    *args.sell_pressure_exhaustion_windows,
+                    *[
+                        window
+                        for spec in args.sell_pressure_exhaustion_persistence_specs
+                        for window in spec
+                    ],
                     *(window * 48 for window in args.daily_moving_average_windows),
                     *args.market_downside_beta_windows,
                     *args.market_state_windows,
                     *args.breadth_resilience_windows,
+                    *args.breadth_shock_residual_resilience_windows,
                     *args.limit_pressure_resilience_windows,
                 ]
             ),
@@ -837,6 +1006,34 @@ def _label_column_names(args: argparse.Namespace) -> list[str]:
         for config in _label_configs(args)
         for column in (config.name, f"{config.name}_rank")
     ]
+
+
+def _sell_pressure_exhaustion_persistence_spec(value: str) -> tuple[int, int, int]:
+    parts = value.split(":")
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError(
+            "expected long:short:medium, for example 96:24:48"
+        )
+    try:
+        return int(parts[0]), int(parts[1]), int(parts[2])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "sell-pressure exhaustion persistence spec values must be integers"
+        ) from exc
+
+
+def _liquidity_reliability_recovery_spec(value: str) -> tuple[int, int, int]:
+    parts = value.split(":")
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError(
+            "expected long:capacity:recovery, for example 48:12:24"
+        )
+    try:
+        return int(parts[0]), int(parts[1]), int(parts[2])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "liquidity reliability recovery spec values must be integers"
+        ) from exc
 
 
 def _daily_moving_average_pair(value: str) -> tuple[int, int]:

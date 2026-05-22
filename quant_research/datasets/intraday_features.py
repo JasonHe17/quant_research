@@ -17,6 +17,10 @@ _VALID_GROUPS = {
     "efficiency",
     "volume",
     "turnover",
+    "turnover_stability",
+    "liquidity_reliability",
+    "liquidity_reliability_recovery",
+    "liquidity_reliability_recovery_balance",
     "bar_return",
     "liquidity_impact",
     "vwap_deviation",
@@ -30,12 +34,15 @@ _VALID_GROUPS = {
     "market_state",
     "market_downside_beta",
     "breadth_resilience",
+    "breadth_shock_residual_resilience",
     "limit_pressure_resilience",
     "return_turnover_correlation",
     "negative_return_persistence",
     "sell_pressure_absorption",
     "downside_turnover_decay",
     "sell_pressure_recovery",
+    "sell_pressure_exhaustion",
+    "sell_pressure_exhaustion_persistence",
     "daily_moving_average",
     "all",
 }
@@ -54,6 +61,14 @@ class IntradayFeatureConfig:
     efficiency_windows: tuple[int, ...] = (12, 48)
     volume_windows: tuple[int, ...] = (12, 48)
     turnover_windows: tuple[int, ...] = (12, 48)
+    turnover_stability_windows: tuple[int, ...] = (48,)
+    liquidity_reliability_windows: tuple[int, ...] = (48,)
+    liquidity_reliability_recovery_specs: tuple[tuple[int, int, int], ...] = (
+        (48, 12, 24),
+    )
+    liquidity_reliability_recovery_balance_specs: tuple[tuple[int, int, int], ...] = (
+        (48, 12, 24),
+    )
     vwap_deviation_windows: tuple[int, ...] = (48,)
     downside_volatility_windows: tuple[int, ...] = (12, 48)
     return_skewness_windows: tuple[int, ...] = (12, 48)
@@ -66,11 +81,16 @@ class IntradayFeatureConfig:
     sell_pressure_absorption_windows: tuple[int, ...] = (48,)
     downside_turnover_decay_windows: tuple[int, ...] = (48,)
     sell_pressure_recovery_windows: tuple[int, ...] = (48,)
+    sell_pressure_exhaustion_windows: tuple[int, ...] = (48,)
+    sell_pressure_exhaustion_persistence_specs: tuple[tuple[int, int, int], ...] = (
+        (96, 24, 48),
+    )
     daily_moving_average_windows: tuple[int, ...] = (5, 10, 20)
     daily_moving_average_pairs: tuple[tuple[int, int], ...] = ((5, 20), (10, 20))
     market_downside_beta_windows: tuple[int, ...] = (48,)
     market_state_windows: tuple[int, ...] = (48,)
     breadth_resilience_windows: tuple[int, ...] = (48,)
+    breadth_shock_residual_resilience_windows: tuple[int, ...] = (48,)
     limit_pressure_resilience_windows: tuple[int, ...] = (48,)
 
     def __post_init__(self) -> None:
@@ -86,6 +106,8 @@ class IntradayFeatureConfig:
             ("efficiency_windows", self.efficiency_windows),
             ("volume_windows", self.volume_windows),
             ("turnover_windows", self.turnover_windows),
+            ("turnover_stability_windows", self.turnover_stability_windows),
+            ("liquidity_reliability_windows", self.liquidity_reliability_windows),
             ("vwap_deviation_windows", self.vwap_deviation_windows),
             ("downside_volatility_windows", self.downside_volatility_windows),
             ("return_skewness_windows", self.return_skewness_windows),
@@ -107,10 +129,15 @@ class IntradayFeatureConfig:
             ("sell_pressure_absorption_windows", self.sell_pressure_absorption_windows),
             ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
             ("sell_pressure_recovery_windows", self.sell_pressure_recovery_windows),
+            ("sell_pressure_exhaustion_windows", self.sell_pressure_exhaustion_windows),
             ("daily_moving_average_windows", self.daily_moving_average_windows),
             ("market_downside_beta_windows", self.market_downside_beta_windows),
             ("market_state_windows", self.market_state_windows),
             ("breadth_resilience_windows", self.breadth_resilience_windows),
+            (
+                "breadth_shock_residual_resilience_windows",
+                self.breadth_shock_residual_resilience_windows,
+            ),
             (
                 "limit_pressure_resilience_windows",
                 self.limit_pressure_resilience_windows,
@@ -122,6 +149,42 @@ class IntradayFeatureConfig:
             raise ValueError("daily_moving_average_pairs values must be positive")
         if any(short >= long for short, long in self.daily_moving_average_pairs):
             raise ValueError("daily_moving_average_pairs must be ordered short < long")
+        for long_window, short_window, medium_window in (
+            self.sell_pressure_exhaustion_persistence_specs
+        ):
+            if long_window <= 1 or short_window <= 1 or medium_window <= 1:
+                raise ValueError(
+                    "sell_pressure_exhaustion_persistence_specs values must be at least 2"
+                )
+            if long_window <= max(short_window, medium_window):
+                raise ValueError(
+                    "sell_pressure_exhaustion_persistence_specs must be ordered "
+                    "long > short and long > medium"
+                )
+        for long_window, capacity_window, recovery_window in (
+            self.liquidity_reliability_recovery_specs
+        ):
+            if long_window <= 1 or capacity_window <= 1 or recovery_window <= 1:
+                raise ValueError(
+                    "liquidity_reliability_recovery_specs values must be at least 2"
+                )
+            if long_window <= max(capacity_window, recovery_window):
+                raise ValueError(
+                    "liquidity_reliability_recovery_specs must be ordered "
+                    "long > capacity and long > recovery"
+                )
+        for long_window, capacity_window, recovery_window in (
+            self.liquidity_reliability_recovery_balance_specs
+        ):
+            if long_window <= 1 or capacity_window <= 1 or recovery_window <= 1:
+                raise ValueError(
+                    "liquidity_reliability_recovery_balance_specs values must be at least 2"
+                )
+            if long_window <= max(capacity_window, recovery_window):
+                raise ValueError(
+                    "liquidity_reliability_recovery_balance_specs must be ordered "
+                    "long > capacity and long > recovery"
+                )
 
 
 def build_intraday_feature_matrix(
@@ -141,7 +204,15 @@ def build_intraday_feature_matrix(
         required.append("volume")
     if "money_flow" in groups:
         required.extend(["high_price", "low_price", "volume"])
-    if groups & {"turnover", "liquidity_impact", "vwap_deviation"}:
+    if groups & {
+        "turnover",
+        "turnover_stability",
+        "liquidity_reliability",
+        "liquidity_reliability_recovery",
+        "liquidity_reliability_recovery_balance",
+        "liquidity_impact",
+        "vwap_deviation",
+    }:
         required.append("turnover")
     if groups & {
         "signed_turnover_imbalance",
@@ -149,6 +220,8 @@ def build_intraday_feature_matrix(
         "sell_pressure_absorption",
         "downside_turnover_decay",
         "sell_pressure_recovery",
+        "sell_pressure_exhaustion",
+        "sell_pressure_exhaustion_persistence",
     }:
         required.append("turnover")
     if groups & {"vwap_deviation"}:
@@ -301,6 +374,82 @@ def build_intraday_feature_matrix(
             column = f"intraday_sell_pressure_recovery_5m_w{window}"
             output[column] = recovery_ratio * upside_participation
             feature_columns.append(column)
+    if groups & {"sell_pressure_exhaustion", "sell_pressure_exhaustion_persistence"}:
+        positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
+        downside_return = one_bar_return.clip(upper=0.0).abs().where(
+            one_bar_return.notna()
+        )
+        turnover = frame["turnover"].astype(float).where(one_bar_return.notna())
+        upside_turnover = turnover.where(one_bar_return.gt(0.0), 0.0)
+        downside_turnover = turnover.where(one_bar_return.lt(0.0), 0.0)
+        exhaustion_windows = set()
+        if "sell_pressure_exhaustion" in groups:
+            exhaustion_windows.update(config.sell_pressure_exhaustion_windows)
+        if "sell_pressure_exhaustion_persistence" in groups:
+            for spec in config.sell_pressure_exhaustion_persistence_specs:
+                exhaustion_windows.update(spec)
+        exhaustion_by_window: dict[int, pd.Series] = {}
+        for window in sorted(exhaustion_windows):
+            half_window = window // 2
+            if half_window <= 0:
+                raise ValueError("sell_pressure_exhaustion_windows values must be at least 2")
+            rolling_positive_return = positive_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_downside_return = downside_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_upside_turnover = upside_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_turnover = turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).sum()
+            )
+            recent_downside_turnover = downside_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(half_window, min_periods=half_window).sum()
+            )
+            previous_downside_turnover = recent_downside_turnover.groupby(
+                frame["instrument_id"]
+            ).shift(half_window)
+            total_downside_turnover = (
+                previous_downside_turnover + recent_downside_turnover
+            )
+            recovery_ratio = rolling_positive_return / rolling_downside_return.where(
+                rolling_downside_return != 0.0
+            )
+            upside_participation = rolling_upside_turnover / rolling_turnover.where(
+                rolling_turnover != 0.0
+            )
+            downside_decay = (
+                previous_downside_turnover - recent_downside_turnover
+            ) / total_downside_turnover.where(total_downside_turnover != 0.0)
+            exhaustion = (
+                np.log1p(recovery_ratio.clip(lower=0.0))
+                * upside_participation
+                * downside_decay.clip(lower=0.0)
+            )
+            exhaustion_by_window[window] = exhaustion
+            if "sell_pressure_exhaustion" in groups and (
+                window in config.sell_pressure_exhaustion_windows
+            ):
+                column = f"intraday_sell_pressure_exhaustion_5m_w{window}"
+                output[column] = exhaustion
+                feature_columns.append(column)
+        if "sell_pressure_exhaustion_persistence" in groups:
+            for long_window, short_window, medium_window in (
+                config.sell_pressure_exhaustion_persistence_specs
+            ):
+                column = (
+                    "intraday_sell_pressure_exhaustion_persistence_5m_"
+                    f"l{long_window}_s{short_window}_m{medium_window}"
+                )
+                output[column] = exhaustion_by_window[long_window] - 0.5 * (
+                    exhaustion_by_window[short_window]
+                    + exhaustion_by_window[medium_window]
+                )
+                feature_columns.append(column)
     if "daily_moving_average" in groups:
         _add_daily_moving_average_features(
             frame,
@@ -380,6 +529,35 @@ def build_intraday_feature_matrix(
             column = f"intraday_breadth_resilience_5m_w{window}"
             output[column] = rolling_weighted_return / rolling_pressure.where(
                 rolling_pressure != 0.0
+            )
+            feature_columns.append(column)
+    if "breadth_shock_residual_resilience" in groups:
+        market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")
+        up_rate = one_bar_return.gt(0.0).where(one_bar_return.notna()).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        residual_return = one_bar_return - market_return
+        weak_breadth_pressure = (0.5 - up_rate).clip(lower=0.0)
+        for window in config.breadth_shock_residual_resilience_windows:
+            lagged_breadth_mean = _lagged_rolling_timestamp_state(
+                frame["bar_end_time"],
+                up_rate,
+                window,
+            )
+            breadth_shock = (lagged_breadth_mean - up_rate).clip(lower=0.0)
+            stress_weight = (weak_breadth_pressure + breadth_shock).where(
+                one_bar_return.notna()
+            )
+            weighted_residual = residual_return * stress_weight
+            rolling_weighted_residual = weighted_residual.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_stress = stress_weight.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).sum()
+            )
+            column = f"intraday_breadth_shock_residual_resilience_5m_w{window}"
+            output[column] = rolling_weighted_residual / rolling_stress.where(
+                rolling_stress != 0.0
             )
             feature_columns.append(column)
     if "limit_pressure_resilience" in groups:
@@ -478,6 +656,155 @@ def build_intraday_feature_matrix(
             output[ratio_column] = frame["turnover"] / mean - 1.0
             output[zscore_column] = (frame["turnover"] - mean) / std
             feature_columns.extend([ratio_column, zscore_column])
+    if "turnover_stability" in groups:
+        frame["turnover"] = frame["turnover"].astype(float)
+        log_turnover = np.log1p(frame["turnover"].clip(lower=0.0))
+        for window in config.turnover_stability_windows:
+            rolling_mean = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).mean()
+            )
+            rolling_std = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).std()
+            )
+            column = f"intraday_turnover_stability_5m_w{window}"
+            output[column] = rolling_mean / rolling_std.where(rolling_std != 0.0)
+            feature_columns.append(column)
+    if "liquidity_reliability" in groups:
+        frame["turnover"] = frame["turnover"].astype(float)
+        log_turnover = np.log1p(frame["turnover"].clip(lower=0.0))
+        for window in config.liquidity_reliability_windows:
+            rolling_mean = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).mean()
+            )
+            rolling_std = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(window, min_periods=window).std()
+            )
+            column = f"intraday_liquidity_reliability_5m_w{window}"
+            output[column] = rolling_mean - rolling_std
+            feature_columns.append(column)
+    if "liquidity_reliability_recovery" in groups:
+        frame["turnover"] = frame["turnover"].astype(float)
+        log_turnover = np.log1p(frame["turnover"].clip(lower=0.0))
+        positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
+        downside_return = one_bar_return.clip(upper=0.0).abs().where(
+            one_bar_return.notna()
+        )
+        for long_window, capacity_window, recovery_window in (
+            config.liquidity_reliability_recovery_specs
+        ):
+            long_mean = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(long_window, min_periods=long_window).mean()
+            )
+            long_std = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(long_window, min_periods=long_window).std()
+            )
+            recent_capacity = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(
+                    capacity_window,
+                    min_periods=capacity_window,
+                ).mean()
+            )
+            rolling_positive_return = positive_return.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(
+                    recovery_window,
+                    min_periods=recovery_window,
+                ).sum()
+            )
+            rolling_downside_return = downside_return.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(
+                    recovery_window,
+                    min_periods=recovery_window,
+                ).sum()
+            )
+            low_reliability_premium = -(long_mean - long_std)
+            relative_capacity = recent_capacity / long_mean.where(long_mean != 0.0)
+            capacity_gate = np.log1p(recent_capacity.clip(lower=0.0)) * (
+                relative_capacity.clip(lower=0.0, upper=2.0)
+            )
+            recovery_ratio = rolling_positive_return / rolling_downside_return.where(
+                rolling_downside_return != 0.0
+            )
+            recovery_confirmation = np.log1p(recovery_ratio.clip(lower=0.0))
+            column = (
+                "intraday_liquidity_reliability_recovery_5m_"
+                f"l{long_window}_c{capacity_window}_r{recovery_window}"
+            )
+            output[column] = (
+                low_reliability_premium
+                * capacity_gate
+                * recovery_confirmation
+            )
+            feature_columns.append(column)
+    if "liquidity_reliability_recovery_balance" in groups:
+        frame["turnover"] = frame["turnover"].astype(float)
+        log_turnover = np.log1p(frame["turnover"].clip(lower=0.0))
+        positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
+        downside_return = one_bar_return.clip(upper=0.0).abs().where(
+            one_bar_return.notna()
+        )
+        for long_window, capacity_window, recovery_window in (
+            config.liquidity_reliability_recovery_balance_specs
+        ):
+            long_mean = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(long_window, min_periods=long_window).mean()
+            )
+            long_std = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(long_window, min_periods=long_window).std()
+            )
+            recent_capacity = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values: values.rolling(
+                    capacity_window,
+                    min_periods=capacity_window,
+                ).mean()
+            )
+            rolling_positive_return = positive_return.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(
+                    recovery_window,
+                    min_periods=recovery_window,
+                ).sum()
+            )
+            rolling_downside_return = downside_return.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(
+                    recovery_window,
+                    min_periods=recovery_window,
+                ).sum()
+            )
+            low_reliability_score = _softplus(long_std - long_mean)
+            relative_capacity = recent_capacity / long_mean.where(long_mean != 0.0)
+            capacity_balance = (
+                2.0
+                * relative_capacity
+                / (1.0 + relative_capacity * relative_capacity)
+            ).where(relative_capacity >= 0.0)
+            capacity_quality = np.log1p(recent_capacity.clip(lower=0.0)) * (
+                capacity_balance
+            )
+            recovery_ratio = rolling_positive_return / rolling_downside_return.where(
+                rolling_downside_return != 0.0
+            )
+            recovery_balance = (
+                2.0
+                * recovery_ratio
+                / (1.0 + recovery_ratio * recovery_ratio)
+            ).where(recovery_ratio >= 0.0)
+            column = (
+                "intraday_liquidity_reliability_recovery_balance_5m_"
+                f"l{long_window}_c{capacity_window}_r{recovery_window}"
+            )
+            output[column] = (
+                low_reliability_score
+                * capacity_quality
+                * recovery_balance
+            )
+            feature_columns.append(column)
     if "liquidity_impact" in groups:
         frame["turnover"] = frame["turnover"].astype(float)
         column = "intraday_amihud_5m"
@@ -579,6 +906,21 @@ def _rolling_timestamp_state(
         .sort_index()
     )
     rolling_values = timestamp_values.rolling(window, min_periods=window).mean()
+    return timestamps.map(rolling_values)
+
+
+def _lagged_rolling_timestamp_state(
+    timestamps: pd.Series,
+    values: pd.Series,
+    window: int,
+) -> pd.Series:
+    timestamp_values = (
+        pd.DataFrame({"timestamp": timestamps, "value": values})
+        .drop_duplicates("timestamp")
+        .set_index("timestamp")["value"]
+        .sort_index()
+    )
+    rolling_values = timestamp_values.shift(1).rolling(window, min_periods=window).mean()
     return timestamps.map(rolling_values)
 
 
@@ -691,6 +1033,10 @@ def _session_date(frame: pd.DataFrame) -> pd.Series:
     if parsed.notna().all():
         return parsed.dt.strftime("%Y-%m-%d")
     return frame["bar_end_time"].astype(str)
+
+
+def _softplus(values: pd.Series) -> pd.Series:
+    return np.log1p(np.exp(-values.abs())) + values.clip(lower=0.0)
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
