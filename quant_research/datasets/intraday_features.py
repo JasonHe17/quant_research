@@ -43,6 +43,10 @@ _VALID_GROUPS = {
     "sell_pressure_recovery",
     "sell_pressure_exhaustion",
     "sell_pressure_exhaustion_persistence",
+    "same_slot_intraday_memory",
+    "overnight_intraday_tug_of_war",
+    "weak_tape_overnight_gap",
+    "sell_pressure_quality_state",
     "daily_moving_average",
     "all",
 }
@@ -85,6 +89,9 @@ class IntradayFeatureConfig:
     sell_pressure_exhaustion_persistence_specs: tuple[tuple[int, int, int], ...] = (
         (96, 24, 48),
     )
+    same_slot_memory_windows: tuple[int, ...] = (5, 20)
+    weak_tape_gap_windows: tuple[int, ...] = (48,)
+    sell_pressure_quality_windows: tuple[int, ...] = (48,)
     daily_moving_average_windows: tuple[int, ...] = (5, 10, 20)
     daily_moving_average_pairs: tuple[tuple[int, int], ...] = ((5, 20), (10, 20))
     market_downside_beta_windows: tuple[int, ...] = (48,)
@@ -130,6 +137,9 @@ class IntradayFeatureConfig:
             ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
             ("sell_pressure_recovery_windows", self.sell_pressure_recovery_windows),
             ("sell_pressure_exhaustion_windows", self.sell_pressure_exhaustion_windows),
+            ("same_slot_memory_windows", self.same_slot_memory_windows),
+            ("weak_tape_gap_windows", self.weak_tape_gap_windows),
+            ("sell_pressure_quality_windows", self.sell_pressure_quality_windows),
             ("daily_moving_average_windows", self.daily_moving_average_windows),
             ("market_downside_beta_windows", self.market_downside_beta_windows),
             ("market_state_windows", self.market_state_windows),
@@ -196,7 +206,13 @@ def build_intraday_feature_matrix(
     config = config or IntradayFeatureConfig()
     groups = _expanded_groups(config.factor_groups)
     required = ["instrument_id", "bar_end_time", "close_price"]
-    if groups & {"bar_return", "liquidity_impact", "intraday_gap"}:
+    if groups & {
+        "bar_return",
+        "liquidity_impact",
+        "intraday_gap",
+        "overnight_intraday_tug_of_war",
+        "weak_tape_overnight_gap",
+    }:
         required.append("open_price")
     if groups & {"price_position", "range_volatility"}:
         required.extend(["high_price", "low_price"])
@@ -222,6 +238,7 @@ def build_intraday_feature_matrix(
         "sell_pressure_recovery",
         "sell_pressure_exhaustion",
         "sell_pressure_exhaustion_persistence",
+        "sell_pressure_quality_state",
     }:
         required.append("turnover")
     if groups & {"vwap_deviation"}:
@@ -374,6 +391,53 @@ def build_intraday_feature_matrix(
             column = f"intraday_sell_pressure_recovery_5m_w{window}"
             output[column] = recovery_ratio * upside_participation
             feature_columns.append(column)
+    if "sell_pressure_quality_state" in groups:
+        positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
+        downside_return = one_bar_return.clip(upper=0.0).abs().where(
+            one_bar_return.notna()
+        )
+        turnover = frame["turnover"].astype(float).where(one_bar_return.notna())
+        downside_turnover = turnover.where(one_bar_return.lt(0.0), 0.0)
+        up_rate = one_bar_return.gt(0.0).where(one_bar_return.notna()).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        weak_breadth_pressure = (0.5 - up_rate).clip(lower=0.0)
+        for window in config.sell_pressure_quality_windows:
+            rolling_downside_return = downside_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_downside_turnover = downside_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_positive_return = positive_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_weak_breadth = weak_breadth_pressure.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).mean())
+            absorption = rolling_downside_turnover / rolling_downside_return.where(
+                rolling_downside_return != 0.0
+            )
+            absorption_score = np.log1p(absorption.clip(lower=0.0))
+            recovery_ratio = rolling_positive_return / rolling_downside_return.where(
+                rolling_downside_return != 0.0
+            )
+            recovery_balance = (
+                2.0
+                * recovery_ratio
+                / (1.0 + recovery_ratio * recovery_ratio)
+            ).where(recovery_ratio >= 0.0)
+            tape_pressure = (2.0 * rolling_weak_breadth).clip(lower=0.0, upper=1.0)
+            tape_quality = 1.0 - tape_pressure
+            quality_column = f"intraday_sell_pressure_absorption_quality_5m_w{window}"
+            risk_column = f"intraday_false_absorption_risk_5m_w{window}"
+            output[quality_column] = (
+                absorption_score * recovery_balance * tape_quality
+            )
+            output[risk_column] = (
+                absorption_score * (1.0 - recovery_balance) * (1.0 + tape_pressure)
+            )
+            feature_columns.extend([quality_column, risk_column])
     if groups & {"sell_pressure_exhaustion", "sell_pressure_exhaustion_persistence"}:
         positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
         downside_return = one_bar_return.clip(upper=0.0).abs().where(
@@ -450,6 +514,114 @@ def build_intraday_feature_matrix(
                     + exhaustion_by_window[medium_window]
                 )
                 feature_columns.append(column)
+    if "same_slot_intraday_memory" in groups:
+        market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")
+        residual_return = one_bar_return - market_return
+        slot = _intraday_slot(frame)
+        for window in config.same_slot_memory_windows:
+            column = f"intraday_same_slot_residual_return_5m_d{window}"
+            output[column] = residual_return.groupby(
+                [frame["instrument_id"], slot],
+                sort=False,
+            ).transform(
+                lambda values: values.shift(1).rolling(
+                    window,
+                    min_periods=window,
+                ).mean()
+            )
+            feature_columns.append(column)
+    if "overnight_intraday_tug_of_war" in groups:
+        frame["open_price"] = frame["open_price"].astype(float)
+        session_state = _align_session_state(frame)
+        overnight_gap = (
+            session_state["session_open"]
+            / session_state["previous_session_close"].where(
+                session_state["previous_session_close"] != 0.0
+            )
+            - 1.0
+        )
+        intraday_from_open = (
+            frame["close_price"]
+            / session_state["session_open"].where(session_state["session_open"] != 0.0)
+            - 1.0
+        )
+        output["intraday_overnight_gap_5m"] = overnight_gap
+        output["intraday_overnight_gap_down_recovery_5m"] = (
+            (-overnight_gap).clip(lower=0.0) * intraday_from_open.clip(lower=0.0)
+        )
+        output["intraday_overnight_gap_up_fade_5m"] = (
+            overnight_gap.clip(lower=0.0) * (-intraday_from_open).clip(lower=0.0)
+        )
+        output["intraday_overnight_intraday_disagreement_5m"] = (
+            -overnight_gap * intraday_from_open
+        )
+        feature_columns.extend(
+            [
+                "intraday_overnight_gap_5m",
+                "intraday_overnight_gap_down_recovery_5m",
+                "intraday_overnight_gap_up_fade_5m",
+                "intraday_overnight_intraday_disagreement_5m",
+            ]
+        )
+    if "weak_tape_overnight_gap" in groups:
+        frame["open_price"] = frame["open_price"].astype(float)
+        session_state = _align_session_state(frame)
+        overnight_gap = (
+            session_state["session_open"]
+            / session_state["previous_session_close"].where(
+                session_state["previous_session_close"] != 0.0
+            )
+            - 1.0
+        )
+        intraday_from_open = (
+            frame["close_price"]
+            / session_state["session_open"].where(session_state["session_open"] != 0.0)
+            - 1.0
+        )
+        market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")
+        up_rate = one_bar_return.gt(0.0).where(one_bar_return.notna()).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        market_downside = (-market_return).clip(lower=0.0)
+        weak_breadth = (0.5 - up_rate).clip(lower=0.0)
+        positive_gap = overnight_gap.clip(lower=0.0)
+        gap_up_fade = positive_gap * (-intraday_from_open).clip(lower=0.0)
+        gap_down_recovery = (
+            (-overnight_gap).clip(lower=0.0) * intraday_from_open.clip(lower=0.0)
+        )
+        for window in config.weak_tape_gap_windows:
+            weak_breadth_state = _rolling_timestamp_state(
+                frame["bar_end_time"],
+                weak_breadth,
+                window,
+            )
+            downside_state = _rolling_timestamp_state(
+                frame["bar_end_time"],
+                market_downside,
+                window,
+            )
+            weak_tape_score = weak_breadth_state + np.log1p(
+                100.0 * downside_state
+            )
+            gap_up_risk_column = f"intraday_weak_tape_gap_up_risk_5m_w{window}"
+            gap_up_fade_risk_column = (
+                f"intraday_weak_tape_gap_up_fade_risk_5m_w{window}"
+            )
+            gap_down_recovery_risk_column = (
+                f"intraday_weak_tape_gap_down_recovery_risk_5m_w{window}"
+            )
+            output[gap_up_risk_column] = positive_gap * weak_tape_score
+            output[gap_up_fade_risk_column] = gap_up_fade * (1.0 + weak_tape_score)
+            output[gap_down_recovery_risk_column] = (
+                gap_down_recovery * weak_tape_score
+            )
+            feature_columns.extend(
+                [
+                    gap_up_risk_column,
+                    gap_up_fade_risk_column,
+                    gap_down_recovery_risk_column,
+                ]
+            )
     if "daily_moving_average" in groups:
         _add_daily_moving_average_features(
             frame,
@@ -1024,6 +1196,68 @@ def _add_daily_moving_average_features(
     for column in daily_feature_columns:
         output[column] = aligned[column]
         feature_columns.append(column)
+
+
+def _align_session_state(frame: pd.DataFrame) -> pd.DataFrame:
+    session_date = _session_date(frame)
+    sorted_frame = (
+        frame.assign(_session_date=session_date, _row_id=frame.index)
+        .sort_values(["instrument_id", "_session_date", "bar_end_time"])
+        .copy()
+    )
+    session_grouped = sorted_frame.groupby(
+        ["instrument_id", "_session_date"],
+        sort=False,
+    )
+    session_open = session_grouped["open_price"].first()
+    session_close = session_grouped["close_price"].last()
+    daily_state = (
+        pd.DataFrame(
+            {
+                "session_open": session_open,
+                "session_close": session_close,
+            }
+        )
+        .reset_index()
+        .sort_values(["instrument_id", "_session_date"])
+        .reset_index(drop=True)
+    )
+    daily_state["previous_session_close"] = daily_state.groupby(
+        "instrument_id",
+        sort=False,
+    )["session_close"].shift(1)
+    row_keys = pd.DataFrame(
+        {
+            "_row_id": frame.index,
+            "instrument_id": frame["instrument_id"],
+            "_session_date": session_date,
+        }
+    )
+    aligned = (
+        row_keys.merge(
+            daily_state.loc[
+                :,
+                [
+                    "instrument_id",
+                    "_session_date",
+                    "session_open",
+                    "previous_session_close",
+                ],
+            ],
+            on=["instrument_id", "_session_date"],
+            how="left",
+        )
+        .sort_values("_row_id")
+        .set_index("_row_id")
+    )
+    return aligned.loc[frame.index, ["session_open", "previous_session_close"]]
+
+
+def _intraday_slot(frame: pd.DataFrame) -> pd.Series:
+    parsed = pd.to_datetime(frame["bar_end_time"], errors="coerce", format="ISO8601")
+    if parsed.notna().all():
+        return parsed.dt.strftime("%H:%M:%S")
+    return frame["bar_end_time"].astype(str)
 
 
 def _session_date(frame: pd.DataFrame) -> pd.Series:

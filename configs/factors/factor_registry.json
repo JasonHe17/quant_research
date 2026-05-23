@@ -1284,6 +1284,15 @@
         "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
         "admission_status": "candidate",
         "candidate_review": "runs/factor_candidate_reviews/intraday_volume_confirmed_momentum_5m_w48/factor_candidate_review.json",
+        "compact_core_incremental_baseline_full_base_return": 0.4292401077056083,
+        "compact_core_incremental_baseline_high_cost_return": 0.3638932313844429,
+        "compact_core_incremental_baseline_year_2024_return": -0.0596178913241112,
+        "compact_core_incremental_primary_full_base_return": 0.3558138857233168,
+        "compact_core_incremental_primary_high_cost_return": 0.2942978179797324,
+        "compact_core_incremental_primary_year_2024_return": -0.0517512314964212,
+        "compact_core_incremental_review": "docs/validation/compact_core_plus_volume_confirmed_momentum_2026_05_20.md",
+        "compact_core_incremental_status": "not_added_to_core",
+        "compact_core_incremental_validation": "runs/candidate_factor_portfolios/compact_core_plus_volume_confirmed_momentum_2026_05_20_standard/validation_summary.json",
         "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_volume_confirmed_momentum_5m_w48/validation_summary.json",
         "legacy_revalidation_best_policy": "partial_rebalance_daily",
         "legacy_revalidation_full_base_return": 0.0814988755892711,
@@ -1294,16 +1303,7 @@
         "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
         "legacy_revalidation_validation_status": "completed",
         "portfolio_validation": "runs/candidate_factor_portfolios/factor_batch_2026_05_16_new_factors_backtest/summary.json",
-        "portfolio_validation_status": "negative_combo_demoted",
-        "compact_core_incremental_validation": "runs/candidate_factor_portfolios/compact_core_plus_volume_confirmed_momentum_2026_05_20_standard/validation_summary.json",
-        "compact_core_incremental_review": "docs/validation/compact_core_plus_volume_confirmed_momentum_2026_05_20.md",
-        "compact_core_incremental_status": "not_added_to_core",
-        "compact_core_incremental_primary_full_base_return": 0.3558138857233168,
-        "compact_core_incremental_primary_high_cost_return": 0.2942978179797324,
-        "compact_core_incremental_primary_year_2024_return": -0.0517512314964212,
-        "compact_core_incremental_baseline_full_base_return": 0.4292401077056083,
-        "compact_core_incremental_baseline_high_cost_return": 0.3638932313844429,
-        "compact_core_incremental_baseline_year_2024_return": -0.0596178913241112
+        "portfolio_validation_status": "negative_combo_demoted"
       },
       "expected_direction": "invert",
       "factor_id": "intraday_volume_confirmed_momentum_5m_w48",
@@ -2853,6 +2853,1033 @@
         "portfolio_negative",
         "batch_2026_05_21_complementary"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Lagged same-intraday-slot cross-sectional residual return memory over prior completed sessions.",
+      "display_name": "Intraday same-slot residual memory, 5/20 sessions",
+      "evaluation": {
+        "admission_direction": "mixed",
+        "admission_report": "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "factor_evaluation": "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_same_slot_residual_memory_5m/factor_research_memory_check.json",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_22_next_round.md"
+      },
+      "expected_direction": "mixed",
+      "factor_id": "intraday_same_slot_residual_memory_5m",
+      "family": "momentum",
+      "feature_columns": [
+        "intraday_same_slot_residual_return_5m_d5",
+        "intraday_same_slot_residual_return_5m_d20"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Some A-share intraday flows may recur at the same time of day, but the tested 5- and 20-session same-slot residual means did not produce a robust or tradable standalone signal.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "same_slot_intraday_memory"
+          ],
+          "same_slot_memory_windows": [
+            5,
+            20
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 960,
+      "notes": "Rejected after the 2026-05-22 next-round admission run. The 5-session member had near-zero rank IC, insignificant t-stat, sub-50% directional hit rate, and negative cost-adjusted spread. The 20-session member was inverted but failed coverage, directional hit-rate, and cost-adjusted spread checks. Both variants also carried very high top-N turnover, so the same-slot seasonality idea did not clear the single-factor gate.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "runs/factor_research_memory/intraday_same_slot_residual_memory_5m/factor_research_memory_check.json",
+        "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_ic",
+        "evidence_artifacts": [
+          "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+          "runs/factor_research_memory/intraday_same_slot_residual_memory_5m/factor_research_memory_check.json",
+          "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+          "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+          "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv"
+        ],
+        "negative_findings": "The 5-session same-slot residual feature failed absolute rank IC, t-stat, hit-rate, and cost-adjusted-spread gates. The 20-session feature failed the hard coverage and hit-rate gates and still had negative cost-adjusted spread after inversion.",
+        "retry_conditions": "Retry only with a materially different same-slot design that lowers turnover and proves stable annual direction, such as a volume-scheduled or event-conditioned same-slot effect rather than another raw residual-return memory window.",
+        "similar_to": [
+          "intraday_range_position_5m_w48",
+          "intraday_volume_confirmed_momentum_5m_w48"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "same_slot",
+        "seasonality",
+        "residual_return",
+        "batch_2026_05_22_next_round",
+        "reject",
+        "weak_ic",
+        "cost_fragile"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Previous-session close to current-session open gap measured inside the 5-minute intraday feature set.",
+      "display_name": "Intraday overnight gap",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_overnight_gap_5m/factor_candidate_review.json",
+        "factor_evaluation": "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "portfolio_validation_2024_health_shrink": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_health_shrink_2024/validation_summary.json",
+        "portfolio_validation_2024_health_shrink_failed_check": "primary_full_high_cost_positive_return",
+        "portfolio_validation_2024_health_shrink_failed_count": 1,
+        "portfolio_validation_2024_health_shrink_full_base_max_drawdown": -0.2776801282493297,
+        "portfolio_validation_2024_health_shrink_full_base_return": 0.0044985499602836,
+        "portfolio_validation_2024_health_shrink_full_high_cost_max_drawdown": -0.2796012604905777,
+        "portfolio_validation_2024_health_shrink_full_high_cost_return": -0.0111407904704703,
+        "portfolio_validation_2024_health_shrink_status": "fail",
+        "portfolio_validation_quick": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_quick/validation_summary.json",
+        "portfolio_validation_quick_primary_max_drawdown": -0.3663230996406711,
+        "portfolio_validation_quick_primary_method": "decorrelated",
+        "portfolio_validation_quick_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_quick_primary_total_return": 0.1709050223756563,
+        "portfolio_validation_quick_status": "pass",
+        "portfolio_validation_standard_2024_stress_months": {
+          "2024-01": {
+            "max_drawdown": -0.1489778702582436,
+            "return": -0.14381468379966267
+          },
+          "2024-06": {
+            "max_drawdown": -0.10626931704825271,
+            "return": -0.09136431650347432
+          },
+          "2024-09": {
+            "max_drawdown": -0.1707616245043324,
+            "return": 0.18351390549258717
+          },
+          "2024-11": {
+            "max_drawdown": -0.08527284241574129,
+            "return": 0.07855973131576865
+          }
+        },
+        "portfolio_validation_standard_factor_health_mode": "monitor",
+        "portfolio_validation_standard_failed_count": 0,
+        "portfolio_validation_standard_full_base_gross_turnover": 122.46176395415434,
+        "portfolio_validation_standard_full_base_max_drawdown": -0.3663230996406711,
+        "portfolio_validation_standard_full_base_return": 0.1709050223756563,
+        "portfolio_validation_standard_full_base_total_transaction_cost": 162006.48762434465,
+        "portfolio_validation_standard_full_high_cost_max_drawdown": -0.3749054595090267,
+        "portfolio_validation_standard_full_high_cost_return": 0.1156740810880345,
+        "portfolio_validation_standard_negative_years": [
+          "year_2023_base"
+        ],
+        "portfolio_validation_standard_primary": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/validation_summary.json",
+        "portfolio_validation_standard_primary_method": "decorrelated",
+        "portfolio_validation_standard_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_standard_status": "warn",
+        "portfolio_validation_standard_warning": "negative_year_2023_base_and_drawdown_watch",
+        "portfolio_validation_standard_warning_count": 1,
+        "portfolio_validation_standard_year_2023_max_drawdown": -0.1595537343786165,
+        "portfolio_validation_standard_year_2023_return": -0.0360309656849602,
+        "portfolio_validation_standard_year_2024_max_drawdown": -0.2778384758102391,
+        "portfolio_validation_standard_year_2024_return": 0.0057942922746585,
+        "portfolio_validation_standard_year_2025_max_drawdown": -0.1681664904450803,
+        "portfolio_validation_standard_year_2025_return": 0.2048764931567701,
+        "research_memory_check": "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "portfolio_validation_downside_vol_gate_standard": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_downside_vol_gate_equal_primary_standard/validation_summary.json",
+        "portfolio_validation_downside_vol_gate_status": "warn",
+        "portfolio_validation_downside_vol_gate_decision": "reject_replacement_for_candidate_basket",
+        "portfolio_validation_downside_vol_gate_gate_feature": "intraday_downside_volatility_5m_w48",
+        "portfolio_validation_downside_vol_gate_primary_method": "equal",
+        "portfolio_validation_downside_vol_gate_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_downside_vol_gate_failed_count": 0,
+        "portfolio_validation_downside_vol_gate_warning_count": 2,
+        "portfolio_validation_downside_vol_gate_warnings": [
+          "primary_full_base_turnover_control",
+          "primary_yearly_base_positive_returns"
+        ],
+        "portfolio_validation_downside_vol_gate_scale_counts": {
+          "0.0": 4301,
+          "0.5": 3978,
+          "1.0": 26520
+        },
+        "portfolio_validation_downside_vol_gate_full_base_return": 0.1409373246729905,
+        "portfolio_validation_downside_vol_gate_full_base_max_drawdown": -0.3517625286477277,
+        "portfolio_validation_downside_vol_gate_full_base_gross_turnover": 165.1610031961477,
+        "portfolio_validation_downside_vol_gate_full_base_total_transaction_cost": 218201.455327008,
+        "portfolio_validation_downside_vol_gate_full_high_cost_return": 0.0709565488560957,
+        "portfolio_validation_downside_vol_gate_full_high_cost_max_drawdown": -0.3640696902297855,
+        "portfolio_validation_downside_vol_gate_year_2023_return": -0.0689177409626725,
+        "portfolio_validation_downside_vol_gate_year_2023_max_drawdown": -0.164028184459003,
+        "portfolio_validation_downside_vol_gate_year_2024_return": 0.0278592214713682,
+        "portfolio_validation_downside_vol_gate_year_2024_max_drawdown": -0.2558943428209538,
+        "portfolio_validation_downside_vol_gate_year_2025_return": 0.0846829920991796,
+        "portfolio_validation_downside_vol_gate_year_2025_max_drawdown": -0.1192410572252951,
+        "portfolio_validation_downside_vol_gate_negative_years": [
+          "year_2023_base"
+        ]
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_overnight_gap_5m",
+      "family": "event",
+      "feature_columns": [
+        "intraday_overnight_gap_5m"
+      ],
+      "frequency": "5m",
+      "hypothesis": "The session-boundary overnight gap may capture information arrival and opening auction pressure that persists over the next 48 bars when separated from generic within-session 5-minute returns.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "overnight_intraday_tug_of_war"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Single-factor admission passed in the long direction with full coverage, stable positive annual rank IC across 2023-2025, low top-N turnover, and positive cost-adjusted spread. Research-memory similarity to the rejected raw intraday gap remains a portfolio-review risk, so this needs incremental validation before promotion. Quick portfolio validation passed for the three-feature candidate basket under decorrelated/equal/ic_weighted methods. The primary decorrelated + partial_rebalance_daily result was positive but drawdown-heavy; standard primary-policy validation completed with warn status. Full-base and high-cost decorrelated partial-rebalance returns were positive, but year_2023_base was negative, year_2024_base was only marginally positive, full-window drawdown stayed deep, and January/June 2024 stress losses remained large. Keep as a candidate with drawdown and portfolio-integration watch; do not promote without a drawdown or regime-control test that preserves full-window and high-cost returns. A focused 2024 factor-health shrink experiment failed the high-cost gate: base return fell versus monitor mode, high-cost return turned negative, and max drawdown was effectively unchanged. Treat generic health shrink as rejected for this basket; next controls should use a different state variable or allocator. A downside-volatility state gate using intraday_downside_volatility_5m_w48 was tested as an equal-primary standard validation. It finished with warn status: full-base and high-cost returns stayed positive, but turnover exceeded the standard threshold and year_2023_base remained negative. The gate improved the 2024 annual slice but reduced full-window return versus monitor mode and materially cut the strong 2025 contribution, so reject it as a replacement control for this candidate basket.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+        "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv",
+        "runs/factor_candidate_reviews/intraday_overnight_gap_5m/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_quick/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_health_shrink_2024/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_downside_vol_gate_equal_primary_standard/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price"
+      ],
+      "research_memory": {},
+      "status": "candidate",
+      "tags": [
+        "intraday",
+        "overnight",
+        "gap",
+        "event",
+        "batch_2026_05_22_next_round",
+        "candidate"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Interaction between negative overnight gap and same-session recovery from the current open.",
+      "display_name": "Intraday overnight gap-down recovery",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_overnight_gap_down_recovery_5m/factor_candidate_review.json",
+        "factor_evaluation": "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "portfolio_validation_2024_health_shrink": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_health_shrink_2024/validation_summary.json",
+        "portfolio_validation_2024_health_shrink_failed_check": "primary_full_high_cost_positive_return",
+        "portfolio_validation_2024_health_shrink_failed_count": 1,
+        "portfolio_validation_2024_health_shrink_full_base_max_drawdown": -0.2776801282493297,
+        "portfolio_validation_2024_health_shrink_full_base_return": 0.0044985499602836,
+        "portfolio_validation_2024_health_shrink_full_high_cost_max_drawdown": -0.2796012604905777,
+        "portfolio_validation_2024_health_shrink_full_high_cost_return": -0.0111407904704703,
+        "portfolio_validation_2024_health_shrink_status": "fail",
+        "portfolio_validation_quick": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_quick/validation_summary.json",
+        "portfolio_validation_quick_primary_max_drawdown": -0.3663230996406711,
+        "portfolio_validation_quick_primary_method": "decorrelated",
+        "portfolio_validation_quick_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_quick_primary_total_return": 0.1709050223756563,
+        "portfolio_validation_quick_status": "pass",
+        "portfolio_validation_standard_2024_stress_months": {
+          "2024-01": {
+            "max_drawdown": -0.1489778702582436,
+            "return": -0.14381468379966267
+          },
+          "2024-06": {
+            "max_drawdown": -0.10626931704825271,
+            "return": -0.09136431650347432
+          },
+          "2024-09": {
+            "max_drawdown": -0.1707616245043324,
+            "return": 0.18351390549258717
+          },
+          "2024-11": {
+            "max_drawdown": -0.08527284241574129,
+            "return": 0.07855973131576865
+          }
+        },
+        "portfolio_validation_standard_factor_health_mode": "monitor",
+        "portfolio_validation_standard_failed_count": 0,
+        "portfolio_validation_standard_full_base_gross_turnover": 122.46176395415434,
+        "portfolio_validation_standard_full_base_max_drawdown": -0.3663230996406711,
+        "portfolio_validation_standard_full_base_return": 0.1709050223756563,
+        "portfolio_validation_standard_full_base_total_transaction_cost": 162006.48762434465,
+        "portfolio_validation_standard_full_high_cost_max_drawdown": -0.3749054595090267,
+        "portfolio_validation_standard_full_high_cost_return": 0.1156740810880345,
+        "portfolio_validation_standard_negative_years": [
+          "year_2023_base"
+        ],
+        "portfolio_validation_standard_primary": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/validation_summary.json",
+        "portfolio_validation_standard_primary_method": "decorrelated",
+        "portfolio_validation_standard_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_standard_status": "warn",
+        "portfolio_validation_standard_warning": "negative_year_2023_base_and_drawdown_watch",
+        "portfolio_validation_standard_warning_count": 1,
+        "portfolio_validation_standard_year_2023_max_drawdown": -0.1595537343786165,
+        "portfolio_validation_standard_year_2023_return": -0.0360309656849602,
+        "portfolio_validation_standard_year_2024_max_drawdown": -0.2778384758102391,
+        "portfolio_validation_standard_year_2024_return": 0.0057942922746585,
+        "portfolio_validation_standard_year_2025_max_drawdown": -0.1681664904450803,
+        "portfolio_validation_standard_year_2025_return": 0.2048764931567701,
+        "research_memory_check": "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "portfolio_validation_downside_vol_gate_standard": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_downside_vol_gate_equal_primary_standard/validation_summary.json",
+        "portfolio_validation_downside_vol_gate_status": "warn",
+        "portfolio_validation_downside_vol_gate_decision": "reject_replacement_for_candidate_basket",
+        "portfolio_validation_downside_vol_gate_gate_feature": "intraday_downside_volatility_5m_w48",
+        "portfolio_validation_downside_vol_gate_primary_method": "equal",
+        "portfolio_validation_downside_vol_gate_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_downside_vol_gate_failed_count": 0,
+        "portfolio_validation_downside_vol_gate_warning_count": 2,
+        "portfolio_validation_downside_vol_gate_warnings": [
+          "primary_full_base_turnover_control",
+          "primary_yearly_base_positive_returns"
+        ],
+        "portfolio_validation_downside_vol_gate_scale_counts": {
+          "0.0": 4301,
+          "0.5": 3978,
+          "1.0": 26520
+        },
+        "portfolio_validation_downside_vol_gate_full_base_return": 0.1409373246729905,
+        "portfolio_validation_downside_vol_gate_full_base_max_drawdown": -0.3517625286477277,
+        "portfolio_validation_downside_vol_gate_full_base_gross_turnover": 165.1610031961477,
+        "portfolio_validation_downside_vol_gate_full_base_total_transaction_cost": 218201.455327008,
+        "portfolio_validation_downside_vol_gate_full_high_cost_return": 0.0709565488560957,
+        "portfolio_validation_downside_vol_gate_full_high_cost_max_drawdown": -0.3640696902297855,
+        "portfolio_validation_downside_vol_gate_year_2023_return": -0.0689177409626725,
+        "portfolio_validation_downside_vol_gate_year_2023_max_drawdown": -0.164028184459003,
+        "portfolio_validation_downside_vol_gate_year_2024_return": 0.0278592214713682,
+        "portfolio_validation_downside_vol_gate_year_2024_max_drawdown": -0.2558943428209538,
+        "portfolio_validation_downside_vol_gate_year_2025_return": 0.0846829920991796,
+        "portfolio_validation_downside_vol_gate_year_2025_max_drawdown": -0.1192410572252951,
+        "portfolio_validation_downside_vol_gate_negative_years": [
+          "year_2023_base"
+        ]
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_overnight_gap_down_recovery_5m",
+      "family": "event",
+      "feature_columns": [
+        "intraday_overnight_gap_down_recovery_5m"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Gap-down names that recover intraday may still encode forced flow or opening-price anchoring. The tested standalone signal is useful only in the inverted direction.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "overnight_intraday_tug_of_war"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Single-factor admission passed in the inverted direction with full coverage, stable annual rank IC, strong t-stat, and positive cost-adjusted spread. Keep the direction explicit: higher gap-down recovery values ranked worse over the 48-bar forward label in this run. Quick portfolio validation passed for the three-feature candidate basket under decorrelated/equal/ic_weighted methods. The primary decorrelated + partial_rebalance_daily result was positive but drawdown-heavy; standard primary-policy validation completed with warn status. Full-base and high-cost decorrelated partial-rebalance returns were positive, but year_2023_base was negative, year_2024_base was only marginally positive, full-window drawdown stayed deep, and January/June 2024 stress losses remained large. Keep as a candidate with drawdown and portfolio-integration watch; do not promote without a drawdown or regime-control test that preserves full-window and high-cost returns. A focused 2024 factor-health shrink experiment failed the high-cost gate: base return fell versus monitor mode, high-cost return turned negative, and max drawdown was effectively unchanged. Treat generic health shrink as rejected for this basket; next controls should use a different state variable or allocator. A downside-volatility state gate using intraday_downside_volatility_5m_w48 was tested as an equal-primary standard validation. It finished with warn status: full-base and high-cost returns stayed positive, but turnover exceeded the standard threshold and year_2023_base remained negative. The gate improved the 2024 annual slice but reduced full-window return versus monitor mode and materially cut the strong 2025 contribution, so reject it as a replacement control for this candidate basket.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+        "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv",
+        "runs/factor_candidate_reviews/intraday_overnight_gap_down_recovery_5m/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_quick/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_health_shrink_2024/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_downside_vol_gate_equal_primary_standard/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price"
+      ],
+      "research_memory": {},
+      "status": "candidate",
+      "tags": [
+        "intraday",
+        "overnight",
+        "gap",
+        "event",
+        "batch_2026_05_22_next_round",
+        "gap_down",
+        "recovery",
+        "candidate"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Interaction between positive overnight gap and same-session fade from the current open.",
+      "display_name": "Intraday overnight gap-up fade",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "factor_evaluation": "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_22_next_round.md"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_overnight_gap_up_fade_5m",
+      "family": "event",
+      "feature_columns": [
+        "intraday_overnight_gap_up_fade_5m"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Gap-up fades might identify exhaustion after overnight optimism, but the tested standalone feature was not stable enough for portfolio validation.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "overnight_intraday_tug_of_war"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Rejected after the 2026-05-22 admission run. Although the cost-adjusted spread was positive after inversion, directional hit rate was below threshold and only one calendar year had stable IC direction.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+        "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "unstable_years",
+        "evidence_artifacts": [
+          "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+          "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+          "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+          "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+          "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv"
+        ],
+        "negative_findings": "The gap-up fade feature failed directional hit-rate and stable-year gates. Yearly rank IC flipped sign in 2023 and 2025 despite a negative 2024 slice.",
+        "retry_conditions": "Retry only with a materially different event-state split, such as auction-volume or limit-pressure conditioning. Do not rerun the plain gap-up fade interaction as a standalone factor.",
+        "similar_to": [
+          "intraday_gap_5m"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "overnight",
+        "gap",
+        "event",
+        "batch_2026_05_22_next_round",
+        "gap_up",
+        "fade",
+        "reject",
+        "unstable_years"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Absolute disagreement between the overnight gap and current-session intraday return response.",
+      "display_name": "Intraday overnight-intraday disagreement",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "factor_evaluation": "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_22_next_round.md"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_overnight_intraday_disagreement_5m",
+      "family": "event",
+      "feature_columns": [
+        "intraday_overnight_intraday_disagreement_5m"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Large disagreement between overnight and intraday investor groups may flag unstable demand, but the standalone effect was too weak and inconsistent in this run.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "overnight_intraday_tug_of_war"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Rejected after the 2026-05-22 admission run. The inverted rank IC was statistically nonzero but economically small, and the directional hit rate was only 50.67%, below the hard gate.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+        "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_hit_rate",
+        "evidence_artifacts": [
+          "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+          "runs/factor_research_memory/intraday_overnight_intraday_tug_of_war_5m/factor_research_memory_check.json",
+          "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+          "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+          "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv"
+        ],
+        "negative_findings": "The overnight-intraday disagreement feature failed the directional hit-rate gate and had only a small inverted rank IC, so it is not reliable enough for standalone portfolio review.",
+        "retry_conditions": "Retry only as a conditioning variable for stronger overnight-gap signals or with a materially different disagreement definition tied to auction imbalance, breadth, or limit-pressure states.",
+        "similar_to": [
+          "intraday_gap_5m"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "overnight",
+        "gap",
+        "event",
+        "batch_2026_05_22_next_round",
+        "disagreement",
+        "reject",
+        "weak_hit_rate"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Weak-breadth false-absorption risk score based on downside turnover absorption and recovery balance.",
+      "display_name": "Intraday false-absorption risk, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_false_absorption_risk_5m_w48/factor_candidate_review.json",
+        "factor_evaluation": "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "portfolio_validation_2024_health_shrink": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_health_shrink_2024/validation_summary.json",
+        "portfolio_validation_2024_health_shrink_failed_check": "primary_full_high_cost_positive_return",
+        "portfolio_validation_2024_health_shrink_failed_count": 1,
+        "portfolio_validation_2024_health_shrink_full_base_max_drawdown": -0.2776801282493297,
+        "portfolio_validation_2024_health_shrink_full_base_return": 0.0044985499602836,
+        "portfolio_validation_2024_health_shrink_full_high_cost_max_drawdown": -0.2796012604905777,
+        "portfolio_validation_2024_health_shrink_full_high_cost_return": -0.0111407904704703,
+        "portfolio_validation_2024_health_shrink_status": "fail",
+        "portfolio_validation_quick": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_quick/validation_summary.json",
+        "portfolio_validation_quick_primary_max_drawdown": -0.3663230996406711,
+        "portfolio_validation_quick_primary_method": "decorrelated",
+        "portfolio_validation_quick_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_quick_primary_total_return": 0.1709050223756563,
+        "portfolio_validation_quick_status": "pass",
+        "portfolio_validation_standard_2024_stress_months": {
+          "2024-01": {
+            "max_drawdown": -0.1489778702582436,
+            "return": -0.14381468379966267
+          },
+          "2024-06": {
+            "max_drawdown": -0.10626931704825271,
+            "return": -0.09136431650347432
+          },
+          "2024-09": {
+            "max_drawdown": -0.1707616245043324,
+            "return": 0.18351390549258717
+          },
+          "2024-11": {
+            "max_drawdown": -0.08527284241574129,
+            "return": 0.07855973131576865
+          }
+        },
+        "portfolio_validation_standard_factor_health_mode": "monitor",
+        "portfolio_validation_standard_failed_count": 0,
+        "portfolio_validation_standard_full_base_gross_turnover": 122.46176395415434,
+        "portfolio_validation_standard_full_base_max_drawdown": -0.3663230996406711,
+        "portfolio_validation_standard_full_base_return": 0.1709050223756563,
+        "portfolio_validation_standard_full_base_total_transaction_cost": 162006.48762434465,
+        "portfolio_validation_standard_full_high_cost_max_drawdown": -0.3749054595090267,
+        "portfolio_validation_standard_full_high_cost_return": 0.1156740810880345,
+        "portfolio_validation_standard_negative_years": [
+          "year_2023_base"
+        ],
+        "portfolio_validation_standard_primary": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/validation_summary.json",
+        "portfolio_validation_standard_primary_method": "decorrelated",
+        "portfolio_validation_standard_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_standard_status": "warn",
+        "portfolio_validation_standard_warning": "negative_year_2023_base_and_drawdown_watch",
+        "portfolio_validation_standard_warning_count": 1,
+        "portfolio_validation_standard_year_2023_max_drawdown": -0.1595537343786165,
+        "portfolio_validation_standard_year_2023_return": -0.0360309656849602,
+        "portfolio_validation_standard_year_2024_max_drawdown": -0.2778384758102391,
+        "portfolio_validation_standard_year_2024_return": 0.0057942922746585,
+        "portfolio_validation_standard_year_2025_max_drawdown": -0.1681664904450803,
+        "portfolio_validation_standard_year_2025_return": 0.2048764931567701,
+        "research_memory_check": "runs/factor_research_memory/intraday_sell_pressure_quality_state_5m_w48/factor_research_memory_check.json",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "portfolio_validation_downside_vol_gate_standard": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_downside_vol_gate_equal_primary_standard/validation_summary.json",
+        "portfolio_validation_downside_vol_gate_status": "warn",
+        "portfolio_validation_downside_vol_gate_decision": "reject_replacement_for_candidate_basket",
+        "portfolio_validation_downside_vol_gate_gate_feature": "intraday_downside_volatility_5m_w48",
+        "portfolio_validation_downside_vol_gate_primary_method": "equal",
+        "portfolio_validation_downside_vol_gate_primary_policy": "partial_rebalance_daily",
+        "portfolio_validation_downside_vol_gate_failed_count": 0,
+        "portfolio_validation_downside_vol_gate_warning_count": 2,
+        "portfolio_validation_downside_vol_gate_warnings": [
+          "primary_full_base_turnover_control",
+          "primary_yearly_base_positive_returns"
+        ],
+        "portfolio_validation_downside_vol_gate_scale_counts": {
+          "0.0": 4301,
+          "0.5": 3978,
+          "1.0": 26520
+        },
+        "portfolio_validation_downside_vol_gate_full_base_return": 0.1409373246729905,
+        "portfolio_validation_downside_vol_gate_full_base_max_drawdown": -0.3517625286477277,
+        "portfolio_validation_downside_vol_gate_full_base_gross_turnover": 165.1610031961477,
+        "portfolio_validation_downside_vol_gate_full_base_total_transaction_cost": 218201.455327008,
+        "portfolio_validation_downside_vol_gate_full_high_cost_return": 0.0709565488560957,
+        "portfolio_validation_downside_vol_gate_full_high_cost_max_drawdown": -0.3640696902297855,
+        "portfolio_validation_downside_vol_gate_year_2023_return": -0.0689177409626725,
+        "portfolio_validation_downside_vol_gate_year_2023_max_drawdown": -0.164028184459003,
+        "portfolio_validation_downside_vol_gate_year_2024_return": 0.0278592214713682,
+        "portfolio_validation_downside_vol_gate_year_2024_max_drawdown": -0.2558943428209538,
+        "portfolio_validation_downside_vol_gate_year_2025_return": 0.0846829920991796,
+        "portfolio_validation_downside_vol_gate_year_2025_max_drawdown": -0.1192410572252951,
+        "portfolio_validation_downside_vol_gate_negative_years": [
+          "year_2023_base"
+        ]
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_false_absorption_risk_5m_w48",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_false_absorption_risk_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "High apparent sell-pressure absorption without credible recovery and under weak breadth behaves like fragile distribution. Lower false-absorption risk should be preferred in long-only selection.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "sell_pressure_quality_state"
+          ],
+          "sell_pressure_quality_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Single-factor admission passed in the inverted direction with near-full coverage, stable negative annual rank IC across 2023-2025, positive cost-adjusted spread after inversion, and moderate top-N turnover. This is the useful member of the sell-pressure quality-state split. Quick portfolio validation passed for the three-feature candidate basket under decorrelated/equal/ic_weighted methods. The primary decorrelated + partial_rebalance_daily result was positive but drawdown-heavy; standard primary-policy validation completed with warn status. Full-base and high-cost decorrelated partial-rebalance returns were positive, but year_2023_base was negative, year_2024_base was only marginally positive, full-window drawdown stayed deep, and January/June 2024 stress losses remained large. Keep as a candidate with drawdown and portfolio-integration watch; do not promote without a drawdown or regime-control test that preserves full-window and high-cost returns. A focused 2024 factor-health shrink experiment failed the high-cost gate: base return fell versus monitor mode, high-cost return turned negative, and max drawdown was effectively unchanged. Treat generic health shrink as rejected for this basket; next controls should use a different state variable or allocator. A downside-volatility state gate using intraday_downside_volatility_5m_w48 was tested as an equal-primary standard validation. It finished with warn status: full-base and high-cost returns stayed positive, but turnover exceeded the standard threshold and year_2023_base remained negative. The gate improved the 2024 annual slice but reduced full-window return versus monitor mode and materially cut the strong 2025 contribution, so reject it as a replacement control for this candidate basket.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "docs/validation/compact_core_2024_attribution_2026_05_20.md",
+        "runs/factor_research_memory/intraday_sell_pressure_quality_state_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv",
+        "runs/factor_candidate_reviews/intraday_false_absorption_risk_5m_w48/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_quick/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_health_shrink_2024/validation_summary.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_downside_vol_gate_equal_primary_standard/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {},
+      "status": "candidate",
+      "tags": [
+        "intraday",
+        "liquidity",
+        "sell_pressure",
+        "false_absorption",
+        "batch_2026_05_22_next_round",
+        "candidate"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Recovery-balanced sell-pressure absorption quality score over a 48-bar window.",
+      "display_name": "Intraday sell-pressure absorption quality, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "factor_evaluation": "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_sell_pressure_quality_state_5m_w48/factor_research_memory_check.json",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_22_next_round.md"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_sell_pressure_absorption_quality_5m_w48",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_sell_pressure_absorption_quality_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "A recovery-balanced absorption score should separate healthy liquidity absorption from false absorption, but the tested standalone quality score was cost-fragile and directionally conflicted.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "sell_pressure_quality_state"
+          ],
+          "sell_pressure_quality_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Watchlist after the 2026-05-22 admission run. The feature had strong inverted rank IC and stable annual direction, but the selected inverted direction produced negative cost-adjusted top-minus-bottom spread. The positive raw long spread conflicts with the rank-IC direction, so the shape needs targeted monotonicity review before any retry.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "docs/validation/compact_core_2024_attribution_2026_05_20.md",
+        "runs/factor_research_memory/intraday_sell_pressure_quality_state_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+          "runs/factor_research_memory/intraday_sell_pressure_quality_state_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/next_round_2026_05_22/factor_evaluation/summary.json",
+          "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_report.json",
+          "runs/factor_research/next_round_2026_05_22/factor_admission/factor_admission_table.csv"
+        ],
+        "negative_findings": "The absorption-quality feature passed statistical IC checks but failed the cost-adjusted spread gate in the admission-selected inverted direction. Its rank-IC direction and raw top-minus-bottom spread point in conflicting directions, suggesting a non-monotonic or bucket-shape problem.",
+        "retry_conditions": "Retry only after monotonicity diagnostics show a tradable bucket shape or after the quality score is redesigned as a conditioning gate for false-absorption risk rather than as a standalone rank factor.",
+        "similar_to": [
+          "intraday_sell_pressure_absorption_5m_w48",
+          "intraday_sell_pressure_recovery_5m_w48",
+          "intraday_liquidity_reliability_recovery_balance_5m_l48_c12_r24"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "liquidity",
+        "sell_pressure",
+        "false_absorption",
+        "batch_2026_05_22_next_round",
+        "watchlist",
+        "cost_fragile"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Weak-market-state interaction of overnight gap-up and gap-response risks.",
+      "display_name": "Intraday weak-tape overnight gap risk, 48-bar state",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/weak_tape_gap_2026_05_22/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_weak_tape_overnight_gap_risk_5m/factor_candidate_review.json",
+        "diagnostic_2023": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/regime_diagnostics_2023_decorrelated/summary.json",
+        "diagnostic_2024": "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/regime_diagnostics_2024_decorrelated/summary.json",
+        "factor_evaluation_summary": "runs/factor_research/weak_tape_gap_2026_05_22/factor_evaluation/summary.json",
+        "frontier_comparison": "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_frontier_comparison_v1/frontier_comparison_report.json",
+        "frontier_comparison_markdown": "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_frontier_comparison_v1/frontier_comparison_report.md",
+        "unified_replay_active_default": "runs/candidate_factor_portfolios/unified_active_default_score_budget_gate_v1_2026_05_23_standard/validation_summary.json",
+        "unified_replay_admission_report": "runs/factor_research/unified_daily_ma_gap_weak_tape_2026_05_23/factor_admission/factor_admission_report.json",
+        "unified_replay_dataset": "runs/factor_research/unified_daily_ma_gap_weak_tape_2026_05_23/alpha_dataset",
+        "unified_replay_daily_ma_frontier": "runs/candidate_factor_portfolios/unified_daily_ma_frontier_high_dispersion_2026_05_23_standard/validation_summary.json",
+        "unified_replay_default_strategy_change": false,
+        "unified_replay_four_leg": "runs/candidate_factor_portfolios/unified_four_leg_gap_weak_tape_2026_05_23_standard/validation_summary.json",
+        "unified_replay_frontier_plus_gap_weak_tape": "runs/candidate_factor_portfolios/unified_daily_ma_frontier_plus_gap_weak_tape_2026_05_23_standard/validation_summary.json",
+        "unified_replay_portfolio_decision": "promoted_tracking_only_after_unified_replay",
+        "controlled_overlay_default_strategy_change": false,
+        "controlled_overlay_fine_grid": "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_fine_grid_2026_05_23_standard/validation_summary.json",
+        "controlled_overlay_fine_grid_best_method": "overlay_fine_w05",
+        "controlled_overlay_fine_grid_decision": "preferred_5pct_overlay_with_2p5pct_stability_fallback",
+        "controlled_overlay_frozen_promotion_replay": "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_frozen_promotion_replay_2026_05_23_robust/validation_summary.json",
+        "controlled_overlay_frozen_promotion_review": "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_frozen_promotion_review_v1/promotion_review.json",
+        "controlled_overlay_frozen_review_decision": "accepted_as_frozen_challenger_no_default_change",
+        "controlled_overlay_frozen_true_unseen_available": true,
+        "controlled_overlay_high_dispersion": "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_high_dispersion_grid_2026_05_23_standard/validation_summary.json",
+        "controlled_overlay_high_dispersion_best_full_base_return": 0.24415182599764185,
+        "controlled_overlay_high_dispersion_best_full_high_cost_return": 0.19758679519853528,
+        "controlled_overlay_high_dispersion_best_method": "overlay_hd_w20",
+        "controlled_overlay_portfolio_decision": "reject_5pct_default_change_keep_2p5pct_watchlist_only_after_true_unseen",
+        "controlled_overlay_unconditional": "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_grid_2026_05_23_standard/validation_summary.json",
+        "controlled_overlay_unconditional_best_2023_return": -0.03470337452325323,
+        "controlled_overlay_unconditional_best_2024_return": 0.17289729139464716,
+        "controlled_overlay_unconditional_best_2025_return": 0.13383053031256065,
+        "controlled_overlay_unconditional_best_full_base_return": 0.2545229338540691,
+        "controlled_overlay_unconditional_best_full_high_cost_return": 0.20352112105838094,
+        "controlled_overlay_unconditional_best_full_turnover": 100.13396443862194,
+        "controlled_overlay_unconditional_best_method": "overlay_w05",
+        "controlled_overlay_unconditional_best_worst_drawdown": -0.14776488823914635,
+        "controlled_overlay_stability_fallback_2023_return": -0.010724583353775796,
+        "controlled_overlay_stability_fallback_full_base_return": 0.23124425921376401,
+        "controlled_overlay_stability_fallback_full_high_cost_return": 0.18286568782846868,
+        "controlled_overlay_stability_fallback_method": "overlay_fine_w025",
+        "controlled_overlay_unseen_preflight": "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_unseen_preflight_2026_05_23/preflight.json",
+        "controlled_overlay_unseen_preflight_status": "resolved_loader_update_unseen_replay_completed",
+        "controlled_overlay_unseen_dataset": "runs/factor_research/unified_daily_ma_gap_weak_tape_unseen_2026_05_23/alpha_dataset",
+        "controlled_overlay_unseen_validation": "runs/candidate_factor_portfolios/unseen_2026_overlay_control_grid_2026_05_23/validation_summary.json",
+        "controlled_overlay_unseen_review": "runs/candidate_factor_portfolios/unseen_2026_overlay_control_grid_2026_05_23/unseen_review.json",
+        "controlled_overlay_unseen_attribution": "runs/candidate_factor_portfolios/unseen_2026_overlay_control_grid_2026_05_23/attribution_v1/attribution_summary.json",
+        "controlled_overlay_unseen_attribution_report": "runs/candidate_factor_portfolios/unseen_2026_overlay_control_grid_2026_05_23/attribution_v1/attribution_report.md",
+        "controlled_overlay_unseen_decision": "reject_5pct_default_change_keep_2p5pct_watchlist_only",
+        "controlled_overlay_unseen_primary_full_base_return": -0.0028032197359133537,
+        "controlled_overlay_unseen_primary_full_high_cost_return": -0.006774195692789253,
+        "controlled_overlay_unseen_2p5_full_base_return": 0.002388683226958621,
+        "controlled_overlay_unseen_2p5_full_high_cost_return": -0.0017513515390215062,
+        "controlled_overlay_unseen_2p5_zero_cost_return": 0.019485449999999682,
+        "controlled_overlay_unseen_5pct_full_base_return": -0.0074885178029366894,
+        "controlled_overlay_unseen_5pct_full_high_cost_return": -0.011657756283578014,
+        "controlled_overlay_unseen_5pct_zero_cost_return": 0.009398040000000218,
+        "controlled_overlay_unseen_2p5_worst_full_base_month": "2026-03",
+        "controlled_overlay_unseen_2p5_worst_full_base_month_return": -0.036984712607951775,
+        "controlled_overlay_unseen_5pct_worst_full_base_month": "2026-03",
+        "controlled_overlay_unseen_5pct_worst_full_base_month_return": -0.030292900124838207,
+        "controlled_overlay_unseen_avg_top_minus_universe_primary": -0.0033782158013202653,
+        "controlled_overlay_unseen_avg_top_minus_universe_2p5": -0.002271372025545306,
+        "controlled_overlay_unseen_avg_top_minus_universe_5pct": -0.00017024763639093997,
+        "controlled_overlay_unseen_2p5_avg_top_overlap_with_primary_range": [
+          0.7354029850746269,
+          0.8149810606060606
+        ],
+        "controlled_overlay_unseen_5pct_avg_top_overlap_with_primary_range": [
+          0.42698507462686563,
+          0.6276515151515151
+        ],
+        "controlled_overlay_unseen_default_strategy_change": false,
+        "controlled_overlay_unseen_retry_boundary": "single_constrained_2p5pct_cost_aware_or_state_gated_retry_only",
+        "controlled_overlay_unseen_2p5_full_reduced_gate_validation": "runs/candidate_factor_portfolios/unseen_2026_overlay_2p5_full_reduced_gate_2026_05_24/validation_summary.json",
+        "controlled_overlay_unseen_2p5_full_reduced_gate_attribution": "runs/candidate_factor_portfolios/unseen_2026_overlay_2p5_full_reduced_gate_2026_05_24/attribution_v1/attribution_summary.json",
+        "controlled_overlay_unseen_2p5_full_reduced_gate_report": "runs/candidate_factor_portfolios/unseen_2026_overlay_2p5_full_reduced_gate_2026_05_24/attribution_v1/attribution_report.md",
+        "controlled_overlay_unseen_2p5_full_reduced_gate_decision": "reject_local_overlay_patch",
+        "controlled_overlay_unseen_2p5_full_reduced_gate_full_base_return": -0.010086142041526469,
+        "controlled_overlay_unseen_2p5_full_reduced_gate_full_high_cost_return": -0.013967830839835105,
+        "controlled_overlay_unseen_2p5_full_reduced_gate_zero_cost_return": 0.004901846437613516,
+        "controlled_overlay_unseen_2p5_full_reduced_gate_retry_status": "failed_full_base_and_high_cost_vs_primary",
+        "controlled_overlay_unseen_local_overlay_patch_status": "closed_after_failed_constrained_retry",
+        "combined_dedup_feature_columns": [
+          "intraday_overnight_gap_5m",
+          "intraday_overnight_gap_down_recovery_5m",
+          "intraday_false_absorption_risk_5m_w48",
+          "intraday_weak_tape_gap_up_risk_5m_w48"
+        ],
+        "duplicate_feature_columns": {
+          "intraday_weak_tape_gap_down_recovery_risk_5m_w48": {
+            "decision": "do_not_double_count_in_portfolio",
+            "rank_correlation": 0.9997761543148755,
+            "similar_to": "intraday_overnight_gap_down_recovery_5m"
+          },
+          "intraday_weak_tape_gap_up_fade_risk_5m_w48": {
+            "decision": "rejected_and_do_not_double_count_in_portfolio",
+            "rank_correlation": 0.9999964634308949,
+            "similar_to": "intraday_overnight_gap_up_fade_5m"
+          }
+        },
+        "promoted_candidate_review": "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_promoted_candidate_review_v1/promoted_candidate_review.json",
+        "portfolio_decision": "reject_5pct_default_change_keep_2p5pct_watchlist_only_after_true_unseen",
+        "portfolio_validation_combined_dedup_quick": "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_quick_dedup/validation_summary.json",
+        "portfolio_validation_combined_dedup_standard": "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_standard_dedup/validation_summary.json",
+        "portfolio_validation_default_strategy_change": false,
+        "portfolio_validation_health_shrink": "runs/candidate_factor_portfolios/weak_tape_gap_2026_05_22_health_shrink_standard/validation_summary.json",
+        "portfolio_validation_quick": "runs/candidate_factor_portfolios/weak_tape_gap_2026_05_22_quick/validation_summary.json",
+        "portfolio_validation_standard": "runs/candidate_factor_portfolios/weak_tape_gap_2026_05_22_standard_primary/validation_summary.json",
+        "portfolio_validation_status": "true_unseen_failed_5pct_keep_2p5pct_watchlist_only",
+        "rejected_feature_columns": [
+          "intraday_weak_tape_gap_up_fade_risk_5m_w48"
+        ],
+        "research_memory_check": "runs/factor_research_memory/intraday_weak_tape_gap_up_risk_5m_w48/factor_research_memory_check.json"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_weak_tape_overnight_gap_risk_5m",
+      "family": "event",
+      "feature_columns": [
+        "intraday_weak_tape_gap_up_risk_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "The 2023/2024 diagnostics show that the overnight-gap basket can retain positive cross-sectional spread while its top long-only bucket loses money in weak tape. Positive overnight gap, gap-up fade, and gap-down recovery should therefore be penalized when rolling market downside and weak breadth are elevated.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "weak_tape_overnight_gap"
+          ],
+          "weak_tape_gap_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "Candidate after the 2026-05-22 weak-tape-gap admission run. Standalone admission accepted two inverted risk legs, but combined evaluation showed the down-recovery leg is a near duplicate of the existing overnight gap-down recovery feature, so the active feature list keeps only the materially incremental gap-up weak-tape risk leg. The gap-up fade leg was excluded because it failed the directional hit-rate and stable-year admission gates and is also a near duplicate of the old gap-up-fade signal. Standalone portfolio validation is positive full-window and high-cost, but remains warning-only because 2023 and 2024 annual slices are negative; generic factor-health shrink did not change the selected path. The deduplicated four-leg basket with the existing 2026-05-22 candidates passed standard validation: full-base return 0.183513, high-cost return 0.130797, and all 2023/2024/2025 annual slices positive. A formal promoted-candidate review accepted the basket for promoted-candidate tracking with no default strategy change. The follow-up existing-artifact frontier comparison confirmed tracking-only: the four-leg basket improves the prior three-leg basket and repairs 2023, but it does not dominate active/default drawdown or the daily-MA frontier full-window and high-cost returns. The 2026-05-23 true unified replay confirmed the four-leg basket as a standalone promoted-tracking candidate with validation status pass, full-base return 0.183513, high-cost return 0.130797, and all annual slices positive. The unified daily-MA frontier plus gap/weak-tape replay improved 2023, 2024, 2025, and worst drawdown versus the daily-MA frontier, but did not dominate full-window or high-cost return and still had a negative 2023 slice, so default strategy change remains false. The controlled score-overlay replay upgraded the factor to a portfolio-construction candidate: a rank-normalized unconditional 5% satellite overlay over the daily-MA frontier improved full-base return to 0.254523, high-cost return to 0.203521, worst drawdown to -0.147765, and full-window turnover to 100.134, but 2023 stayed negative at -0.034703. The 2.5%-7.5% fine grid confirmed 5% as the preferred return/risk tradeoff; 2.5% is the stability fallback with full-base return 0.231244, high-cost return 0.182866, and 2023 return -0.010725. Frozen promotion replay accepted the 5% overlay as the frozen challenger with no default change: it beat the daily-MA frontier on full return by 0.047032, high-cost return by 0.041721, full-window drawdown by 0.025718, and full-window turnover by -1.727207, and monthly concentration checks passed. A later post-2025 unseen replay used the promoted BaoStock CN equity 5m update file through 2026-05-15 after the fast-parquet loader was extended to include update parquet files. That true unseen replay rejects the frozen 5% default-change case: 5% returned -0.007489 full-base and -0.011658 high-cost, while the 2.5% fallback improved primary-only and returned 0.002389 full-base but still -0.001751 high-cost. Follow-up attribution shows the 5% overlay did not fail because top-score label quality collapsed: its average top-minus-universe label was -0.000170 versus -0.003378 for primary-only, but it replaced too much of the primary selection set, with average top-50 overlap only 42.70%-62.77% by month. The main realized weak point was path/state fit in the high-instability 2026 tape, especially March 2026 and reduced/full risk-state bars. A single constrained 2.5% retry that enabled the satellite only in full/reduced risk states was then rejected: full-base return fell to -0.010086 and high-cost return to -0.013968 versus primary-only at -0.002803 and -0.006774. This closes the local overlay-patch path. Default strategy remains unchanged; future work needs a new mechanism or new unseen data rather than another local overlay-weight or state patch. Research-memory check is blocked by prior gap and breadth failures, but the retry conditions explicitly allow a materially different event-state split tied to breadth or market state. This factor is not a plain gap, plain gap-up fade, or standalone breadth resilience feature: it only activates overnight-gap risk under rolling weak-tape state and is intended to repair negative absolute top-bucket returns in 2023/2024.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_22_next_round.md",
+        "runs/factor_research_memory/intraday_weak_tape_gap_up_risk_5m_w48/factor_research_memory_check.json",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/regime_diagnostics_2023_decorrelated/regime_failure_report.md",
+        "runs/candidate_factor_portfolios/next_round_2026_05_22_candidates_standard_primary/regime_diagnostics_2024_decorrelated/regime_failure_report.md",
+        "runs/factor_research/weak_tape_gap_2026_05_22/alpha_dataset/summary.json",
+        "runs/factor_research/weak_tape_gap_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/weak_tape_gap_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/factor_research/weak_tape_gap_2026_05_22/factor_admission/factor_admission_table.csv",
+        "runs/factor_candidate_reviews/intraday_weak_tape_overnight_gap_risk_5m/factor_candidate_review.json",
+        "runs/candidate_factor_portfolios/weak_tape_gap_2026_05_22_quick/validation_summary.json",
+        "runs/candidate_factor_portfolios/weak_tape_gap_2026_05_22_standard_primary/validation_summary.json",
+        "runs/candidate_factor_portfolios/weak_tape_gap_2026_05_22_health_shrink_standard/validation_summary.json",
+        "runs/factor_research/combined_gap_absorption_weak_tape_2026_05_22/factor_evaluation/summary.json",
+        "runs/factor_research/combined_gap_absorption_weak_tape_2026_05_22/factor_admission/factor_admission_report.json",
+        "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_quick_dedup/validation_summary.json",
+        "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_standard_dedup/validation_summary.json",
+        "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_promoted_candidate_review_v1/promoted_candidate_review.json",
+        "runs/candidate_factor_portfolios/combined_gap_absorption_weak_tape_2026_05_22_frontier_comparison_v1/frontier_comparison_report.json",
+        "runs/factor_research/unified_daily_ma_gap_weak_tape_2026_05_23/factor_admission/factor_admission_report.json",
+        "runs/candidate_factor_portfolios/unified_active_default_score_budget_gate_v1_2026_05_23_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/unified_daily_ma_frontier_high_dispersion_2026_05_23_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/unified_four_leg_gap_weak_tape_2026_05_23_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/unified_daily_ma_frontier_plus_gap_weak_tape_2026_05_23_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_grid_2026_05_23_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_fine_grid_2026_05_23_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_high_dispersion_grid_2026_05_23_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_frozen_promotion_replay_2026_05_23_robust/validation_summary.json",
+        "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_frozen_promotion_review_v1/promotion_review.json",
+        "runs/candidate_factor_portfolios/daily_ma_frontier_gap_weak_tape_overlay_unseen_preflight_2026_05_23/preflight.json",
+        "runs/factor_research/unified_daily_ma_gap_weak_tape_unseen_2026_05_23/alpha_dataset/summary.json",
+        "runs/candidate_factor_portfolios/unseen_2026_overlay_control_grid_2026_05_23/validation_summary.json",
+        "runs/candidate_factor_portfolios/unseen_2026_overlay_control_grid_2026_05_23/unseen_review.json",
+        "runs/candidate_factor_portfolios/unseen_2026_overlay_control_grid_2026_05_23/attribution_v1/attribution_summary.json",
+        "runs/candidate_factor_portfolios/unseen_2026_overlay_control_grid_2026_05_23/attribution_v1/attribution_report.md",
+        "runs/candidate_factor_portfolios/unseen_2026_overlay_2p5_full_reduced_gate_2026_05_24/validation_summary.json",
+        "runs/candidate_factor_portfolios/unseen_2026_overlay_2p5_full_reduced_gate_2026_05_24/attribution_v1/attribution_summary.json",
+        "runs/candidate_factor_portfolios/unseen_2026_overlay_2p5_full_reduced_gate_2026_05_24/attribution_v1/attribution_report.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price"
+      ],
+      "research_memory": {
+        "decision_reason": "other",
+        "evidence_artifacts": [
+          "runs/factor_research_memory/intraday_weak_tape_gap_up_risk_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/weak_tape_gap_2026_05_22/factor_evaluation/summary.json",
+          "runs/factor_research/weak_tape_gap_2026_05_22/factor_admission/factor_admission_report.json"
+        ],
+        "negative_findings": "Pre-development memory check was blocked by prior gap-up fade, gap, breadth resilience, and market-downside-beta failures. The rejected gap-up-fade leg confirms that plain fade conditioning remains weak. Combined evaluation also showed near-duplicate exposure: weak-tape down-recovery correlates 0.999776 with overnight gap-down recovery, and weak-tape gap-up fade correlates 0.999996 with overnight gap-up fade.",
+        "retry_conditions": "Only keep the event-state interaction legs that pass admission and are not near-duplicates of existing active candidates. After the 2026 true-unseen replay and the failed full/reduced gated 2.5% retry, do not reopen broad overlay-weight or local state-gate search. Future retries require a new mechanism, new data, or a materially different portfolio allocator.",
+        "similar_to": [
+          "intraday_overnight_gap_up_fade_5m",
+          "intraday_gap_5m",
+          "intraday_breadth_resilience_5m_w48",
+          "intraday_market_downside_beta_5m_w48"
+        ]
+      },
+      "status": "candidate",
+      "tags": [
+        "intraday",
+        "overnight",
+        "gap",
+        "weak_tape",
+        "market_state",
+        "batch_2026_05_22_weak_tape_gap",
+        "candidate",
+        "combined_dedup_pass",
+        "portfolio_pass"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -2870,6 +3897,6 @@
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-22",
-  "version": 22
+  "updated_at": "2026-05-24",
+  "version": 35
 }

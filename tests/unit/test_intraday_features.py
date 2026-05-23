@@ -62,6 +62,10 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "sell_pressure_recovery",
             "sell_pressure_exhaustion",
             "sell_pressure_exhaustion_persistence",
+            "same_slot_intraday_memory",
+            "overnight_intraday_tug_of_war",
+            "weak_tape_overnight_gap",
+            "sell_pressure_quality_state",
             "daily_moving_average",
         ),
         reversal_lookback_bars=(1,),
@@ -90,6 +94,9 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         sell_pressure_recovery_windows=(3,),
         sell_pressure_exhaustion_windows=(4,),
         sell_pressure_exhaustion_persistence_specs=((4, 2, 3),),
+        same_slot_memory_windows=(1,),
+        weak_tape_gap_windows=(1,),
+        sell_pressure_quality_windows=(3,),
         daily_moving_average_windows=(2, 3),
         daily_moving_average_pairs=((2, 3),),
         market_state_windows=(3,),
@@ -135,6 +142,11 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_sell_pressure_recovery_5m_w3" in features
     assert "intraday_sell_pressure_exhaustion_5m_w4" in features
     assert "intraday_sell_pressure_exhaustion_persistence_5m_l4_s2_m3" in features
+    assert "intraday_same_slot_residual_return_5m_d1" in features
+    assert "intraday_overnight_gap_down_recovery_5m" in features
+    assert "intraday_weak_tape_gap_up_risk_5m_w1" in features
+    assert "intraday_sell_pressure_absorption_quality_5m_w3" in features
+    assert "intraday_false_absorption_risk_5m_w3" in features
     assert "intraday_daily_ma_deviation_5m_d3" in features
     assert "intraday_daily_ma_spread_5m_s2_l3" in features
     assert features.loc[0, "intraday_bar_return_5m"] == pytest.approx(0.1)
@@ -209,6 +221,9 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_sell_pressure_recovery_5m_w48" in features
     assert "intraday_sell_pressure_exhaustion_5m_w48" in features
     assert "intraday_sell_pressure_exhaustion_persistence_5m_l96_s24_m48" in features
+    assert "intraday_same_slot_residual_return_5m_d5" in features
+    assert "intraday_overnight_intraday_disagreement_5m" in features
+    assert "intraday_sell_pressure_absorption_quality_5m_w48" in features
     assert "intraday_daily_ma_deviation_5m_d20" in features
     assert "intraday_daily_ma_ribbon_trend_score_5m" in features
     assert not features.empty
@@ -553,6 +568,187 @@ def test_sell_pressure_exhaustion_persistence_penalizes_short_window_bounces() -
             values["intraday_sell_pressure_exhaustion_5m_w2"]
             + values["intraday_sell_pressure_exhaustion_5m_w3"]
         )
+    )
+
+
+def test_same_slot_intraday_memory_uses_lagged_same_time_residuals() -> None:
+    rows = []
+    prices = {
+        "a": {
+            "2024-01-01": (10.0, 11.0),
+            "2024-01-02": (10.0, 12.0),
+            "2024-01-03": (10.0, 13.0),
+        },
+        "b": {
+            "2024-01-01": (20.0, 21.0),
+            "2024-01-02": (20.0, 21.0),
+            "2024-01-03": (20.0, 21.0),
+        },
+    }
+    for instrument_id, by_date in prices.items():
+        for trade_date, (open_close, slot_close) in by_date.items():
+            rows.extend(
+                [
+                    {
+                        "instrument_id": instrument_id,
+                        "bar_end_time": f"{trade_date}T09:35:00+08:00",
+                        "trade_date": trade_date,
+                        "close_price": open_close,
+                    },
+                    {
+                        "instrument_id": instrument_id,
+                        "bar_end_time": f"{trade_date}T09:40:00+08:00",
+                        "trade_date": trade_date,
+                        "close_price": slot_close,
+                    },
+                ]
+            )
+    bars = pd.DataFrame(rows)
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("same_slot_intraday_memory",),
+            same_slot_memory_windows=(2,),
+        ),
+    )
+
+    values = features.set_index(["instrument_id", "timestamp"])
+    column = "intraday_same_slot_residual_return_5m_d2"
+    first_day_residual = 0.10 - 0.075
+    second_day_residual = 0.20 - 0.125
+
+    assert values.loc[("a", "2024-01-03T09:40:00+08:00"), column] == pytest.approx(
+        (first_day_residual + second_day_residual) / 2.0
+    )
+
+
+def test_overnight_intraday_tug_of_war_separates_gap_recovery_and_fade() -> None:
+    rows = [
+        {
+            "instrument_id": "a",
+            "bar_end_time": "2024-01-01T15:00:00+08:00",
+            "trade_date": "2024-01-01",
+            "open_price": 10.0,
+            "close_price": 10.0,
+        },
+        {
+            "instrument_id": "a",
+            "bar_end_time": "2024-01-02T09:35:00+08:00",
+            "trade_date": "2024-01-02",
+            "open_price": 9.0,
+            "close_price": 9.9,
+        },
+    ]
+
+    features = build_intraday_feature_matrix(
+        pd.DataFrame(rows),
+        IntradayFeatureConfig(factor_groups=("overnight_intraday_tug_of_war",)),
+    )
+
+    values = features.set_index("timestamp").loc["2024-01-02T09:35:00+08:00"]
+
+    assert values["intraday_overnight_gap_5m"] == pytest.approx(-0.1)
+    assert values["intraday_overnight_gap_down_recovery_5m"] == pytest.approx(0.01)
+    assert values["intraday_overnight_gap_up_fade_5m"] == pytest.approx(0.0)
+    assert values["intraday_overnight_intraday_disagreement_5m"] == pytest.approx(0.01)
+
+
+def test_weak_tape_overnight_gap_conditions_gap_risk_on_market_state() -> None:
+    rows = [
+        {
+            "instrument_id": "a",
+            "bar_end_time": "2024-01-01T15:00:00+08:00",
+            "trade_date": "2024-01-01",
+            "open_price": 10.0,
+            "close_price": 10.0,
+        },
+        {
+            "instrument_id": "b",
+            "bar_end_time": "2024-01-01T15:00:00+08:00",
+            "trade_date": "2024-01-01",
+            "open_price": 20.0,
+            "close_price": 20.0,
+        },
+        {
+            "instrument_id": "a",
+            "bar_end_time": "2024-01-02T09:35:00+08:00",
+            "trade_date": "2024-01-02",
+            "open_price": 11.0,
+            "close_price": 9.9,
+        },
+        {
+            "instrument_id": "b",
+            "bar_end_time": "2024-01-02T09:35:00+08:00",
+            "trade_date": "2024-01-02",
+            "open_price": 19.0,
+            "close_price": 19.5,
+        },
+    ]
+
+    features = build_intraday_feature_matrix(
+        pd.DataFrame(rows),
+        IntradayFeatureConfig(
+            factor_groups=("weak_tape_overnight_gap",),
+            weak_tape_gap_windows=(1,),
+        ),
+    )
+
+    values = features.set_index(["instrument_id", "timestamp"])
+    market_downside = 0.0175
+    weak_tape_score = 0.5 + math.log1p(100.0 * market_downside)
+
+    assert values.loc[
+        ("a", "2024-01-02T09:35:00+08:00"),
+        "intraday_weak_tape_gap_up_risk_5m_w1",
+    ] == pytest.approx(0.1 * weak_tape_score)
+    assert values.loc[
+        ("a", "2024-01-02T09:35:00+08:00"),
+        "intraday_weak_tape_gap_up_fade_risk_5m_w1",
+    ] == pytest.approx(0.1 * 0.1 * (1.0 + weak_tape_score))
+    assert values.loc[
+        ("b", "2024-01-02T09:35:00+08:00"),
+        "intraday_weak_tape_gap_down_recovery_risk_5m_w1",
+    ] == pytest.approx(0.05 * ((19.5 / 19.0) - 1.0) * weak_tape_score)
+
+
+def test_sell_pressure_quality_state_penalizes_false_absorption() -> None:
+    closes = [10.0, 9.0, 9.5, 9.25]
+    turnovers = [1000.0, 2000.0, 1500.0, 500.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+                "turnover": turnover,
+            }
+            for i, (close, turnover) in enumerate(zip(closes, turnovers))
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("sell_pressure_quality_state",),
+            sell_pressure_quality_windows=(3,),
+        ),
+    )
+
+    values = features.iloc[-1]
+    downside_return = 0.1 + (9.5 - 9.25) / 9.5
+    positive_return = (9.5 - 9.0) / 9.0
+    absorption_score = math.log1p((2000.0 + 500.0) / downside_return)
+    recovery_ratio = positive_return / downside_return
+    recovery_balance = 2.0 * recovery_ratio / (1.0 + recovery_ratio**2)
+    tape_pressure = 2.0 * ((0.5 + 0.0 + 0.5) / 3.0)
+    tape_quality = 1.0 - tape_pressure
+
+    assert values["intraday_sell_pressure_absorption_quality_5m_w3"] == pytest.approx(
+        absorption_score * recovery_balance * tape_quality
+    )
+    assert values["intraday_false_absorption_risk_5m_w3"] == pytest.approx(
+        absorption_score * (1.0 - recovery_balance) * (1.0 + tape_pressure)
     )
 
 

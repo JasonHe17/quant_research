@@ -211,6 +211,9 @@ def _build_partition_dataset(
             sell_pressure_exhaustion_persistence_specs=tuple(
                 args.sell_pressure_exhaustion_persistence_specs
             ),
+            same_slot_memory_windows=tuple(args.same_slot_memory_windows),
+            weak_tape_gap_windows=tuple(args.weak_tape_gap_windows),
+            sell_pressure_quality_windows=tuple(args.sell_pressure_quality_windows),
             daily_moving_average_windows=tuple(args.daily_moving_average_windows),
             daily_moving_average_pairs=tuple(args.daily_moving_average_pairs),
             market_downside_beta_windows=tuple(args.market_downside_beta_windows),
@@ -465,6 +468,9 @@ def _write_summary(
             "sell_pressure_exhaustion_persistence_specs": [
                 list(spec) for spec in args.sell_pressure_exhaustion_persistence_specs
             ],
+            "same_slot_memory_windows": args.same_slot_memory_windows,
+            "weak_tape_gap_windows": args.weak_tape_gap_windows,
+            "sell_pressure_quality_windows": args.sell_pressure_quality_windows,
             "daily_moving_average_windows": args.daily_moving_average_windows,
             "daily_moving_average_pairs": [
                 list(pair) for pair in args.daily_moving_average_pairs
@@ -551,6 +557,10 @@ def _parse_args() -> argparse.Namespace:
             "sell_pressure_recovery",
             "sell_pressure_exhaustion",
             "sell_pressure_exhaustion_persistence",
+            "same_slot_intraday_memory",
+            "overnight_intraday_tug_of_war",
+            "weak_tape_overnight_gap",
+            "sell_pressure_quality_state",
             "daily_moving_average",
         ),
     )
@@ -668,6 +678,18 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--same-slot-memory-windows",
+        type=int,
+        nargs="+",
+        default=[5, 20],
+    )
+    parser.add_argument(
+        "--sell-pressure-quality-windows",
+        type=int,
+        nargs="+",
+        default=[48],
+    )
+    parser.add_argument(
         "--daily-moving-average-windows",
         type=int,
         nargs="+",
@@ -682,6 +704,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--market-downside-beta-windows", type=int, nargs="+", default=[48])
     parser.add_argument("--market-state-windows", type=int, nargs="+", default=[48])
+    parser.add_argument("--weak-tape-gap-windows", type=int, nargs="+", default=[48])
     parser.add_argument("--breadth-resilience-windows", type=int, nargs="+", default=[48])
     parser.add_argument(
         "--breadth-shock-residual-resilience-windows",
@@ -812,6 +835,12 @@ def _parse_args() -> argparse.Namespace:
                 "--sell-pressure-exhaustion-persistence-specs must be ordered "
                 "long:short:medium with long greater than short and medium"
             )
+    if any(value <= 0 for value in args.same_slot_memory_windows):
+        raise ValueError("--same-slot-memory-windows values must be positive")
+    if any(value <= 0 for value in args.weak_tape_gap_windows):
+        raise ValueError("--weak-tape-gap-windows values must be positive")
+    if any(value <= 0 for value in args.sell_pressure_quality_windows):
+        raise ValueError("--sell-pressure-quality-windows values must be positive")
     if any(value <= 0 for value in args.daily_moving_average_windows):
         raise ValueError("--daily-moving-average-windows values must be positive")
     if any(short <= 0 or long <= 0 for short, long in args.daily_moving_average_pairs):
@@ -892,6 +921,9 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "sell_pressure_exhaustion_persistence_specs": [
             list(spec) for spec in args.sell_pressure_exhaustion_persistence_specs
         ],
+        "same_slot_memory_windows": list(args.same_slot_memory_windows),
+        "weak_tape_gap_windows": list(args.weak_tape_gap_windows),
+        "sell_pressure_quality_windows": list(args.sell_pressure_quality_windows),
         "daily_moving_average_windows": list(args.daily_moving_average_windows),
         "daily_moving_average_pairs": [
             list(pair) for pair in args.daily_moving_average_pairs
@@ -966,6 +998,9 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                         for spec in args.sell_pressure_exhaustion_persistence_specs
                         for window in spec
                     ],
+                    *(window * 48 for window in args.same_slot_memory_windows),
+                    *args.weak_tape_gap_windows,
+                    *args.sell_pressure_quality_windows,
                     *(window * 48 for window in args.daily_moving_average_windows),
                     *args.market_downside_beta_windows,
                     *args.market_state_windows,

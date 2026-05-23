@@ -24,6 +24,8 @@ from examples.run_baseline_a_real_backtest import (
     _build_next_bar_executions,
     _build_reversal_signals,
     _execution_constraint_counts,
+    _load_bars_from_files,
+    _minute_bar_files_for_range,
     _simulate,
 )
 from examples.run_baseline_a_grid import (
@@ -573,6 +575,111 @@ def test_entry_execution_filter_removes_unbuyable_training_labels() -> None:
     assert counts["entry_non_tradable_label_count"] == 1
     assert counts["entry_limit_up_label_count"] == 1
     assert filtered["instrument_id"].tolist() == ["buyable"]
+
+
+def test_minute_bar_files_include_baostock_update_for_2026(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "canonical_store" / "v1" / "market" / "records=minute_bar"
+    data_dir.mkdir(parents=True)
+    full_2025 = (
+        data_dir
+        / "market_cn_equity_full__a股_分时数据_沪深__5分钟_按年汇总__2025.parquet"
+    )
+    update_5m = data_dir / "market_baostock_cn_equity_update__5m__5m.parquet"
+    full_2025.write_text("", encoding="utf-8")
+    update_5m.write_text("", encoding="utf-8")
+    params = _params(
+        catalog_path=tmp_path
+        / "canonical_store"
+        / "catalog"
+        / "quant_research.duckdb",
+        start="2026-01-02T09:35:00+08:00",
+        end="2026-01-02T15:00:00+08:00",
+    )
+
+    files = _minute_bar_files_for_range(
+        params,
+        start="2026-01-02T09:35:00+08:00",
+        end="2026-01-02T15:00:00+08:00",
+    )
+
+    assert files == [update_5m]
+
+
+def test_load_bars_from_files_deduplicates_full_and_update_rows(
+    tmp_path: Path,
+) -> None:
+    full_path = tmp_path / "full.parquet"
+    update_path = tmp_path / "update.parquet"
+    shared_key = {
+        "instrument_id": "inst_600000",
+        "canonical_code": "600000.SH",
+        "market": "CN",
+        "asset_type": "equity",
+        "source_family": "cn_equity_minute",
+        "frequency": "5m",
+        "bar_end_time": "2025-12-26T09:35:00+08:00",
+        "high_price": 10.2,
+        "low_price": 9.8,
+        "volume": 1000.0,
+        "turnover": 10000.0,
+        "raw_name": "plain",
+    }
+    pd.DataFrame(
+        [
+            {
+                **shared_key,
+                "open_price": 10.0,
+                "close_price": 10.1,
+                "raw_file_path": "量化数据/A股分时数据/full.csv",
+            }
+        ]
+    ).to_parquet(full_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                **shared_key,
+                "open_price": 20.0,
+                "close_price": 20.1,
+                "raw_file_path": "baostock_sync/output/update.csv",
+            },
+            {
+                "instrument_id": "inst_600000",
+                "canonical_code": "600000.SH",
+                "market": "CN",
+                "asset_type": "equity",
+                "source_family": "cn_equity_minute",
+                "frequency": "5m",
+                "bar_end_time": "2026-01-05T09:35:00+08:00",
+                "open_price": 11.0,
+                "high_price": 11.2,
+                "low_price": 10.8,
+                "close_price": 11.1,
+                "volume": 1200.0,
+                "turnover": 13200.0,
+                "raw_name": "plain",
+                "raw_file_path": "baostock_sync/output/update.csv",
+            },
+        ]
+    ).to_parquet(update_path, index=False)
+    params = _params(
+        start="2025-12-26T09:35:00+08:00",
+        end="2026-01-05T09:35:00+08:00",
+    )
+
+    bars = _load_bars_from_files(params, [full_path, update_path])
+
+    assert bars[["bar_end_time", "open_price"]].to_dict("records") == [
+        {
+            "bar_end_time": "2025-12-26T09:35:00+08:00",
+            "open_price": 10.0,
+        },
+        {
+            "bar_end_time": "2026-01-05T09:35:00+08:00",
+            "open_price": 11.0,
+        },
+    ]
 
 
 def _params(**overrides: object) -> BacktestParams:

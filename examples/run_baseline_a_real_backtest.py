@@ -314,6 +314,7 @@ def _load_bars_from_files(
     end: str | None = None,
 ) -> pd.DataFrame:
     scan_target = ", ".join(f"'{path.as_posix()}'" for path in files)
+    read_parquet_expr = f"read_parquet([{scan_target}], union_by_name=true)"
     query_start = start or params.start
     query_end = end or params.end
     symbol_limit_clause = ""
@@ -323,7 +324,7 @@ def _load_bars_from_files(
                   SELECT canonical_code
                   FROM (
                       SELECT DISTINCT canonical_code
-                      FROM read_parquet([{scan_target}])
+                      FROM {read_parquet_expr}
                       WHERE market = 'CN'
                         AND asset_type = 'equity'
                         AND frequency = '5m'
@@ -345,6 +346,48 @@ def _load_bars_from_files(
     connection = duckdb.connect()
     try:
         query = f"""
+            WITH raw_bars AS (
+                SELECT
+                    instrument_id,
+                    canonical_code,
+                    bar_end_time,
+                    open_price,
+                    high_price,
+                    low_price,
+                    close_price,
+                    volume,
+                    turnover,
+                    raw_name,
+                    frequency,
+                    source_family,
+                    row_number() OVER (
+                        PARTITION BY instrument_id, bar_end_time, frequency, source_family
+                        ORDER BY
+                            CASE
+                                WHEN COALESCE(raw_file_path, '') LIKE 'baostock_sync/%'
+                                THEN 1
+                                ELSE 0
+                            END,
+                            COALESCE(raw_file_path, '')
+                    ) AS duplicate_rank
+                FROM {read_parquet_expr}
+                WHERE market = 'CN'
+                  AND asset_type = 'equity'
+                  AND frequency = '5m'
+                  AND bar_end_time >= ?
+                  AND bar_end_time <= ?
+                  AND (
+                      canonical_code LIKE '600%.SH'
+                      OR canonical_code LIKE '601%.SH'
+                      OR canonical_code LIKE '603%.SH'
+                      OR canonical_code LIKE '605%.SH'
+                      OR canonical_code LIKE '000%.SZ'
+                      OR canonical_code LIKE '001%.SZ'
+                      OR canonical_code LIKE '002%.SZ'
+                      OR canonical_code LIKE '003%.SZ'
+                  )
+                  {symbol_limit_clause}
+            )
             SELECT
                 instrument_id,
                 canonical_code,
@@ -356,23 +399,8 @@ def _load_bars_from_files(
                 volume,
                 turnover,
                 raw_name
-            FROM read_parquet([{scan_target}])
-            WHERE market = 'CN'
-              AND asset_type = 'equity'
-              AND frequency = '5m'
-              AND bar_end_time >= ?
-              AND bar_end_time <= ?
-              AND (
-                  canonical_code LIKE '600%.SH'
-                  OR canonical_code LIKE '601%.SH'
-                  OR canonical_code LIKE '603%.SH'
-                  OR canonical_code LIKE '605%.SH'
-                  OR canonical_code LIKE '000%.SZ'
-                  OR canonical_code LIKE '001%.SZ'
-                  OR canonical_code LIKE '002%.SZ'
-                  OR canonical_code LIKE '003%.SZ'
-              )
-              {symbol_limit_clause}
+            FROM raw_bars
+            WHERE duplicate_rank = 1
             ORDER BY bar_end_time, instrument_id
         """
         frame = connection.execute(query, [query_start, query_end]).fetchdf()
@@ -420,6 +448,14 @@ def _minute_bar_files_for_range(
         )
         if path.exists():
             files.append(path)
+    if end_year >= 2026:
+        files.extend(
+            path
+            for path in sorted(
+                data_dir.glob("market_baostock_cn_equity_update__5m__*.parquet")
+            )
+            if path not in files
+        )
     return files
 
 
