@@ -3880,6 +3880,569 @@
         "combined_dedup_pass",
         "portfolio_pass"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Resilience of stock residual returns during cross-sectional synchronous downside shocks.",
+      "display_name": "Intraday event sync-down resilience, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "dataset_qa": "runs/factor_research/event_shock_proxy_2026_05_24/alpha_dataset/event_shock_dataset_qa.csv",
+        "factor_evaluation": "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_event_sync_down_resilience_5m_w48/factor_research_memory_check.json",
+        "research_memory_status": "blocked_by_prior_event_family_rejects_but_materially_redesigned",
+        "validation_review": "docs/validation/event_shock_proxy_2026_05_24.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_event_sync_down_resilience_5m_w48",
+      "family": "event",
+      "feature_columns": [
+        "intraday_event_sync_down_resilience_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Stocks with stronger residual recovery during broad synchronized downside bars should be better long-only candidates after policy or event shocks because selling pressure is absorbed relative to the market tape.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "event_shock_windows": [
+            48
+          ],
+          "factor_groups": [
+            "event_shock_proxy"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "New policy/event shock proxy batch. This feature avoids direct news text and uses only point-in-time OHLCV and price-limit state; cross-sectional market shock state is used as a weight, while the feature value remains stock-specific residual resilience. Research-memory check is blocked by prior event-family rejects, especially plain intraday gap, gap-up fade, and overnight-intraday disagreement. This candidate is materially different because it does not rank raw gaps or disagreement; it ranks rolling stock residual recovery only during synchronized downside pressure.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/event_shock_proxy_2026_05_24.md",
+        "docs/validation/factor_development_standard.md",
+        "runs/factor_research_memory/intraday_event_sync_down_resilience_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/alpha_dataset/event_shock_dataset_qa.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_table.csv",
+        "runs/factor_candidate_reviews/intraday_event_sync_down_resilience_5m_w48/factor_candidate_review.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price",
+        "turnover",
+        "limit_up_open",
+        "limit_down_open"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_ic",
+        "evidence_artifacts": [
+          "docs/validation/event_shock_proxy_2026_05_24.md",
+          "runs/factor_research_memory/intraday_event_sync_down_resilience_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_table.csv",
+          "runs/factor_candidate_reviews/intraday_event_sync_down_resilience_5m_w48/factor_candidate_review.json"
+        ],
+        "negative_findings": "The synchronized-downside residual-resilience proxy failed standard admission: rank IC was only 0.000978, t-stat was 1.04, directional hit rate was 49.75%, and only one annual slice matched the selected long direction.",
+        "retry_conditions": "Retry only with a materially different synchronized-downside event definition or event subset that improves annual direction and hit rate; do not rerun the same rolling residual-resilience weighting as a standalone factor.",
+        "similar_to": [
+          "intraday_breadth_shock_residual_resilience_5m_w48",
+          "intraday_market_downside_beta_5m_w48",
+          "intraday_gap_5m"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "event",
+        "policy_proxy",
+        "shock",
+        "breadth",
+        "batch_2026_05_24_event_shock_proxy",
+        "reject",
+        "weak_ic"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Resilience of stock residual returns during limit-up and limit-down diffusion pressure.",
+      "display_name": "Intraday event limit-diffusion resilience, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "dataset_qa": "runs/factor_research/event_shock_proxy_2026_05_24/alpha_dataset/event_shock_dataset_qa.csv",
+        "factor_evaluation": "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+        "portfolio_validation": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_standard_primary/validation_summary.json",
+        "portfolio_validation_full_base_max_drawdown": -0.3633124357929999,
+        "portfolio_validation_full_base_return": -0.008137540129031,
+        "portfolio_validation_full_high_cost_return": -0.052704878656595,
+        "portfolio_validation_health_shrink": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_health_shrink_standard/validation_summary.json",
+        "portfolio_validation_health_shrink_full_base_return": -0.008137540129031,
+        "portfolio_validation_health_shrink_full_high_cost_return": -0.052704878656595,
+        "portfolio_validation_health_shrink_status": "failed_no_path_change",
+        "portfolio_validation_negative_years": [
+          "year_2023_base",
+          "year_2024_base"
+        ],
+        "portfolio_validation_risk_gate": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_downside_vol_gate_standard/validation_summary.json",
+        "portfolio_validation_risk_gate_full_base_return": -0.0918239303050754,
+        "portfolio_validation_risk_gate_full_high_cost_return": -0.14282347758029,
+        "portfolio_validation_risk_gate_status": "failed_worse_than_standalone",
+        "portfolio_validation_status": "standalone_portfolio_failed",
+        "portfolio_validation_year_2023_return": -0.1054869551986589,
+        "portfolio_validation_year_2024_return": -0.0898423125555168,
+        "portfolio_validation_year_2025_return": 0.1224313348112238,
+        "event_state_regime_diagnostic": "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/summary.json",
+        "event_state_regime_limit_diffusion_extreme_top_n_label": -0.007057891931516953,
+        "event_state_regime_limit_diffusion_top_n_label": -0.006411511174708719,
+        "event_state_regime_report": "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/event_state_regime_report.md",
+        "event_state_regime_status": "diagnosed_limit_diffusion_toxic",
+        "event_state_regime_worst_month": "2024-01",
+        "event_state_regime_worst_month_portfolio_return": -0.1689022188936523,
+        "event_state_gate_block_limit": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_standard/validation_summary.json",
+        "event_state_gate_block_limit_full_base_max_drawdown": -0.3415404012829105,
+        "event_state_gate_block_limit_full_base_return": 0.0867974882694495,
+        "event_state_gate_block_limit_full_high_cost_return": 0.0254459875009109,
+        "event_state_gate_block_limit_negative_years": [
+          "year_2023_base"
+        ],
+        "event_state_gate_block_limit_schedule": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_standard/event_state_exposure_gate/summary.json",
+        "event_state_gate_block_limit_status": "warn_yearly_stability",
+        "event_state_gate_block_limit_drawdown_brake": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_drawdown_brake_standard/validation_summary.json",
+        "event_state_gate_block_limit_drawdown_brake_full_base_max_drawdown": -0.2144719546705519,
+        "event_state_gate_block_limit_drawdown_brake_full_base_return": -0.0798662367985622,
+        "event_state_gate_block_limit_drawdown_brake_full_high_cost_return": -0.0780603786848809,
+        "event_state_gate_block_limit_drawdown_brake_negative_years": [
+          "year_2023_base",
+          "year_2024_base",
+          "year_2025_base"
+        ],
+        "event_state_gate_block_limit_drawdown_brake_status": "failed_over_delevered",
+        "joined_selection_admission": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_admission/factor_admission_report.json",
+        "joined_selection_alpha_dataset": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_alpha_dataset",
+        "joined_selection_evaluation": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/summary.json",
+        "joined_selection_feature_correlation": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/feature_correlation.csv",
+        "joined_selection_block_validation": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_summary.json",
+        "joined_selection_block_full_base_max_drawdown": -0.3194545568271645,
+        "joined_selection_block_full_base_return": 0.4305549642527653,
+        "joined_selection_block_full_high_cost_return": 0.3499274280781266,
+        "joined_selection_block_negative_years": [
+          "year_2024_base"
+        ],
+        "joined_selection_block_status": "warn_yearly_stability",
+        "joined_selection_block_year_2023_return": 0.08890730107885658,
+        "joined_selection_block_year_2024_return": -0.028862785294218596,
+        "joined_selection_block_year_2025_return": 0.3096370844721641,
+        "joined_selection_health_shrink_block_full_base_max_drawdown": -0.2979430563186945,
+        "joined_selection_health_shrink_block_full_base_return": 0.3380766810205693,
+        "joined_selection_health_shrink_block_full_high_cost_return": 0.262703351130942,
+        "joined_selection_health_shrink_block_negative_years": [],
+        "joined_selection_health_shrink_block_status": "pass",
+        "joined_selection_health_shrink_block_validation": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_summary.json",
+        "joined_selection_health_shrink_block_year_2023_return": 0.0563560602361863,
+        "joined_selection_health_shrink_block_year_2024_return": 0.0245031504666433,
+        "joined_selection_health_shrink_block_year_2025_return": 0.3618352300963234,
+        "joined_selection_health_shrink_residual_risk": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_health_shrink_residual_risk/summary.json",
+        "joined_selection_residual_risk": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_residual_risk/summary.json",
+        "event_state_gate_half_block": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_gate_standard/validation_summary.json",
+        "event_state_gate_half_block_full_base_return": 0.05291261974251,
+        "event_state_gate_half_block_full_high_cost_return": -0.0011729099780469,
+        "event_state_gate_half_block_schedule": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_gate_standard/event_state_exposure_gate/summary.json",
+        "event_state_gate_half_block_status": "failed_high_cost",
+        "research_memory_check": "runs/factor_research_memory/intraday_event_limit_diffusion_resilience_5m_w48/factor_research_memory_check.json",
+        "research_memory_status": "blocked_by_prior_event_family_rejects_but_materially_redesigned",
+        "validation_review": "docs/validation/event_shock_proxy_2026_05_24.md",
+        "joined_selection_health_shrink_block_robust_validation": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/validation_summary.json",
+        "joined_selection_health_shrink_block_robust_status": "pass",
+        "joined_selection_health_shrink_block_robust_failed_count": 0,
+        "joined_selection_health_shrink_block_robust_warning_count": 0,
+        "joined_selection_health_shrink_block_zero_cost_return": 0.6919429499999996,
+        "joined_selection_health_shrink_block_zero_cost_max_drawdown": -0.2867874530800022,
+        "joined_selection_health_shrink_block_zero_cost_turnover": 141.8726552978981,
+        "joined_selection_health_shrink_block_capacity_5pct": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_5pct_full_base/summary.json",
+        "joined_selection_health_shrink_block_capacity_5pct_return": 0.3375971358108243,
+        "joined_selection_health_shrink_block_capacity_5pct_max_drawdown": -0.2981542458788997,
+        "joined_selection_health_shrink_block_capacity_5pct_turnover": 139.83975237379335,
+        "joined_selection_health_shrink_block_capacity_2pct": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_2pct_full_base/summary.json",
+        "joined_selection_health_shrink_block_capacity_2pct_return": 0.34368542538044133,
+        "joined_selection_health_shrink_block_capacity_2pct_max_drawdown": -0.2980350069153186,
+        "joined_selection_health_shrink_block_capacity_2pct_turnover": 135.58593644974465,
+        "joined_selection_health_shrink_block_rebalance_24": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_24_full_base_day_chunk/summary.json",
+        "joined_selection_health_shrink_block_rebalance_24_return": -0.012961746099821259,
+        "joined_selection_health_shrink_block_rebalance_24_max_drawdown": -0.3466156491762775,
+        "joined_selection_health_shrink_block_rebalance_24_turnover": 305.4263644087862,
+        "joined_selection_health_shrink_block_rebalance_24_status": "failed_cost_and_drawdown",
+        "joined_selection_health_shrink_block_rebalance_96": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_96_full_base/summary.json",
+        "joined_selection_health_shrink_block_rebalance_96_return": 0.42506159725498516,
+        "joined_selection_health_shrink_block_rebalance_96_max_drawdown": -0.31691824773899524,
+        "joined_selection_health_shrink_block_rebalance_96_turnover": 73.72596913934544,
+        "joined_selection_health_shrink_block_rebalance_96_status": "positive_low_turnover_but_deeper_drawdown"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_event_limit_diffusion_resilience_5m_w48",
+      "family": "event",
+      "feature_columns": [
+        "intraday_event_limit_diffusion_resilience_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "During price-limit diffusion after policy or event shocks, the residual-resilience side can identify fragile relief moves; admission selected the inverted side as the stronger long-only ranking.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "event_shock_windows": [
+            48
+          ],
+          "factor_groups": [
+            "event_shock_proxy"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "New policy/event shock proxy batch. Limit diffusion combines the current limit-up/down cross-sectional rates with one-bar increases in those rates, then weights stock-specific residual return. Research-memory check is blocked by prior event-family rejects, especially plain intraday gap, gap-up fade, and overnight-intraday disagreement. This design is materially different because it conditions the cross-section on limit diffusion pressure and ranks residual resilience, not standalone gap or disagreement. Standard admission accepted the inverted direction with -0.011386 rank IC, -15.15 t-stat, 54.70% directional hit rate, two stable years, and 6.81 bps cost-adjusted spread. However, standalone standard portfolio validation failed: full-base return was -0.81%, high-cost return was -5.27%, 2023 and 2024 yearly slices were negative, and full-window max drawdown reached -36.33%. Follow-up controls did not rescue the factor: single-factor health shrink produced the same trading path and failed gates, while the downside-volatility exposure gate worsened full-base return to -9.18% and high-cost return to -14.28%. Event-state diagnostics isolate the toxic states: top-N label was -0.71% in limit_diffusion_extreme and -0.64% in limit_diffusion; 2024-01 combined -16.89% portfolio return with 16.10% limit_diffusion_extreme and 16.76% limit_diffusion timestamp shares. A fixed one-bar-lagged event-state gate that blocks both limit_diffusion and limit_diffusion_extreme improved full-base return to 8.68% and high-cost return to 2.54%, with 2024 slightly positive and 2025 still positive, but 2023 remained -9.78% and max drawdown stayed deep. Stacking a fixed -7%/0.5x drawdown brake on top of the same lagged block reduced full-window max drawdown to -21.45% and turnover to 56.87, but over-delevered after losses: full-base return was -7.99%, high-cost return was -7.81%, and all annual slices were negative. A fixed complementary selection blend using already governed sell-pressure absorption, 6-bar volatility, Amihud, and 48-bar efficiency candidates with the same lagged event-state block produced a strong monitor-only follow-up: full-base return 43.06%, high-cost return 34.99%, 2023 return 8.89%, and 2025 return 30.96%, but remained warning-level because 2024 was -2.89% and max drawdown was -31.95%. Residual-risk diagnostics showed the remaining losses were linked more to selected-basket entry-quality deterioration than to one-off feature concentration. Enabling the already defined lagged factor-health shrink on the same complementary blend and event-state block passed standard validation: full-base return 33.81%, high-cost return 26.27%, 2023 return 5.64%, 2024 return 2.45%, 2025 return 36.18%, and full-window max drawdown improved to -29.79%. Keep the raw event factor on watchlist and do not use it as a standalone leg; the validated construction is the complementary blend with lagged limit-diffusion state block and lagged factor-health shrink. Independent robustness follow-up kept the same fixed blend, lagged limit-diffusion state block, and lagged factor-health shrink. The robust profile passed with zero failures and warnings: zero-cost return was 69.19%, base-cost return was 33.81%, and high-cost return was 26.27%. Same-bar bar-participation capacity diagnostics at 5% and 2% stayed positive with near-unchanged drawdown (33.76% and 34.37% returns), so the research-size path is not fragile to these first-pass caps. Fixed rebalance-cadence checks reject faster 24-bar trading because it returned -1.30%, drew down -34.66%, and raised turnover to 305.43. The 96-bar sensitivity returned 42.51% with lower turnover, but max drawdown worsened to -31.69%; keep 48 bars as the governed default pending future out-of-sample confirmation.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/event_shock_proxy_2026_05_24.md",
+        "docs/validation/factor_development_standard.md",
+        "runs/factor_research_memory/intraday_event_limit_diffusion_resilience_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/alpha_dataset/event_shock_dataset_qa.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_table.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_standard_primary/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_standard_primary/validation_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_standard_primary/validation_factor_health_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_health_shrink_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_health_shrink_standard/validation_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_downside_vol_gate_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_downside_vol_gate_standard/validation_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_downside_vol_gate_standard/factor_risk_gate/downside_volatility_w48/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/event_state_performance.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/monthly_event_state_summary.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/event_state_regime_report.md",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_gate_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_gate_standard/event_state_exposure_gate/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_standard/event_state_exposure_gate/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_drawdown_brake_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_drawdown_brake_standard/validation_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_drawdown_brake_standard/validation_monthly_summary.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_alpha_dataset/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_admission/factor_admission_report.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/feature_correlation.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_monthly_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_factor_contribution_summary.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_residual_risk/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_residual_risk/residual_risk_report.md",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_monthly_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_factor_contribution_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_factor_health_summary.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_health_shrink_residual_risk/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_health_shrink_residual_risk/residual_risk_report.md",
+        "runs/factor_candidate_reviews/intraday_event_limit_diffusion_resilience_5m_w48/factor_candidate_review.json",
+        "https://english.sse.com.cn/start/trading/mechanism/",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/validation_summary.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/full_zero_cost/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_5pct_full_base/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_2pct_full_base/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_24_full_base_day_chunk/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_96_full_base/summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price",
+        "turnover",
+        "limit_up_open",
+        "limit_down_open"
+      ],
+      "research_memory": {
+        "decision_reason": "portfolio_negative",
+        "evidence_artifacts": [
+          "docs/validation/event_shock_proxy_2026_05_24.md",
+          "runs/factor_research_memory/intraday_event_limit_diffusion_resilience_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_standard_primary/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_standard_primary/validation_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_standard_primary/validation_factor_health_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_health_shrink_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_health_shrink_standard/validation_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_downside_vol_gate_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_downside_vol_gate_standard/validation_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_downside_vol_gate_standard/factor_risk_gate/downside_volatility_w48/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/event_state_performance.csv",
+          "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/monthly_event_state_summary.csv",
+          "runs/factor_research/event_shock_proxy_2026_05_24/event_state_regime_diagnostics/event_state_regime_report.md",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_gate_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_gate_standard/event_state_exposure_gate/summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_standard/event_state_exposure_gate/summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_drawdown_brake_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_drawdown_brake_standard/validation_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_drawdown_brake_standard/validation_monthly_summary.csv",
+          "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_alpha_dataset/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_admission/factor_admission_report.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/feature_correlation.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_monthly_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_block_standard/validation_factor_contribution_summary.csv",
+          "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_residual_risk/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_residual_risk/residual_risk_report.md",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_monthly_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_factor_contribution_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_factor_health_summary.csv",
+          "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_health_shrink_residual_risk/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_health_shrink_residual_risk/residual_risk_report.md",
+          "runs/factor_candidate_reviews/intraday_event_limit_diffusion_resilience_5m_w48/factor_candidate_review.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/validation_summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/validation_summary.csv",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/full_zero_cost/summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_5pct_full_base/summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_2pct_full_base/summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_24_full_base_day_chunk/summary.json",
+          "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_96_full_base/summary.json"
+        ],
+        "negative_findings": "Single-factor admission passed in the inverted direction, but standard standalone portfolio validation failed: full-base return was -0.81%, high-cost return was -5.27%, 2023 returned -10.55%, 2024 returned -8.98%, and full-window max drawdown reached -36.33%. Single-factor health shrink lowered the single-leg score scale but did not change the trading path, so full-base and high-cost returns stayed negative. The downside-volatility exposure gate changed the path but worsened economics: full-base return fell to -9.18%, high-cost return fell to -14.28%, 2023 stayed negative at -13.66%, and turnover rose to 159.52. Timestamp event-state diagnostics show that selected top-N labels are most negative in limit_diffusion_extreme (-0.71%) and limit_diffusion (-0.64%) states; 2024-01 was the worst month at -16.89% portfolio return with negative score rank IC and elevated limit-diffusion state shares. A fixed one-bar-lagged full block of limit_diffusion and limit_diffusion_extreme states cleared full-base (+8.68%) and high-cost (+2.54%) return checks, but remained only a warning-level result because 2023 stayed negative at -9.78% and full/high-cost drawdowns stayed around -34% to -35%. A fixed drawdown brake stacked on that block improved max drawdown to -21.45% and reduced turnover to 56.87, but failed economics: full-base return was -7.99%, high-cost return was -7.81%, and 2023, 2024, and 2025 were all negative. A fixed complementary selection blend with governed liquidity/risk/efficiency candidates cleared full/high-cost checks in monitor-only mode, but still had residual yearly instability: 2024 remained negative at -2.89% and full-window max drawdown was -31.95%. Independent robustness checks confirm the governed construction but also bound its use: faster 24-bar rebalancing failed after costs with -1.30% return, -34.66% max drawdown, and 305.43 turnover, while the 96-bar sensitivity had higher return but deeper drawdown than the 48-bar baseline.",
+        "retry_conditions": "Do not retry the raw inverted limit-diffusion score as a standalone candidate portfolio leg. Do not continue the current downside-volatility gross-exposure gate, path-level drawdown-brake threshold search, manual weight retuning, 24-bar faster-rebalance path, or tuning against specific months or years. The validated continuation path is the fixed complementary blend with the lagged limit_diffusion and limit_diffusion_extreme event-state block plus lagged factor-health shrink using the 48-bar rebalance baseline. Robust/zero-cost, high-cost, 5%/2% bar-participation capacity, fixed 24/96-bar cadence sensitivities, allocator packaging, capacity monitoring, and daily paper-monitoring entry points have been logged. This round is complete; future work should use out-of-sample paper/live-simulation monitoring and a separate promotion review on newly arriving data.",
+        "similar_to": [
+          "intraday_gap_5m",
+          "intraday_overnight_gap_up_fade_5m",
+          "intraday_overnight_intraday_disagreement_5m"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "event",
+        "policy_proxy",
+        "shock",
+        "limit_pressure",
+        "batch_2026_05_24_event_shock_proxy",
+        "admission_candidate",
+        "invert",
+        "watchlist",
+        "portfolio_negative"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Price recovery quality weighted by turnover dislocation from the stock's prior intraday turnover baseline.",
+      "display_name": "Intraday event turnover-dislocation recovery, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "dataset_qa": "runs/factor_research/event_shock_proxy_2026_05_24/alpha_dataset/event_shock_dataset_qa.csv",
+        "factor_evaluation": "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_event_turnover_dislocation_recovery_5m_w48/factor_research_memory_check.json",
+        "research_memory_status": "blocked_by_prior_event_family_rejects_but_materially_redesigned",
+        "validation_review": "docs/validation/event_shock_proxy_2026_05_24.md"
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_event_turnover_dislocation_recovery_5m_w48",
+      "family": "event",
+      "feature_columns": [
+        "intraday_event_turnover_dislocation_recovery_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Event shocks often create volume cliffs or abnormal participation. Admission found the inverted turnover-dislocation recovery ranking statistically stronger, but the standalone economic spread is not yet cost-safe.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "event_shock_windows": [
+            48
+          ],
+          "factor_groups": [
+            "event_shock_proxy"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 96,
+      "notes": "New policy/event shock proxy batch. The dislocation z-score is computed against a lagged 48-bar log-turnover baseline, so the effective warmup is roughly 96 bars. Research-memory check is blocked by prior event-family rejects, especially plain intraday gap, gap-up fade, and overnight-intraday disagreement. This candidate is materially different because the event intensity comes from abnormal turnover relative to a lagged baseline and ranks recovery during dislocated participation. Standard admission put the factor on watchlist in the inverted direction: rank IC was -0.016964 with -23.06 t-stat and three stable years, but cost-adjusted spread was -13.70 bps.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/event_shock_proxy_2026_05_24.md",
+        "docs/validation/factor_development_standard.md",
+        "runs/factor_research_memory/intraday_event_turnover_dislocation_recovery_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/alpha_dataset/event_shock_dataset_qa.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_table.csv",
+        "runs/factor_candidate_reviews/intraday_event_turnover_dislocation_recovery_5m_w48/factor_candidate_review.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price",
+        "turnover",
+        "limit_up_open",
+        "limit_down_open"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/validation/event_shock_proxy_2026_05_24.md",
+          "runs/factor_research_memory/intraday_event_turnover_dislocation_recovery_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_table.csv",
+          "runs/factor_candidate_reviews/intraday_event_turnover_dislocation_recovery_5m_w48/factor_candidate_review.json"
+        ],
+        "negative_findings": "The turnover-dislocation recovery proxy had strong inverted IC and three stable years, but the selected direction produced negative cost-adjusted spread under the standard 13 bps round-trip cost proxy.",
+        "retry_conditions": "Retry only as a targeted risk overlay or with an execution-aware transform that makes the directional top-minus-bottom spread positive after costs; do not promote the raw rolling turnover-dislocation recovery score.",
+        "similar_to": [
+          "intraday_gap_5m",
+          "intraday_overnight_gap_up_fade_5m",
+          "intraday_overnight_intraday_disagreement_5m"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "event",
+        "policy_proxy",
+        "shock",
+        "turnover_dislocation",
+        "batch_2026_05_24_event_shock_proxy",
+        "watchlist",
+        "cost_fragile",
+        "invert"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Current-bar recovery from open weighted by open jump magnitude versus prior close.",
+      "display_name": "Intraday event open-jump recovery quality, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "dataset_qa": "runs/factor_research/event_shock_proxy_2026_05_24/alpha_dataset/event_shock_dataset_qa.csv",
+        "factor_evaluation": "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+        "research_memory_check": "runs/factor_research_memory/intraday_event_open_jump_recovery_quality_5m_w48/factor_research_memory_check.json",
+        "research_memory_status": "blocked_by_prior_event_family_rejects_but_materially_redesigned",
+        "validation_review": "docs/validation/event_shock_proxy_2026_05_24.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_event_open_jump_recovery_quality_5m_w48",
+      "family": "event",
+      "feature_columns": [
+        "intraday_event_open_jump_recovery_quality_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "After open jumps caused by policy or event repricing, names that recover better from the open relative to the jump magnitude should have stronger short-horizon demand quality.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "event_shock_windows": [
+            48
+          ],
+          "factor_groups": [
+            "event_shock_proxy"
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "New policy/event shock proxy batch. This is not the prior overnight-gap tug-of-war feature: it uses bar-level open-to-prior-close jump magnitude as event intensity and averages open-to-close recovery quality over the rolling window. Research-memory check is blocked by prior event-family rejects, especially plain intraday gap, gap-up fade, and overnight-intraday disagreement. This candidate is materially different because it ranks jump-weighted recovery quality over repeated observable jumps rather than the raw jump or one overnight interaction. Standard admission rejected the factor: the selected direction was inverted, but rank IC was only -0.000822 with -1.54 t-stat and negative cost-adjusted spread.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/validation/event_shock_proxy_2026_05_24.md",
+        "docs/validation/factor_development_standard.md",
+        "runs/factor_research_memory/intraday_event_open_jump_recovery_quality_5m_w48/factor_research_memory_check.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/alpha_dataset/event_shock_dataset_qa.csv",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_table.csv",
+        "runs/factor_candidate_reviews/intraday_event_open_jump_recovery_quality_5m_w48/factor_candidate_review.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "open_price",
+        "close_price",
+        "turnover",
+        "limit_up_open",
+        "limit_down_open"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_ic",
+        "evidence_artifacts": [
+          "docs/validation/event_shock_proxy_2026_05_24.md",
+          "runs/factor_research_memory/intraday_event_open_jump_recovery_quality_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_evaluation/summary.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_report.json",
+          "runs/factor_research/event_shock_proxy_2026_05_24/factor_admission/factor_admission_table.csv",
+          "runs/factor_candidate_reviews/intraday_event_open_jump_recovery_quality_5m_w48/factor_candidate_review.json"
+        ],
+        "negative_findings": "The open-jump recovery-quality proxy failed standard admission. The inverted direction had weak rank IC, insignificant t-stat, and negative cost-adjusted spread despite acceptable coverage and two stable annual slices.",
+        "retry_conditions": "Retry only with a materially different jump-state definition, such as auction-volume or limit-pressure conditioning, that clears IC strength and after-cost spread gates; do not rerun the same open-jump-weighted recovery score.",
+        "similar_to": [
+          "intraday_gap_5m",
+          "intraday_overnight_gap_up_fade_5m",
+          "intraday_overnight_intraday_disagreement_5m"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "event",
+        "policy_proxy",
+        "shock",
+        "open_jump",
+        "recovery",
+        "batch_2026_05_24_event_shock_proxy",
+        "reject",
+        "weak_ic"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -3898,5 +4461,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-24",
-  "version": 35
+  "version": 45
 }

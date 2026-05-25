@@ -1,0 +1,231 @@
+{
+  "registry_name": "candidate_allocator_registry",
+  "version": 1,
+  "owner": "quant_research",
+  "scope": "Governed candidate allocator definitions that combine registered factor scores, portfolio policy settings, risk controls, and validation evidence.",
+  "updated_at": "2026-05-24",
+  "references": [
+    "docs/validation/factor_development_standard.md",
+    "docs/architecture/production_strategy_framework.md",
+    "docs/validation/event_shock_proxy_2026_05_24.md"
+  ],
+  "allocators": [
+    {
+      "allocator_id": "event_limit_diffusion_complementary_health_shrink_48b",
+      "display_name": "Event limit-diffusion complementary health-shrink allocator, 48 bars",
+      "status": "candidate",
+      "owner": "quant_research",
+      "description": "Fixed complementary intraday allocator built from the policy/event limit-diffusion proxy plus governed liquidity, risk, impact, and path-efficiency features. It uses a 48-bar rank-buffer partial-rebalance policy, a lagged event-state exposure block for limit-diffusion states, and lagged factor-health shrink.",
+      "hypothesis": "Policy/event shock observables are useful as a state and small complementary signal, but the raw limit-diffusion factor is not robust enough as a standalone leg. A fixed blend with orthogonal liquidity/risk/efficiency features, blocked toxic limit-diffusion states, and lagged factor-health shrink should produce more stable long-only selection after costs.",
+      "score": {
+        "dataset_dir": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_alpha_dataset",
+        "admission_report": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_admission/factor_admission_report.json",
+        "factor_correlation": "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/feature_correlation.csv",
+        "label_column": "forward_return",
+        "combination_method": "decorrelated",
+        "weight_source": "joined_selection_admission_ic_and_feature_correlation",
+        "features": [
+          {
+            "feature": "intraday_sell_pressure_absorption_5m_w48",
+            "factor_id": "intraday_sell_pressure_absorption_5m_w48",
+            "direction": "invert",
+            "weight": 0.44822433320632826
+          },
+          {
+            "feature": "intraday_volatility_5m_w6",
+            "factor_id": "intraday_volatility_5m_w6",
+            "direction": "invert",
+            "weight": 0.3460956500940416
+          },
+          {
+            "feature": "intraday_event_limit_diffusion_resilience_5m_w48",
+            "factor_id": "intraday_event_limit_diffusion_resilience_5m_w48",
+            "direction": "invert",
+            "weight": 0.0808718859731895
+          },
+          {
+            "feature": "intraday_efficiency_ratio_5m_w48",
+            "factor_id": "intraday_efficiency_ratio_5m_w48",
+            "direction": "invert",
+            "weight": 0.07632734795394497
+          },
+          {
+            "feature": "intraday_amihud_5m",
+            "factor_id": "intraday_amihud_5m",
+            "direction": "long",
+            "weight": 0.04848078277249571
+          }
+        ]
+      },
+      "risk_controls": {
+        "event_state_gate": {
+          "mode": "lagged_full_block",
+          "lag_windows": 1,
+          "blocked_states": [
+            "limit_diffusion",
+            "limit_diffusion_extreme"
+          ],
+          "blocked_scale": 0.0,
+          "default_scale": 1.0,
+          "schedule_path": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_standard/event_state_exposure_gate/gross_exposure_schedule.csv",
+          "summary_path": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_event_state_block_limit_standard/event_state_exposure_gate/summary.json"
+        },
+        "factor_health": {
+          "mode": "lagged_shrink",
+          "lookback_windows": 20,
+          "min_periods": 5,
+          "label_lag_windows": 48,
+          "min_scale": 0.25,
+          "max_scale": 1.0,
+          "rank_ic_floor": -0.05,
+          "rank_ic_ceiling": 0.05,
+          "spread_floor": -0.001,
+          "spread_ceiling": 0.001,
+          "schedule_path": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/full_base/factor_health/factor_health_schedule.csv"
+        },
+        "drawdown_brake": {
+          "enabled": false,
+          "reason": "Fixed drawdown-brake follow-up over-delevered after losses and failed full/high-cost and annual gates."
+        }
+      },
+      "execution_policy": {
+        "policy": "partial_rebalance_daily",
+        "trade_policy": "rank_buffer_drop",
+        "top_n": 50,
+        "entry_rank": 50,
+        "exit_rank": 150,
+        "max_entries_per_rebalance": 10,
+        "max_exits_per_rebalance": 10,
+        "rebalance_every_n_bars": 48,
+        "partial_rebalance_rate": 0.5,
+        "min_hold_bars": 0,
+        "no_trade_weight_band": 0.002,
+        "estimated_cost_bps": 21.0,
+        "gross_exposure_scale": 1.0,
+        "optimizer_weighting": "utility",
+        "optimizer_score_to_edge_bps": 100.0,
+        "optimizer_min_net_edge_bps": 0.0,
+        "optimizer_risk_penalty_multiplier": 1.0,
+        "min_trade_weight": 0.0005,
+        "turnover_budget_period": "path",
+        "turnover_budget_pacing": 0.0,
+        "exclude_st": true,
+        "lot_size": 100,
+        "limit_up_bps": 980.0,
+        "limit_down_bps": 980.0
+      },
+      "cost_model": {
+        "commission_bps": 3.0,
+        "slippage_bps": 5.0,
+        "sell_stamp_tax_bps": 5.0,
+        "min_commission": 5.0,
+        "high_cost_multiplier": 1.5
+      },
+      "data": {
+        "start": "2023-01-01T00:00:00+08:00",
+        "end": "2025-12-31T23:59:59+08:00",
+        "partition_start": "2023_01",
+        "partition_end": "2025_12",
+        "row_count": 103351780,
+        "partition_count": 36,
+        "data_access_mode": "fast_parquet",
+        "streaming_chunk": "month",
+        "streaming_chunk_padding_days": 10,
+        "catalog_path": "../quant_dataset/canonical_store/catalog/quant_research.duckdb"
+      },
+      "validation": {
+        "status": "pass",
+        "standard_validation": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_summary.json",
+        "robust_validation": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/validation_summary.json",
+        "full_base_return": 0.3380766810205693,
+        "full_base_max_drawdown": -0.2979430563186945,
+        "full_base_turnover": 141.01138419606707,
+        "full_high_cost_return": 0.262703351130942,
+        "full_zero_cost_return": 0.6919429499999996,
+        "year_2023_return": 0.0563560602361863,
+        "year_2024_return": 0.0245031504666433,
+        "year_2025_return": 0.3618352300963234,
+        "capacity_5pct_summary": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_5pct_full_base/summary.json",
+        "capacity_5pct_diagnostic_summary": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_5pct_diag_exst_full_base/summary.json",
+        "capacity_5pct_return": 0.3375971358108243,
+        "capacity_5pct_limited_event_count": 271,
+        "capacity_5pct_unfilled_vs_traded_notional": 0.009136822509482698,
+        "capacity_2pct_summary": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_2pct_full_base/summary.json",
+        "capacity_2pct_diagnostic_summary": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_2pct_diag_exst_full_base/summary.json",
+        "capacity_2pct_return": 0.34368542538044133,
+        "capacity_2pct_limited_event_count": 1427,
+        "capacity_2pct_unfilled_vs_traded_notional": 0.03956337564125786,
+        "rebalance_24_summary": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_24_full_base_day_chunk/summary.json",
+        "rebalance_24_status": "failed_cost_and_drawdown",
+        "rebalance_24_return": -0.012961746099821259,
+        "rebalance_96_summary": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_96_full_base/summary.json",
+        "rebalance_96_status": "positive_low_turnover_but_deeper_drawdown",
+        "rebalance_96_return": 0.42506159725498516
+      },
+      "governance": {
+        "decision": "candidate_allocator",
+        "default_rebalance_every_n_bars": 48,
+        "do_not_use_as_standalone_factor": [
+          "intraday_event_limit_diffusion_resilience_5m_w48"
+        ],
+        "do_not_continue": [
+          "raw_standalone_limit_diffusion_portfolio",
+          "downside_volatility_gross_exposure_gate",
+          "drawdown_brake_threshold_search",
+          "manual_weight_retuning",
+          "24_bar_faster_rebalance_path",
+          "calendar_month_tuning"
+        ],
+        "monitoring_next": [
+          "future out-of-sample/live-simulation performance",
+          "daily paper monitoring history with sustained-warning review",
+          "96-bar slower cadence only after separate out-of-sample confirmation"
+        ],
+        "capacity_monitoring": {
+          "mode": "monitor_only",
+          "diagnostic_summary": "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_capacity_diagnostics_summary.json",
+          "stress_scenarios": [
+            "capacity_5pct",
+            "capacity_2pct"
+          ],
+          "warning_thresholds": {
+            "min_total_return": 0.0,
+            "max_abs_drawdown": 0.35,
+            "max_unfilled_vs_traded_notional": 0.05,
+            "max_unfilled_vs_desired_capacity_events": 0.55
+          },
+          "read": "Current research-size 2%/5% same-bar bar-participation stresses pass monitor thresholds. This is a warning-only capacity monitor, not a production fill guarantee or a rule that changes target weights."
+        },
+        "notes": "This allocator is the governed construction path, not a promotion of the raw event factor as a standalone leg. This development round is complete and has been handed off to paper/live-simulation monitoring; do not continue in-sample parameter search."
+      },
+      "references": [
+        "docs/validation/event_shock_proxy_2026_05_24.md",
+        "docs/architecture/production_strategy_framework.md",
+        "runs/allocator_monitoring/current/allocator_monitoring_report.json",
+        "runs/allocator_monitoring/current/allocator_monitoring_run_summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_alpha_dataset/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_admission/factor_admission_report.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/summary.json",
+        "runs/factor_research/event_shock_proxy_2026_05_24/joined_selection_evaluation/feature_correlation.csv",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_standard/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_robust/validation_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_5pct_full_base/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_2pct_full_base/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_capacity_diagnostics_summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_5pct_diag_exst_full_base/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_capacity_2pct_diag_exst_full_base/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_24_full_base_day_chunk/summary.json",
+        "runs/candidate_factor_portfolios/event_limit_diffusion_2026_05_24_joined_selection_health_shrink_block_rebalance_96_full_base/summary.json"
+      ],
+      "tags": [
+        "event_shock_proxy",
+        "candidate_allocator",
+        "intraday",
+        "long_only",
+        "capacity_checked",
+        "robust_profile_passed",
+        "batch_2026_05_24"
+      ]
+    }
+  ]
+}

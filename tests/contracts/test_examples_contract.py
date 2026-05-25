@@ -105,6 +105,70 @@ def test_factor_registry_validation_example_has_cli_help() -> None:
     assert "--enforce-clean" in result.stdout
 
 
+def test_allocator_registry_validation_example_has_cli_help() -> None:
+    script = Path("examples/validate_allocator_registry.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--registry" in result.stdout
+    assert "--factor-registry" in result.stdout
+    assert "--enforce-clean" in result.stdout
+
+
+def test_allocator_validation_example_has_cli_help() -> None:
+    script = Path("examples/run_allocator_validation.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--allocator-id" in result.stdout
+    assert "--profile" in result.stdout
+    assert "--dry-run" in result.stdout
+
+
+def test_allocator_monitoring_report_example_has_cli_help() -> None:
+    script = Path("examples/generate_allocator_monitoring_report.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--allocator-id" in result.stdout
+    assert "--enforce-no-failures" in result.stdout
+    assert "--append-history" in result.stdout
+
+
+def test_allocator_daily_monitoring_example_has_cli_help() -> None:
+    script = Path("examples/run_allocator_daily_monitoring.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--allocator-id" in result.stdout
+    assert "--output-root" in result.stdout
+    assert "--enforce-no-sustained-warnings" in result.stdout
+
+
 def test_factor_candidate_review_example_has_cli_help() -> None:
     script = Path("examples/run_factor_candidate_review.py")
 
@@ -195,6 +259,71 @@ def test_candidate_policy_regime_analysis_example_has_cli_help() -> None:
     assert "--validation-dir" in result.stdout
     assert "--scenario" in result.stdout
     assert "--include-features" in result.stdout
+
+
+def test_event_state_regime_analysis_example_has_cli_help() -> None:
+    script = Path("examples/analyze_event_state_regime.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--dataset-dir" in result.stdout
+    assert "--validation-dir" in result.stdout
+    assert "--event-feature-columns" in result.stdout
+    assert "--max-z-score" in result.stdout
+
+
+def test_event_state_exposure_schedule_builder_example_has_cli_help() -> None:
+    script = Path("examples/build_event_state_exposure_schedule.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--event-states-path" in result.stdout
+    assert "--lag-windows" in result.stdout
+    assert "--blocked-states" in result.stdout
+
+
+def test_joined_alpha_dataset_builder_example_has_cli_help() -> None:
+    script = Path("examples/build_joined_alpha_dataset.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--base-dataset-dir" in result.stdout
+    assert "--source" in result.stdout
+    assert "--overwrite" in result.stdout
+
+
+def test_joined_selection_residual_risk_analysis_example_has_cli_help() -> None:
+    script = Path("examples/analyze_joined_selection_residual_risk.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--validation-dir" in result.stdout
+    assert "--event-state-summary" in result.stdout
+    assert "--exposure-schedule" in result.stdout
 
 
 def test_policy_regime_gate_builder_example_has_cli_help() -> None:

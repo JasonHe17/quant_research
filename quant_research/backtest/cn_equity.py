@@ -367,17 +367,6 @@ def simulate_target_weight_executions(
                         capacity_notional=capacity_by_instrument.get(instrument_id),
                         config=config,
                     )
-                    if shares < desired_shares:
-                        _record_execution_diagnostic(
-                            diagnostics,
-                            exec_time=exec_time,
-                            instrument_id=instrument_id,
-                            reason="capacity_capped",
-                            target_weight=target_weight,
-                            desired_delta_value=delta_value,
-                            desired_shares=desired_shares,
-                            executable_shares=shares,
-                        )
                     if shares <= 0:
                         _record_execution_diagnostic(
                             diagnostics,
@@ -388,8 +377,21 @@ def simulate_target_weight_executions(
                             desired_delta_value=delta_value,
                             desired_shares=desired_shares,
                             executable_shares=0,
+                            reference_price=execution_price,
                         )
                         continue
+                    if shares < desired_shares:
+                        _record_execution_diagnostic(
+                            diagnostics,
+                            exec_time=exec_time,
+                            instrument_id=instrument_id,
+                            reason="capacity_capped",
+                            target_weight=target_weight,
+                            desired_delta_value=delta_value,
+                            desired_shares=desired_shares,
+                            executable_shares=shares,
+                            reference_price=execution_price,
+                        )
                     cost_price = execution_price * (1.0 + config.slippage_bps / 10_000.0)
                     notional = shares * cost_price
                     commission = commission_cost(notional, config)
@@ -469,6 +471,20 @@ def simulate_target_weight_executions(
                         capacity_notional=capacity_by_instrument.get(instrument_id),
                         config=config,
                     )
+                    if shares_to_sell <= 0:
+                        if before_capacity > 0:
+                            _record_execution_diagnostic(
+                                diagnostics,
+                                exec_time=exec_time,
+                                instrument_id=instrument_id,
+                                reason="capacity_zero",
+                                target_weight=target_weight,
+                                desired_delta_value=delta_value,
+                                desired_shares=before_capacity,
+                                executable_shares=0,
+                                reference_price=execution_price,
+                            )
+                        continue
                     if shares_to_sell < before_capacity:
                         _record_execution_diagnostic(
                             diagnostics,
@@ -479,19 +495,8 @@ def simulate_target_weight_executions(
                             desired_delta_value=delta_value,
                             desired_shares=before_capacity,
                             executable_shares=shares_to_sell,
+                            reference_price=execution_price,
                         )
-                    if shares_to_sell <= 0:
-                        _record_execution_diagnostic(
-                            diagnostics,
-                            exec_time=exec_time,
-                            instrument_id=instrument_id,
-                            reason="capacity_zero",
-                            target_weight=target_weight,
-                            desired_delta_value=delta_value,
-                            desired_shares=desired_sell_shares,
-                            executable_shares=0,
-                        )
-                        continue
                     sell_price = execution_price * (
                         1.0 - config.slippage_bps / 10_000.0
                     )
@@ -636,10 +641,55 @@ def target_weight_execution_diagnostics(
         if average_equity
         else 0.0,
     }
-    if execution_events is not None and not execution_events.empty:
-        for reason, count in execution_events["reason"].value_counts().items():
-            row[f"{reason}_event_count"] = int(count)
+    row.update(execution_event_constraint_counts(execution_events))
     return pd.DataFrame([row])
+
+
+def execution_event_constraint_counts(
+    execution_events: pd.DataFrame | None,
+) -> dict[str, int | float]:
+    """Summarize diagnostic execution events emitted during simulation."""
+
+    if execution_events is None or execution_events.empty:
+        return {}
+    if "reason" not in execution_events.columns:
+        return {}
+    reason_values = execution_events["reason"].astype("string")
+    reasons = reason_values.dropna().astype(str)
+    if reasons.empty:
+        return {}
+    counts: dict[str, int | float] = {
+        f"{reason}_event_count": int(count)
+        for reason, count in reasons.value_counts().items()
+    }
+    capacity_mask = reason_values.isin({"capacity_capped", "capacity_zero"}).fillna(
+        False
+    )
+    if not capacity_mask.any():
+        return counts
+    capacity_events = execution_events.loc[capacity_mask]
+    desired_shares = _numeric_event_series(capacity_events, "desired_shares").abs()
+    executable_shares = _numeric_event_series(
+        capacity_events, "executable_shares"
+    ).abs()
+    reference_price = _numeric_event_series(capacity_events, "reference_price").abs()
+    unfilled_shares = (desired_shares - executable_shares).clip(lower=0.0)
+    counts.update(
+        {
+            "capacity_limited_event_count": int(capacity_mask.sum()),
+            "capacity_desired_shares": int(desired_shares.sum()),
+            "capacity_executable_shares": int(executable_shares.sum()),
+            "capacity_unfilled_shares": int(unfilled_shares.sum()),
+            "capacity_desired_notional": float((desired_shares * reference_price).sum()),
+            "capacity_executable_notional": float(
+                (executable_shares * reference_price).sum()
+            ),
+            "capacity_unfilled_notional": float(
+                (unfilled_shares * reference_price).sum()
+            ),
+        }
+    )
+    return counts
 
 
 def execution_constraint_counts(frame: pd.DataFrame) -> dict[str, int]:
@@ -697,13 +747,13 @@ def empty_execution_constraint_counts() -> dict[str, int]:
 
 
 def merge_execution_constraint_counts(
-    totals: dict[str, int],
-    other: dict[str, int],
+    totals: dict[str, int | float],
+    other: dict[str, int | float],
 ) -> None:
     """Add count values from ``other`` into ``totals`` in place."""
 
     for key, value in other.items():
-        totals[key] += value
+        totals[key] = totals.get(key, 0) + value
 
 
 def positions_value(
@@ -989,6 +1039,7 @@ def _record_execution_diagnostic(
     desired_delta_value: float | None = None,
     desired_shares: int | None = None,
     executable_shares: int | None = None,
+    reference_price: float | None = None,
 ) -> None:
     if diagnostics is None:
         return
@@ -1001,6 +1052,7 @@ def _record_execution_diagnostic(
             "desired_delta_value": desired_delta_value,
             "desired_shares": desired_shares,
             "executable_shares": executable_shares,
+            "reference_price": reference_price,
         }
     )
 
@@ -1009,6 +1061,12 @@ def _sum_optional(frame: pd.DataFrame, column: str) -> float:
     if column not in frame.columns:
         return 0.0
     return float(frame[column].fillna(0.0).astype(float).sum())
+
+
+def _numeric_event_series(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(0.0, index=frame.index)
+    return pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
 
 
 def _concat_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:

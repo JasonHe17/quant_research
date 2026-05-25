@@ -325,6 +325,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
             "limit_up_bps": args.limit_up_bps,
             "limit_down_bps": args.limit_down_bps,
             "max_bar_turnover_participation": args.max_bar_turnover_participation,
+            "allow_same_bar_capacity": args.allow_same_bar_capacity,
             "data_access_mode": args.data_access_mode,
             "streaming_chunk": args.streaming_chunk,
             "streaming_chunk_padding_days": args.streaming_chunk_padding_days,
@@ -636,12 +637,15 @@ def _backtest_summary_row(
     metrics = payload.get("metrics", {})
     params = payload.get("params", {})
     diagnostics = payload.get("policy_diagnostics", {})
+    execution_counts = payload.get("execution_constraint_counts", {})
     if not isinstance(metrics, dict):
         metrics = {}
     if not isinstance(params, dict):
         params = {}
     if not isinstance(diagnostics, dict):
         diagnostics = {}
+    if not isinstance(execution_counts, dict):
+        execution_counts = {}
     return {
         "method": method,
         "policy": policy_name,
@@ -679,6 +683,25 @@ def _backtest_summary_row(
         "final_equity": metrics.get("final_equity"),
         "signal_count": payload.get("signal_count"),
         "execution_row_count": payload.get("execution_row_count"),
+        "capacity_limited_event_count": execution_counts.get(
+            "capacity_limited_event_count"
+        ),
+        "capacity_capped_event_count": execution_counts.get(
+            "capacity_capped_event_count"
+        ),
+        "capacity_zero_event_count": execution_counts.get("capacity_zero_event_count"),
+        "capacity_desired_shares": execution_counts.get("capacity_desired_shares"),
+        "capacity_executable_shares": execution_counts.get(
+            "capacity_executable_shares"
+        ),
+        "capacity_unfilled_shares": execution_counts.get("capacity_unfilled_shares"),
+        "capacity_desired_notional": execution_counts.get("capacity_desired_notional"),
+        "capacity_executable_notional": execution_counts.get(
+            "capacity_executable_notional"
+        ),
+        "capacity_unfilled_notional": execution_counts.get(
+            "capacity_unfilled_notional"
+        ),
         "planned_gross_turnover": diagnostics.get("planned_gross_turnover"),
         "average_target_gross_exposure": diagnostics.get("average_target_gross_exposure"),
         "average_dynamic_turnover_cap": diagnostics.get("average_dynamic_turnover_cap"),
@@ -950,6 +973,8 @@ def _backtest_command(
     for option, value in optional_floats.items():
         if value is not None:
             command.extend([option, str(value)])
+    if args.allow_same_bar_capacity:
+        command.append("--allow-same-bar-capacity")
     if spec.policy_gross_exposure_scale_path is not None:
         command.extend(
             [
@@ -1214,6 +1239,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--limit-up-bps", type=float, default=980.0)
     parser.add_argument("--limit-down-bps", type=float, default=980.0)
     parser.add_argument("--max-bar-turnover-participation", type=float)
+    parser.add_argument(
+        "--allow-same-bar-capacity",
+        action="store_true",
+        help=(
+            "Explicitly allow execution-bar turnover/volume to cap open-price "
+            "fills when --max-bar-turnover-participation is set."
+        ),
+    )
     parser.add_argument(
         "--data-access-mode",
         choices=("data_portal", "fast_parquet"),

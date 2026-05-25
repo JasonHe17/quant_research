@@ -47,6 +47,7 @@ _VALID_GROUPS = {
     "overnight_intraday_tug_of_war",
     "weak_tape_overnight_gap",
     "sell_pressure_quality_state",
+    "event_shock_proxy",
     "daily_moving_average",
     "all",
 }
@@ -92,6 +93,7 @@ class IntradayFeatureConfig:
     same_slot_memory_windows: tuple[int, ...] = (5, 20)
     weak_tape_gap_windows: tuple[int, ...] = (48,)
     sell_pressure_quality_windows: tuple[int, ...] = (48,)
+    event_shock_windows: tuple[int, ...] = (48,)
     daily_moving_average_windows: tuple[int, ...] = (5, 10, 20)
     daily_moving_average_pairs: tuple[tuple[int, int], ...] = ((5, 20), (10, 20))
     market_downside_beta_windows: tuple[int, ...] = (48,)
@@ -140,6 +142,7 @@ class IntradayFeatureConfig:
             ("same_slot_memory_windows", self.same_slot_memory_windows),
             ("weak_tape_gap_windows", self.weak_tape_gap_windows),
             ("sell_pressure_quality_windows", self.sell_pressure_quality_windows),
+            ("event_shock_windows", self.event_shock_windows),
             ("daily_moving_average_windows", self.daily_moving_average_windows),
             ("market_downside_beta_windows", self.market_downside_beta_windows),
             ("market_state_windows", self.market_state_windows),
@@ -212,6 +215,7 @@ def build_intraday_feature_matrix(
         "intraday_gap",
         "overnight_intraday_tug_of_war",
         "weak_tape_overnight_gap",
+        "event_shock_proxy",
     }:
         required.append("open_price")
     if groups & {"price_position", "range_volatility"}:
@@ -228,6 +232,7 @@ def build_intraday_feature_matrix(
         "liquidity_reliability_recovery_balance",
         "liquidity_impact",
         "vwap_deviation",
+        "event_shock_proxy",
     }:
         required.append("turnover")
     if groups & {
@@ -243,7 +248,11 @@ def build_intraday_feature_matrix(
         required.append("turnover")
     if groups & {"vwap_deviation"}:
         required.append("volume")
-    if groups & {"limit_pressure_resilience", "market_state"}:
+    if groups & {
+        "limit_pressure_resilience",
+        "market_state",
+        "event_shock_proxy",
+    }:
         required.extend(["limit_up_open", "limit_down_open"])
     _require_columns(bars, tuple(required))
     frame = bars.sort_values(["instrument_id", "bar_end_time"]).copy()
@@ -620,6 +629,117 @@ def build_intraday_feature_matrix(
                     gap_up_risk_column,
                     gap_up_fade_risk_column,
                     gap_down_recovery_risk_column,
+                ]
+            )
+    if "event_shock_proxy" in groups:
+        frame["open_price"] = frame["open_price"].astype(float)
+        frame["turnover"] = frame["turnover"].astype(float)
+        residual_return = _cross_sectional_residual_return(
+            one_bar_return,
+            frame["bar_end_time"],
+        )
+        market_return = one_bar_return.groupby(frame["bar_end_time"]).transform(
+            "median"
+        )
+        down_rate = one_bar_return.lt(0.0).where(one_bar_return.notna()).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        sync_down_pressure = market_return.clip(upper=0.0).abs() * down_rate
+
+        limit_up_rate = frame["limit_up_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_down_rate = frame["limit_down_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_up_diffusion = (
+            limit_up_rate
+            - _lagged_rolling_timestamp_state(
+                frame["bar_end_time"],
+                limit_up_rate,
+                1,
+            )
+        ).clip(lower=0.0)
+        limit_down_diffusion = (
+            limit_down_rate
+            - _lagged_rolling_timestamp_state(
+                frame["bar_end_time"],
+                limit_down_rate,
+                1,
+            )
+        ).clip(lower=0.0)
+        limit_diffusion_pressure = (
+            limit_up_rate
+            + limit_down_rate
+            + limit_up_diffusion
+            + limit_down_diffusion
+        )
+
+        log_turnover = np.log1p(frame["turnover"].clip(lower=0.0))
+        previous_close = grouped["close_price"].shift(1)
+        open_jump = frame["open_price"] / previous_close.where(
+            previous_close != 0.0
+        ) - 1.0
+        intraday_from_open = (
+            frame["close_price"] / frame["open_price"].where(frame["open_price"] != 0.0)
+            - 1.0
+        )
+        open_jump_magnitude = open_jump.abs()
+
+        for window in config.event_shock_windows:
+            sync_column = f"intraday_event_sync_down_resilience_5m_w{window}"
+            output[sync_column] = _rolling_weighted_mean(
+                residual_return,
+                sync_down_pressure,
+                frame["instrument_id"],
+                window,
+            )
+            limit_column = f"intraday_event_limit_diffusion_resilience_5m_w{window}"
+            output[limit_column] = _rolling_weighted_mean(
+                residual_return,
+                limit_diffusion_pressure,
+                frame["instrument_id"],
+                window,
+            )
+
+            turnover_mean = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values, window=window: values.shift(1)
+                .rolling(window, min_periods=window)
+                .mean()
+            )
+            turnover_std = log_turnover.groupby(frame["instrument_id"]).transform(
+                lambda values, window=window: values.shift(1)
+                .rolling(window, min_periods=window)
+                .std()
+            )
+            turnover_dislocation = (
+                (log_turnover - turnover_mean) / turnover_std.where(turnover_std != 0.0)
+            ).abs()
+            turnover_column = (
+                f"intraday_event_turnover_dislocation_recovery_5m_w{window}"
+            )
+            output[turnover_column] = _rolling_weighted_mean(
+                one_bar_return,
+                turnover_dislocation,
+                frame["instrument_id"],
+                window,
+            )
+
+            open_jump_column = (
+                f"intraday_event_open_jump_recovery_quality_5m_w{window}"
+            )
+            output[open_jump_column] = _rolling_weighted_mean(
+                intraday_from_open,
+                open_jump_magnitude,
+                frame["instrument_id"],
+                window,
+            )
+            feature_columns.extend(
+                [
+                    sync_column,
+                    limit_column,
+                    turnover_column,
+                    open_jump_column,
                 ]
             )
     if "daily_moving_average" in groups:
@@ -1094,6 +1214,31 @@ def _lagged_rolling_timestamp_state(
     )
     rolling_values = timestamp_values.shift(1).rolling(window, min_periods=window).mean()
     return timestamps.map(rolling_values)
+
+
+def _cross_sectional_residual_return(
+    returns: pd.Series,
+    timestamps: pd.Series,
+) -> pd.Series:
+    market_return = returns.groupby(timestamps).transform("median")
+    return returns - market_return
+
+
+def _rolling_weighted_mean(
+    values: pd.Series,
+    weights: pd.Series,
+    instruments: pd.Series,
+    window: int,
+) -> pd.Series:
+    aligned_weights = weights.where(values.notna())
+    weighted_values = values * aligned_weights
+    numerator = weighted_values.groupby(instruments).transform(
+        lambda series: series.rolling(window, min_periods=window).sum()
+    )
+    denominator = aligned_weights.groupby(instruments).transform(
+        lambda series: series.rolling(window, min_periods=window).sum()
+    )
+    return numerator / denominator.where(denominator != 0.0)
 
 
 def _add_daily_moving_average_features(

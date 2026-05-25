@@ -1175,6 +1175,7 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         limit_up_bps=None,
         limit_down_bps=None,
         max_bar_turnover_participation=None,
+        allow_same_bar_capacity=False,
         data_access_mode="data_portal",
         streaming_chunk="month",
         streaming_chunk_padding_days=0,

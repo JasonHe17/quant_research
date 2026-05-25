@@ -66,6 +66,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "overnight_intraday_tug_of_war",
             "weak_tape_overnight_gap",
             "sell_pressure_quality_state",
+            "event_shock_proxy",
             "daily_moving_average",
         ),
         reversal_lookback_bars=(1,),
@@ -97,6 +98,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         same_slot_memory_windows=(1,),
         weak_tape_gap_windows=(1,),
         sell_pressure_quality_windows=(3,),
+        event_shock_windows=(3,),
         daily_moving_average_windows=(2, 3),
         daily_moving_average_pairs=((2, 3),),
         market_state_windows=(3,),
@@ -147,6 +149,10 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_weak_tape_gap_up_risk_5m_w1" in features
     assert "intraday_sell_pressure_absorption_quality_5m_w3" in features
     assert "intraday_false_absorption_risk_5m_w3" in features
+    assert "intraday_event_sync_down_resilience_5m_w3" in features
+    assert "intraday_event_limit_diffusion_resilience_5m_w3" in features
+    assert "intraday_event_turnover_dislocation_recovery_5m_w3" in features
+    assert "intraday_event_open_jump_recovery_quality_5m_w3" in features
     assert "intraday_daily_ma_deviation_5m_d3" in features
     assert "intraday_daily_ma_spread_5m_s2_l3" in features
     assert features.loc[0, "intraday_bar_return_5m"] == pytest.approx(0.1)
@@ -224,6 +230,8 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_same_slot_residual_return_5m_d5" in features
     assert "intraday_overnight_intraday_disagreement_5m" in features
     assert "intraday_sell_pressure_absorption_quality_5m_w48" in features
+    assert "intraday_event_sync_down_resilience_5m_w48" in features
+    assert "intraday_event_open_jump_recovery_quality_5m_w48" in features
     assert "intraday_daily_ma_deviation_5m_d20" in features
     assert "intraday_daily_ma_ribbon_trend_score_5m" in features
     assert not features.empty
@@ -983,6 +991,80 @@ def test_market_state_features_broadcast_cross_sectional_risk_state() -> None:
     )
     assert values.loc[("a", "t2"), "market_state_weak_breadth_mean_5m_w2"] == (
         pytest.approx(0.25)
+    )
+
+
+def test_event_shock_proxy_combines_market_events_with_stock_recovery() -> None:
+    rows = []
+    closes = {
+        "a": [100.0, 90.0, 99.0, 99.0],
+        "b": [100.0, 95.0, 95.0, 104.5],
+    }
+    opens = {
+        "a": [100.0, 80.0, 100.0, 99.0],
+        "b": [100.0, 100.0, 94.0, 100.0],
+    }
+    turnovers = {
+        "a": [100.0, 200.0, 500.0, 200.0],
+        "b": [100.0, 300.0, 100.0, 500.0],
+    }
+    for instrument_id in ("a", "b"):
+        for index, close in enumerate(closes[instrument_id]):
+            rows.append(
+                {
+                    "instrument_id": instrument_id,
+                    "bar_end_time": f"t{index}",
+                    "open_price": opens[instrument_id][index],
+                    "close_price": close,
+                    "turnover": turnovers[instrument_id][index],
+                    "limit_up_open": False,
+                    "limit_down_open": index == 1,
+                }
+            )
+    bars = pd.DataFrame(rows)
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("event_shock_proxy",),
+            event_shock_windows=(2,),
+        ),
+    )
+
+    values = features.set_index(["instrument_id", "timestamp"])
+
+    sync_column = "intraday_event_sync_down_resilience_5m_w2"
+    limit_column = "intraday_event_limit_diffusion_resilience_5m_w2"
+    assert values.loc[("a", "t2"), sync_column] == pytest.approx(-0.025)
+    assert values.loc[("b", "t2"), sync_column] == pytest.approx(0.025)
+    assert values.loc[("a", "t2"), limit_column] == pytest.approx(-0.025)
+    assert values.loc[("b", "t2"), limit_column] == pytest.approx(0.025)
+
+    open_jump_column = "intraday_event_open_jump_recovery_quality_5m_w2"
+    a_t1_open_jump = abs(80.0 / 100.0 - 1.0)
+    a_t2_open_jump = abs(100.0 / 90.0 - 1.0)
+    a_t1_intraday = 90.0 / 80.0 - 1.0
+    a_t2_intraday = 99.0 / 100.0 - 1.0
+    expected_open_jump_recovery = (
+        a_t1_intraday * a_t1_open_jump + a_t2_intraday * a_t2_open_jump
+    ) / (a_t1_open_jump + a_t2_open_jump)
+    assert values.loc[("a", "t2"), open_jump_column] == pytest.approx(
+        expected_open_jump_recovery
+    )
+
+    turnover_column = "intraday_event_turnover_dislocation_recovery_5m_w2"
+    a_logs = [math.log1p(value) for value in turnovers["a"]]
+    a_t2_mean = (a_logs[0] + a_logs[1]) / 2.0
+    a_t2_std = pd.Series(a_logs[0:2]).std()
+    a_t2_dislocation = abs(a_logs[2] - a_t2_mean) / a_t2_std
+    a_t3_mean = (a_logs[1] + a_logs[2]) / 2.0
+    a_t3_std = pd.Series(a_logs[1:3]).std()
+    a_t3_dislocation = abs(a_logs[3] - a_t3_mean) / a_t3_std
+    expected_turnover_recovery = (
+        0.10 * a_t2_dislocation + 0.0 * a_t3_dislocation
+    ) / (a_t2_dislocation + a_t3_dislocation)
+    assert values.loc[("a", "t3"), turnover_column] == pytest.approx(
+        expected_turnover_recovery
     )
 
 

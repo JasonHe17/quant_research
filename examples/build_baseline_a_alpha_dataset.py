@@ -214,6 +214,7 @@ def _build_partition_dataset(
             same_slot_memory_windows=tuple(args.same_slot_memory_windows),
             weak_tape_gap_windows=tuple(args.weak_tape_gap_windows),
             sell_pressure_quality_windows=tuple(args.sell_pressure_quality_windows),
+            event_shock_windows=tuple(args.event_shock_windows),
             daily_moving_average_windows=tuple(args.daily_moving_average_windows),
             daily_moving_average_pairs=tuple(args.daily_moving_average_pairs),
             market_downside_beta_windows=tuple(args.market_downside_beta_windows),
@@ -471,6 +472,7 @@ def _write_summary(
             "same_slot_memory_windows": args.same_slot_memory_windows,
             "weak_tape_gap_windows": args.weak_tape_gap_windows,
             "sell_pressure_quality_windows": args.sell_pressure_quality_windows,
+            "event_shock_windows": args.event_shock_windows,
             "daily_moving_average_windows": args.daily_moving_average_windows,
             "daily_moving_average_pairs": [
                 list(pair) for pair in args.daily_moving_average_pairs
@@ -561,6 +563,7 @@ def _parse_args() -> argparse.Namespace:
             "overnight_intraday_tug_of_war",
             "weak_tape_overnight_gap",
             "sell_pressure_quality_state",
+            "event_shock_proxy",
             "daily_moving_average",
         ),
     )
@@ -689,6 +692,7 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         default=[48],
     )
+    parser.add_argument("--event-shock-windows", type=int, nargs="+", default=[48])
     parser.add_argument(
         "--daily-moving-average-windows",
         type=int,
@@ -841,6 +845,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--weak-tape-gap-windows values must be positive")
     if any(value <= 0 for value in args.sell_pressure_quality_windows):
         raise ValueError("--sell-pressure-quality-windows values must be positive")
+    if any(value <= 0 for value in args.event_shock_windows):
+        raise ValueError("--event-shock-windows values must be positive")
     if any(value <= 0 for value in args.daily_moving_average_windows):
         raise ValueError("--daily-moving-average-windows values must be positive")
     if any(short <= 0 or long <= 0 for short, long in args.daily_moving_average_pairs):
@@ -924,6 +930,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "same_slot_memory_windows": list(args.same_slot_memory_windows),
         "weak_tape_gap_windows": list(args.weak_tape_gap_windows),
         "sell_pressure_quality_windows": list(args.sell_pressure_quality_windows),
+        "event_shock_windows": list(args.event_shock_windows),
         "daily_moving_average_windows": list(args.daily_moving_average_windows),
         "daily_moving_average_pairs": [
             list(pair) for pair in args.daily_moving_average_pairs
@@ -1001,6 +1008,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *(window * 48 for window in args.same_slot_memory_windows),
                     *args.weak_tape_gap_windows,
                     *args.sell_pressure_quality_windows,
+                    *(window * 2 for window in args.event_shock_windows),
                     *(window * 48 for window in args.daily_moving_average_windows),
                     *args.market_downside_beta_windows,
                     *args.market_state_windows,

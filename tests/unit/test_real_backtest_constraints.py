@@ -23,7 +23,9 @@ from examples.run_baseline_a_real_backtest import (
     _add_execution_constraint_columns,
     _build_next_bar_executions,
     _build_reversal_signals,
+    _execution_event_constraint_counts,
     _execution_constraint_counts,
+    _merge_execution_constraint_counts,
     _load_bars_from_files,
     _minute_bar_files_for_range,
     _simulate,
@@ -309,6 +311,7 @@ def test_simulation_caps_trade_size_by_bar_turnover_participation() -> None:
         ]
     )
 
+    execution_events: list[dict[str, object]] = []
     trades, _, _, next_state = _simulate(
         executions,
         _params(
@@ -316,10 +319,18 @@ def test_simulation_caps_trade_size_by_bar_turnover_participation() -> None:
             max_bar_turnover_participation=0.05,
             allow_same_bar_capacity=True,
         ),
+        diagnostics=execution_events,
     )
+    counts = _execution_event_constraint_counts(pd.DataFrame(execution_events))
 
     assert list(trades["shares"]) == [500]
     assert next_state.cash == 95_000.0
+    assert counts["capacity_capped_event_count"] == 1
+    assert counts["capacity_limited_event_count"] == 1
+    assert counts["capacity_desired_shares"] == 10_000
+    assert counts["capacity_executable_shares"] == 500
+    assert counts["capacity_unfilled_shares"] == 9_500
+    assert counts["capacity_unfilled_notional"] == 95_000.0
 
 
 def test_open_execution_rejects_same_bar_capacity_without_explicit_policy() -> None:
@@ -328,6 +339,47 @@ def test_open_execution_rejects_same_bar_capacity_without_explicit_policy() -> N
             initial_cash=100_000.0,
             max_bar_turnover_participation=0.05,
         )
+
+
+def test_execution_event_counts_capacity_zero_without_duplicate_cap() -> None:
+    executions = pd.DataFrame(
+        [
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "buy",
+                "canonical_code": "600001.SH",
+                "open_price": 10.0,
+                "close_price": 10.0,
+                "turnover": 1_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 1.0,
+            },
+        ]
+    )
+    execution_events: list[dict[str, object]] = []
+
+    trades, _, _, next_state = _simulate(
+        executions,
+        _params(
+            initial_cash=100_000.0,
+            max_bar_turnover_participation=0.05,
+            allow_same_bar_capacity=True,
+        ),
+        diagnostics=execution_events,
+    )
+    counts = _execution_event_constraint_counts(pd.DataFrame(execution_events))
+
+    assert trades.empty
+    assert next_state.cash == 100_000.0
+    assert "capacity_capped_event_count" not in counts
+    assert counts["capacity_zero_event_count"] == 1
+    assert counts["capacity_limited_event_count"] == 1
+    assert counts["capacity_desired_shares"] == 10_000
+    assert counts["capacity_executable_shares"] == 0
+    assert counts["capacity_unfilled_shares"] == 10_000
+    assert counts["capacity_unfilled_notional"] == 100_000.0
 
 
 def test_simulation_sizes_open_execution_without_same_bar_close() -> None:
@@ -503,8 +555,37 @@ def test_execution_constraint_counts_include_targeted_limit_rows() -> None:
     )
 
     counts = _execution_constraint_counts(executions)
+    _merge_execution_constraint_counts(
+        counts,
+        {
+            "capacity_limited_event_count": 2,
+            "capacity_unfilled_notional": 123.5,
+        },
+    )
 
-    assert counts == {
+    assert counts["execution_row_count"] == 3
+    assert counts["non_tradable_row_count"] == 2
+    assert counts["limit_up_open_row_count"] == 1
+    assert counts["limit_down_open_row_count"] == 1
+    assert counts["positive_target_row_count"] == 2
+    assert counts["positive_target_non_tradable_row_count"] == 1
+    assert counts["positive_target_limit_up_open_row_count"] == 1
+    assert counts["positive_target_limit_down_open_row_count"] == 0
+    assert counts["capacity_limited_event_count"] == 2
+    assert counts["capacity_unfilled_notional"] == 123.5
+    assert {
+        key: counts[key]
+        for key in (
+            "execution_row_count",
+            "non_tradable_row_count",
+            "limit_up_open_row_count",
+            "limit_down_open_row_count",
+            "positive_target_row_count",
+            "positive_target_non_tradable_row_count",
+            "positive_target_limit_up_open_row_count",
+            "positive_target_limit_down_open_row_count",
+        )
+    } == {
         "execution_row_count": 3,
         "non_tradable_row_count": 2,
         "limit_up_open_row_count": 1,

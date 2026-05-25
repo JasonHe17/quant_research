@@ -33,6 +33,7 @@ from run_baseline_a_real_backtest import (
     _append_frame_csv,
     _empty_execution_constraint_counts,
     _empty_trade_metric_totals,
+    _execution_event_constraint_counts,
     _execution_constraint_counts,
     _final_positions,
     _load_bars,
@@ -92,6 +93,7 @@ class TreeScoreBacktestParams:
     limit_up_bps: float | None
     limit_down_bps: float | None
     max_bar_turnover_participation: float | None
+    allow_same_bar_capacity: bool
     data_access_mode: str
     streaming_chunk: str
     streaming_chunk_padding_days: int
@@ -153,6 +155,7 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         limit_up_bps=params.limit_up_bps,
         limit_down_bps=params.limit_down_bps,
         max_bar_turnover_participation=params.max_bar_turnover_participation,
+        allow_same_bar_capacity=params.allow_same_bar_capacity,
         data_access_mode=params.data_access_mode,
         streaming_chunk=params.streaming_chunk,
         streaming_chunk_padding_days=params.streaming_chunk_padding_days,
@@ -179,7 +182,16 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
     if executions.empty:
         raise ValueError("no executable tree score signals after next-bar shift")
     execution_constraint_counts = _execution_constraint_counts(executions)
-    trades, equity_curve, _, state = _simulate(executions, backtest_params)
+    execution_events: list[dict[str, object]] = []
+    trades, equity_curve, _, state = _simulate(
+        executions,
+        backtest_params,
+        diagnostics=execution_events,
+    )
+    _merge_execution_constraint_counts(
+        execution_constraint_counts,
+        _execution_event_constraint_counts(pd.DataFrame(execution_events)),
+    )
     if not trades.empty:
         _append_frame_csv(trades, params.output_dir / "trades.csv")
     if not equity_curve.empty:
@@ -247,6 +259,7 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "limit_up_bps": params.limit_up_bps,
             "limit_down_bps": params.limit_down_bps,
             "max_bar_turnover_participation": params.max_bar_turnover_participation,
+            "allow_same_bar_capacity": params.allow_same_bar_capacity,
             "data_access_mode": params.data_access_mode,
             "streaming_chunk": params.streaming_chunk,
             "streaming_chunk_padding_days": params.streaming_chunk_padding_days,
@@ -344,10 +357,16 @@ def _run_tree_score_backtest_streaming(
             execution_constraint_counts,
             _execution_constraint_counts(executions),
         )
+        period_execution_events: list[dict[str, object]] = []
         period_trades, period_equity, _, state = _simulate(
             executions,
             backtest_params,
             state=state,
+            diagnostics=period_execution_events,
+        )
+        _merge_execution_constraint_counts(
+            execution_constraint_counts,
+            _execution_event_constraint_counts(pd.DataFrame(period_execution_events)),
         )
         if not period_trades.empty:
             trade_count += len(period_trades)
@@ -424,10 +443,16 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
             execution_constraint_counts,
             _execution_constraint_counts(executions),
         )
+        period_execution_events: list[dict[str, object]] = []
         period_trades, period_equity, _, state = _simulate(
             executions,
             backtest_params,
             state=state,
+            diagnostics=period_execution_events,
+        )
+        _merge_execution_constraint_counts(
+            execution_constraint_counts,
+            _execution_event_constraint_counts(pd.DataFrame(period_execution_events)),
         )
         if not period_trades.empty:
             trade_count += len(period_trades)
@@ -1365,6 +1390,7 @@ def _summary_payload(
             "limit_up_bps": params.limit_up_bps,
             "limit_down_bps": params.limit_down_bps,
             "max_bar_turnover_participation": params.max_bar_turnover_participation,
+            "allow_same_bar_capacity": params.allow_same_bar_capacity,
             "data_access_mode": params.data_access_mode,
             "streaming_chunk": params.streaming_chunk,
             "streaming_chunk_padding_days": params.streaming_chunk_padding_days,
@@ -1714,6 +1740,15 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--limit-down-bps", type=float)
     parser.add_argument("--max-bar-turnover-participation", type=float)
     parser.add_argument(
+        "--allow-same-bar-capacity",
+        action="store_true",
+        help=(
+            "Explicitly allow turnover/volume from the execution bar to cap "
+            "open-price fills. This is an optimistic bar-volume execution "
+            "assumption and is disabled by default."
+        ),
+    )
+    parser.add_argument(
         "--data-access-mode",
         choices=("data_portal", "fast_parquet"),
         default="data_portal",
@@ -1872,6 +1907,7 @@ def _parse_args() -> TreeScoreBacktestParams:
         limit_up_bps=args.limit_up_bps,
         limit_down_bps=args.limit_down_bps,
         max_bar_turnover_participation=args.max_bar_turnover_participation,
+        allow_same_bar_capacity=args.allow_same_bar_capacity,
         data_access_mode=args.data_access_mode,
         streaming_chunk=args.streaming_chunk,
         streaming_chunk_padding_days=args.streaming_chunk_padding_days,

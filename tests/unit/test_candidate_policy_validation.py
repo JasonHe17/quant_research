@@ -702,6 +702,7 @@ def _validation_args(**overrides: object) -> object:
         "scenario_workers": 1,
         "scenario_memory_budget_gb": 0.0,
         "max_bar_turnover_participation": None,
+        "allow_same_bar_capacity": False,
         "max_full_turnover": 160.0,
         "resume_existing": True,
         "dry_run": False,

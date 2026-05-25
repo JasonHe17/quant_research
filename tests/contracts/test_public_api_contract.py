@@ -11,6 +11,14 @@ from quant_research import DataPortal, DataPortalConfig
 from quant_research.data import CacheManifest, CachePolicy
 from quant_research.data.adapters import QuantDbAdapter
 from quant_research.experiments import ExperimentConfig
+from quant_research.portfolio import (
+    AllocatorMonitoringReport,
+    AllocatorRegistry,
+    AllocatorRegistryEntry,
+    generate_allocator_monitoring_report,
+    load_allocator_registry,
+    validate_allocator_registry,
+)
 
 
 def test_data_portal_exposes_v0_methods() -> None:
@@ -121,6 +129,20 @@ def test_experiment_config_requires_data_snapshot() -> None:
 
     with pytest.raises(ValueError, match="data_snapshot"):
         ExperimentConfig(name="bad", data_snapshot="")
+
+
+def test_allocator_registry_public_api_is_available() -> None:
+    registry = load_allocator_registry("configs/allocators/candidate_allocator_registry.json")
+    report = validate_allocator_registry(registry)
+    monitoring = generate_allocator_monitoring_report(
+        registry,
+        allocator_id="event_limit_diffusion_complementary_health_shrink_48b",
+    )
+
+    assert isinstance(registry, AllocatorRegistry)
+    assert isinstance(registry.allocators[0], AllocatorRegistryEntry)
+    assert isinstance(monitoring, AllocatorMonitoringReport)
+    assert report.summary["allocator_count"] >= 1
 
 
 @dataclass(frozen=True, slots=True)

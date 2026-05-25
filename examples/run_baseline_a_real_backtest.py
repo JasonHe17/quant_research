@@ -25,6 +25,7 @@ from quant_research.backtest import (
     TargetWeightSimulationState,
     add_cn_equity_execution_columns,
     empty_execution_constraint_counts as framework_empty_execution_constraint_counts,
+    execution_event_constraint_counts as framework_execution_event_constraint_counts,
     execution_constraint_counts as framework_execution_constraint_counts,
     final_positions as framework_final_positions,
     merge_execution_constraint_counts as framework_merge_execution_constraint_counts,
@@ -144,10 +145,16 @@ def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
             execution_constraint_counts,
             _execution_constraint_counts(executions),
         )
+        period_execution_events: list[dict[str, object]] = []
         period_trades, period_equity, _, state = _simulate(
             executions,
             params,
             state=state,
+            diagnostics=period_execution_events,
+        )
+        _merge_execution_constraint_counts(
+            execution_constraint_counts,
+            _execution_event_constraint_counts(pd.DataFrame(period_execution_events)),
         )
         if not period_trades.empty:
             trade_count += len(period_trades)
@@ -202,7 +209,16 @@ def run_backtest(bars: pd.DataFrame, params: BacktestParams) -> dict[str, object
     if executions.empty:
         raise ValueError("no executable signals after lookback and next-bar shift")
     execution_constraint_counts = _execution_constraint_counts(executions)
-    trades, equity_curve, final_positions, _ = _simulate(executions, params)
+    execution_events: list[dict[str, object]] = []
+    trades, equity_curve, final_positions, _ = _simulate(
+        executions,
+        params,
+        diagnostics=execution_events,
+    )
+    _merge_execution_constraint_counts(
+        execution_constraint_counts,
+        _execution_event_constraint_counts(pd.DataFrame(execution_events)),
+    )
     equity_values = [params.initial_cash] + equity_curve["equity"].astype(float).tolist()
     metrics = {
         "total_return": total_return(params.initial_cash, equity_values[-1]),
@@ -653,11 +669,13 @@ def _simulate(
     params: BacktestParams,
     *,
     state: SimulationState | None = None,
+    diagnostics: list[dict[str, object]] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, SimulationState]:
     return simulate_target_weight_executions(
         executions,
         _execution_config_from_params(params),
         state=state,
+        diagnostics=diagnostics,
     )
 
 
@@ -679,13 +697,19 @@ def _execution_constraint_counts(frame: pd.DataFrame) -> dict[str, int]:
     return framework_execution_constraint_counts(frame)
 
 
+def _execution_event_constraint_counts(
+    execution_events: pd.DataFrame | None,
+) -> dict[str, int | float]:
+    return framework_execution_event_constraint_counts(execution_events)
+
+
 def _empty_execution_constraint_counts() -> dict[str, int]:
     return framework_empty_execution_constraint_counts()
 
 
 def _merge_execution_constraint_counts(
-    totals: dict[str, int],
-    other: dict[str, int],
+    totals: dict[str, int | float],
+    other: dict[str, int | float],
 ) -> None:
     framework_merge_execution_constraint_counts(totals, other)
 

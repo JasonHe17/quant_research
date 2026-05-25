@@ -86,7 +86,8 @@ conda run -n quant python examples/analyze_framework_v1_acceptance.py \
 ```
 
 Before adding or promoting factors, validate the factor registry and render a
-candidate review:
+candidate review. Candidate allocators have a separate registry because they
+combine multiple factor legs, risk controls, and execution-policy settings:
 
 ```bash
 conda run -n quant python examples/validate_factor_registry.py \
@@ -94,10 +95,46 @@ conda run -n quant python examples/validate_factor_registry.py \
   --output-dir runs/factor_registry_validation/current \
   --enforce-clean
 
+conda run -n quant python examples/validate_allocator_registry.py \
+  --registry configs/allocators/candidate_allocator_registry.json \
+  --factor-registry configs/factors/factor_registry.json \
+  --output-dir runs/allocator_registry_validation/current \
+  --enforce-clean
+
+conda run -n quant python examples/run_allocator_validation.py \
+  --allocator-id event_limit_diffusion_complementary_health_shrink_48b \
+  --dry-run \
+  --resume-existing
+
+conda run -n quant python examples/generate_allocator_monitoring_report.py \
+  --allocator-id event_limit_diffusion_complementary_health_shrink_48b \
+  --output-dir runs/allocator_monitoring/current \
+  --append-history \
+  --enforce-no-failures
+
+conda run -n quant python examples/run_allocator_daily_monitoring.py \
+  --allocator-id event_limit_diffusion_complementary_health_shrink_48b \
+  --run-id 2026-05-25 \
+  --enforce-no-failures
+
 conda run -n quant python examples/run_factor_candidate_review.py \
   --factor-id intraday_volatility_5m_w24 \
   --output-dir runs/factor_candidate_reviews/intraday_volatility_5m_w24
 ```
+
+Allocator registry validation also checks structured capacity monitoring when
+an allocator is tagged `capacity_checked`. The monitor is warning-only: it
+validates that 2%/5% bar-participation diagnostic summaries exist and stay
+inside declared thresholds, but it does not retune weights, cadence, or target
+exposure.
+The monitoring report can append one row per run to
+`runs/allocator_monitoring/history.csv`; `run_allocator_daily_monitoring.py`
+uses a dated output directory under `runs/allocator_monitoring/daily/` and an
+independent daily history ledger by default. Daily monitoring rows include
+`run_id` and `mode`, and rerunning the same allocator/run_id replaces that row
+instead of counting a retry as a new warning. Sustained warning enforcement is
+separate from single-run failure enforcement so active but expected controls
+can be reviewed without changing the allocator.
 
 For full old-factor compatibility checks after framework changes, use the
 legacy revalidation wrapper. It rebuilds the shared benchmark, produces the

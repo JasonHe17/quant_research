@@ -242,12 +242,12 @@ def _review_checks(
         ),
         _check(
             "portfolio_validation_present",
-            "pass" if portfolio_validation else "pending",
+            _portfolio_validation_check_status(portfolio_validation),
             {
                 "provided": bool(portfolio_validation),
-                "overall_status": (portfolio_validation or {})
-                .get("validation", {})
-                .get("overall_status"),
+                "overall_status": _portfolio_validation_overall_status(
+                    portfolio_validation
+                ),
             },
         ),
     ]
@@ -287,6 +287,33 @@ def _portfolio_validation_summary(
         "warning_count": None,
         "result_count": 0,
     }
+
+
+def _portfolio_validation_check_status(
+    portfolio_validation: dict[str, Any] | None,
+) -> str:
+    if not portfolio_validation:
+        return "pending"
+    overall_status = _portfolio_validation_overall_status(portfolio_validation)
+    if overall_status == "fail":
+        return "fail"
+    if overall_status == "warn":
+        return "warn"
+    return "pass"
+
+
+def _portfolio_validation_overall_status(
+    portfolio_validation: dict[str, Any] | None,
+) -> str | None:
+    if not portfolio_validation:
+        return None
+    if "validation" in portfolio_validation:
+        validation = portfolio_validation.get("validation", {})
+        if isinstance(validation, dict) and validation.get("overall_status") is not None:
+            return str(validation.get("overall_status"))
+    if "backtest_summary" in portfolio_validation or "methods" in portfolio_validation:
+        return _candidate_portfolio_summary(portfolio_validation).get("overall_status")
+    return None
 
 
 def _policy_validation_summary(portfolio_validation: dict[str, Any]) -> dict[str, Any]:

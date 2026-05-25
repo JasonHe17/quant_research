@@ -30,8 +30,35 @@ from quant_research.portfolio.risk import (
     build_rolling_regime_gate,
 )
 from quant_research.portfolio.t1 import apply_cn_t1_constraints
+from quant_research.portfolio.allocator_registry import (
+    AllocatorRegistry,
+    AllocatorRegistryEntry,
+    AllocatorRegistryIssue,
+    AllocatorRegistryValidationReport,
+    load_allocator_registry,
+    render_allocator_registry_markdown,
+    validate_allocator_registry,
+    write_allocator_registry_report,
+)
+from quant_research.portfolio.allocator_monitoring import (
+    AllocatorMonitoringReport,
+    allocator_monitoring_history_row,
+    allocator_monitoring_history_status,
+    append_allocator_monitoring_history,
+    generate_allocator_monitoring_report,
+    render_allocator_monitoring_markdown,
+    write_allocator_monitoring_report,
+)
 
 __all__ = [
+    "AllocatorMonitoringReport",
+    "AllocatorRegistry",
+    "AllocatorRegistryEntry",
+    "AllocatorRegistryIssue",
+    "AllocatorRegistryValidationReport",
+    "allocator_monitoring_history_row",
+    "allocator_monitoring_history_status",
+    "append_allocator_monitoring_history",
     "PortfolioConfig",
     "PortfolioConstructionResult",
     "PortfolioConstructor",
@@ -51,7 +78,14 @@ __all__ = [
     "build_score_forecast_calibration_from_observations",
     "build_score_forecast_calibration_from_partitions",
     "build_rolling_regime_gate",
+    "generate_allocator_monitoring_report",
     "load_candidate_factors",
+    "load_allocator_registry",
+    "render_allocator_monitoring_markdown",
+    "render_allocator_registry_markdown",
     "score_forecast_calibration_observations",
+    "validate_allocator_registry",
+    "write_allocator_monitoring_report",
+    "write_allocator_registry_report",
     "write_score_partitions",
 ]

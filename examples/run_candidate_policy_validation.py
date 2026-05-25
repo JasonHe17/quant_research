@@ -405,6 +405,8 @@ def _scenario_command(
     for option, value in optional_floats.items():
         if value is not None:
             command.extend([option, str(value)])
+    if args.allow_same_bar_capacity:
+        command.append("--allow-same-bar-capacity")
     command.extend(["--policy-turnover-budget-period", args.policy_turnover_budget_period])
     if args.factor_max_weight is not None:
         command.extend(["--factor-max-weight", str(args.factor_max_weight)])
@@ -1353,6 +1355,7 @@ def _validation_summary(
             "factor_health_spread_ceiling": args.factor_health_spread_ceiling,
             "score_diagnostics_top_n": args.score_diagnostics_top_n,
             "max_bar_turnover_participation": args.max_bar_turnover_participation,
+            "allow_same_bar_capacity": args.allow_same_bar_capacity,
             "scenario_workers": args.scenario_workers,
             "scenario_memory_budget_gb": args.scenario_memory_budget_gb,
         },
@@ -1657,7 +1660,7 @@ def _write_summary(output_dir: Path, summary: dict[str, Any]) -> None:
     )
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset-dir",
@@ -1903,11 +1906,19 @@ def _parse_args() -> argparse.Namespace:
         help="memory budget for concurrent scenarios; 0 auto-detects available memory",
     )
     parser.add_argument("--max-bar-turnover-participation", type=float)
+    parser.add_argument(
+        "--allow-same-bar-capacity",
+        action="store_true",
+        help=(
+            "Pass through the explicit same-bar turnover/volume capacity "
+            "assumption to score backtests."
+        ),
+    )
     parser.add_argument("--max-full-turnover", type=float, default=160.0)
     parser.add_argument("--resume-existing", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--enforce-gates", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.primary_method not in args.methods:
         raise ValueError("--primary-method must be included in --methods")
     if args.top_n <= 0:

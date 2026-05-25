@@ -210,6 +210,7 @@ def test_factor_candidate_review_summarizes_candidate_portfolio_backtest() -> No
     )
 
     summary = review["portfolio_validation"]
+    assert review["status"] == "blocked"
     assert summary["summary_type"] == "candidate_factor_portfolio"
     assert summary["overall_status"] == "fail"
     assert summary["result_count"] == 1

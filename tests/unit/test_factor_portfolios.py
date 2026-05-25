@@ -677,6 +677,7 @@ def test_candidate_factor_policy_set_rejects_unknown_filter() -> None:
 def test_candidate_factor_backtest_command_includes_policy_args(tmp_path: Path) -> None:
     args = _portfolio_args(
         max_bar_turnover_participation=0.05,
+        allow_same_bar_capacity=True,
         policy_total_gross_turnover_budget=120.0,
         policy_turnover_budget_period="month",
         policy_turnover_budget_pacing=1.25,
@@ -713,6 +714,7 @@ def test_candidate_factor_backtest_command_includes_policy_args(tmp_path: Path) 
     assert command[command.index("--policy-turnover-budget-period") + 1] == "month"
     assert command[command.index("--policy-turnover-budget-pacing") + 1] == "1.25"
     assert command[command.index("--max-bar-turnover-participation") + 1] == "0.05"
+    assert "--allow-same-bar-capacity" in command
 
 
 def test_candidate_factor_backtest_jobs_use_nested_policy_paths(tmp_path: Path) -> None:
@@ -814,6 +816,17 @@ def test_candidate_factor_backtest_summary_rows_flatten_nested_results() -> None
                     },
                     "signal_count": 1323,
                     "execution_row_count": 904224,
+                    "execution_constraint_counts": {
+                        "capacity_limited_event_count": 7,
+                        "capacity_capped_event_count": 5,
+                        "capacity_zero_event_count": 2,
+                        "capacity_desired_shares": 10_000,
+                        "capacity_executable_shares": 8_000,
+                        "capacity_unfilled_shares": 2_000,
+                        "capacity_desired_notional": 100_000.0,
+                        "capacity_executable_notional": 80_000.0,
+                        "capacity_unfilled_notional": 20_000.0,
+                    },
                     "policy_diagnostics": {
                         "planned_gross_turnover": 54.4,
                         "average_target_gross_exposure": 0.74,
@@ -865,6 +878,15 @@ def test_candidate_factor_backtest_summary_rows_flatten_nested_results() -> None
             "final_equity": 1_079_000,
             "signal_count": 1323,
             "execution_row_count": 904224,
+            "capacity_limited_event_count": 7,
+            "capacity_capped_event_count": 5,
+            "capacity_zero_event_count": 2,
+            "capacity_desired_shares": 10_000,
+            "capacity_executable_shares": 8_000,
+            "capacity_unfilled_shares": 2_000,
+            "capacity_desired_notional": 100_000.0,
+            "capacity_executable_notional": 80_000.0,
+            "capacity_unfilled_notional": 20_000.0,
             "planned_gross_turnover": 54.4,
             "average_target_gross_exposure": 0.74,
             "average_dynamic_turnover_cap": 0.4,
@@ -1003,6 +1025,7 @@ def _portfolio_args(**overrides: object) -> object:
         "limit_up_bps": 980.0,
         "limit_down_bps": 980.0,
         "max_bar_turnover_participation": None,
+        "allow_same_bar_capacity": False,
         "data_access_mode": "fast_parquet",
         "streaming_chunk": "month",
         "streaming_chunk_padding_days": 10,
