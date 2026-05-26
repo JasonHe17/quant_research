@@ -415,6 +415,45 @@ report = MetricsEngine(
 )
 ```
 
+## Decision Review Reports
+
+Tree-score backtests can write a compact decision trace and render a static HTML
+report for manual review. The report is designed for strategies that move across
+a wide universe: it summarizes the full run, shows an active-instrument heatmap,
+renders per-symbol K-line windows around execution bars, surfaces high-turnover
+rebalance timestamps, and lists the largest decisions by target-weight change.
+
+```bash
+conda run -n quant python examples/run_tree_score_backtest.py \
+  --predictions-path runs/example_scores \
+  --start 2024-01-02 \
+  --end 2024-01-31 \
+  --trade-policy rank_buffer_drop \
+  --output-dir runs/tree_score_backtest/review \
+  --write-decision-trace \
+  --render-decision-report
+```
+
+When enabled, the output directory includes:
+
+- `decision_trace.parquet`: one row per policy decision with action, current
+  weight, target weight, score, rank, reason, and constraint flags.
+- `decision_market_context.parquet`: decision rows joined to the next execution
+  bar, including canonical code, OHLC, volume, turnover, tradability flags, and
+  realized trade summary.
+- `decision_kline_windows.parquet`: one K-line window per reviewable decision,
+  centered on the execution bar and annotated with buy/sell marker metadata.
+- `policy_diagnostics.parquet`: per-rebalance aggregate policy diagnostics.
+- `order_intents.parquet`: generated order intents before execution.
+- `decision_report.html`: self-contained static review report.
+
+Use `--decision-report-max-instruments`, `--decision-report-max-timestamps`, and
+`--decision-report-max-decisions` to control report density without changing the
+underlying trace artifact.
+Use `--decision-report-kline-pre-bars`, `--decision-report-kline-post-bars`, and
+`--decision-report-max-kline-charts-per-timestamp` to tune the interactive
+K-line review panel.
+
 ## Current Scope
 
 This repository has the first `DataPortal v0` adapter. The next implementation

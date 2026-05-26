@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import sys
@@ -18,6 +18,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from quant_research.metrics.performance import total_return
 from quant_research.metrics.risk import max_drawdown
+from quant_research.backtest.decision_report import (
+    DECISION_TRACE_COLUMNS,
+    DecisionReportConfig,
+    render_decision_report,
+)
 from quant_research.strategies import (
     CostAwareOptimizerConfig,
     CostAwareOptimizerPolicy,
@@ -98,6 +103,14 @@ class TreeScoreBacktestParams:
     streaming_chunk: str
     streaming_chunk_padding_days: int
     output_dir: Path
+    write_decision_trace: bool = False
+    render_decision_report: bool = False
+    decision_report_max_instruments: int = 60
+    decision_report_max_timestamps: int = 80
+    decision_report_max_decisions: int = 500
+    decision_report_kline_pre_bars: int = 12
+    decision_report_kline_post_bars: int = 12
+    decision_report_max_kline_charts_per_timestamp: int = 50
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +129,10 @@ class TargetWeightBuildResult:
     policy_state: pd.DataFrame
     budget_state: PolicyBudgetState
     diagnostics: pd.DataFrame
+    decision_trace: pd.DataFrame = field(default_factory=pd.DataFrame)
+    order_intents: pd.DataFrame = field(default_factory=pd.DataFrame)
+    market_context: pd.DataFrame = field(default_factory=pd.DataFrame)
+    kline_windows: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,7 +178,16 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         streaming_chunk_padding_days=params.streaming_chunk_padding_days,
     )
     params.output_dir.mkdir(parents=True, exist_ok=True)
-    for filename in ("trades.csv", "equity_curve.csv"):
+    for filename in (
+        "trades.csv",
+        "equity_curve.csv",
+        "decision_trace.parquet",
+        "decision_market_context.parquet",
+        "decision_kline_windows.parquet",
+        "policy_diagnostics.parquet",
+        "order_intents.parquet",
+        "decision_report.html",
+    ):
         path = params.output_dir / filename
         if path.exists():
             path.unlink()
@@ -171,7 +197,11 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         raise ValueError("drawdown brake requires --data-access-mode fast_parquet")
 
     ranked_signals = _load_ranked_score_signals(params)
-    target_build = _build_target_weights(ranked_signals, params)
+    target_build = _build_target_weights(
+        ranked_signals,
+        params,
+        include_decision_trace=_include_decision_trace(params),
+    )
     signals = target_build.target_weights
     if signals.empty:
         raise ValueError("no score signals loaded for requested period")
@@ -187,6 +217,18 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         executions,
         backtest_params,
         diagnostics=execution_events,
+    )
+    market_context = _decision_market_context(
+        target_build.decision_trace,
+        executions,
+        trades,
+    )
+    kline_windows = _decision_kline_windows(
+        target_build.decision_trace,
+        bars,
+        market_context,
+        pre_bars=params.decision_report_kline_pre_bars,
+        post_bars=params.decision_report_kline_post_bars,
     )
     _merge_execution_constraint_counts(
         execution_constraint_counts,
@@ -263,6 +305,16 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "data_access_mode": params.data_access_mode,
             "streaming_chunk": params.streaming_chunk,
             "streaming_chunk_padding_days": params.streaming_chunk_padding_days,
+            "write_decision_trace": params.write_decision_trace,
+            "render_decision_report": params.render_decision_report,
+            "decision_report_max_instruments": params.decision_report_max_instruments,
+            "decision_report_max_timestamps": params.decision_report_max_timestamps,
+            "decision_report_max_decisions": params.decision_report_max_decisions,
+            "decision_report_kline_pre_bars": params.decision_report_kline_pre_bars,
+            "decision_report_kline_post_bars": params.decision_report_kline_post_bars,
+            "decision_report_max_kline_charts_per_timestamp": (
+                params.decision_report_max_kline_charts_per_timestamp
+            ),
         },
         "bar_count": int(len(bars)),
         "signal_count": int(len(signals)),
@@ -278,6 +330,11 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         "trades": trades,
         "equity_curve": equity_curve,
         "final_positions": final_positions,
+        "policy_diagnostics": target_build.diagnostics,
+        "decision_trace": target_build.decision_trace,
+        "order_intents": target_build.order_intents,
+        "market_context": market_context,
+        "kline_windows": kline_windows,
     }
 
 
@@ -309,6 +366,12 @@ def _run_tree_score_backtest_streaming(
     policy_state = empty_portfolio_state()
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
+    decision_traces: list[pd.DataFrame] = []
+    order_intents: list[pd.DataFrame] = []
+    market_contexts: list[pd.DataFrame] = []
+    kline_windows: list[pd.DataFrame] = []
+    kline_windows: list[pd.DataFrame] = []
+    include_decision_trace = _include_decision_trace(params)
     for work_unit in _streaming_work_units(backtest_params):
         bars = _load_bars_from_files(
             backtest_params,
@@ -337,12 +400,17 @@ def _run_tree_score_backtest_streaming(
             params,
             policy_state=policy_state,
             budget_state=budget_state,
+            include_decision_trace=include_decision_trace,
         )
         signals = target_build.target_weights
         policy_state = target_build.policy_state
         budget_state = target_build.budget_state
         if not target_build.diagnostics.empty:
             policy_diagnostics.append(target_build.diagnostics)
+        if include_decision_trace and not target_build.decision_trace.empty:
+            decision_traces.append(target_build.decision_trace)
+        if include_decision_trace and not target_build.order_intents.empty:
+            order_intents.append(target_build.order_intents)
         total_signals += len(signals)
         executions = _build_tree_score_executions(
             bars,
@@ -364,6 +432,22 @@ def _run_tree_score_backtest_streaming(
             state=state,
             diagnostics=period_execution_events,
         )
+        if include_decision_trace and not target_build.decision_trace.empty:
+            period_context = _decision_market_context(
+                target_build.decision_trace,
+                executions,
+                period_trades,
+            )
+            market_contexts.append(period_context)
+            kline_windows.append(
+                _decision_kline_windows(
+                    target_build.decision_trace,
+                    bars,
+                    period_context,
+                    pre_bars=params.decision_report_kline_pre_bars,
+                    post_bars=params.decision_report_kline_post_bars,
+                )
+            )
         _merge_execution_constraint_counts(
             execution_constraint_counts,
             _execution_event_constraint_counts(pd.DataFrame(period_execution_events)),
@@ -406,6 +490,11 @@ def _run_tree_score_backtest_streaming(
         "trades": pd.DataFrame(),
         "equity_curve": pd.DataFrame(),
         "final_positions": final_positions,
+        "policy_diagnostics": _concat_policy_diagnostics(policy_diagnostics),
+        "decision_trace": _concat_optional_frames(decision_traces),
+        "order_intents": _concat_optional_frames(order_intents),
+        "market_context": _concat_optional_frames(market_contexts),
+        "kline_windows": _concat_optional_frames(kline_windows),
     }
 
 
@@ -430,14 +519,18 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
     policy_state = empty_portfolio_state()
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
+    decision_traces: list[pd.DataFrame] = []
+    order_intents: list[pd.DataFrame] = []
+    market_contexts: list[pd.DataFrame] = []
+    include_decision_trace = _include_decision_trace(params)
     peak_equity = float(params.initial_cash)
     last_simulated_time: object | None = None
     scale_by_timestamp = _load_policy_gross_exposure_schedule(params)
 
-    def run_execution_batch(executions: pd.DataFrame) -> None:
+    def run_execution_batch(executions: pd.DataFrame) -> pd.DataFrame:
         nonlocal state, trade_count, total_executions
         if executions.empty:
-            return
+            return pd.DataFrame()
         total_executions += len(executions)
         _merge_execution_constraint_counts(
             execution_constraint_counts,
@@ -464,6 +557,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
         if not period_equity.empty:
             equity_values.extend(period_equity["equity"].astype(float).tolist())
             _append_frame_csv(period_equity, params.output_dir / "equity_curve.csv")
+        return period_trades
 
     for work_unit in _streaming_work_units(backtest_params):
         bars = _load_bars_from_files(
@@ -519,12 +613,17 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
                 budget_state=budget_state,
                 gross_exposure_scale_cap=drawdown_brake_scale,
                 scale_by_timestamp=scale_by_timestamp,
+                include_decision_trace=include_decision_trace,
             )
             signals = target_build.target_weights
             policy_state = target_build.policy_state
             budget_state = target_build.budget_state
             if not target_build.diagnostics.empty:
                 policy_diagnostics.append(target_build.diagnostics)
+            if include_decision_trace and not target_build.decision_trace.empty:
+                decision_traces.append(target_build.decision_trace)
+            if include_decision_trace and not target_build.order_intents.empty:
+                order_intents.append(target_build.order_intents)
             total_signals += len(signals)
 
             next_signal_time = (
@@ -545,7 +644,23 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
                 start_exclusive=signal_time,
                 end_inclusive=segment_end,
             )
-            run_execution_batch(executions)
+            period_trades = run_execution_batch(executions)
+            if include_decision_trace and not target_build.decision_trace.empty:
+                period_context = _decision_market_context(
+                    target_build.decision_trace,
+                    executions,
+                    period_trades,
+                )
+                market_contexts.append(period_context)
+                kline_windows.append(
+                    _decision_kline_windows(
+                        target_build.decision_trace,
+                        bars,
+                        period_context,
+                        pre_bars=params.decision_report_kline_pre_bars,
+                        post_bars=params.decision_report_kline_post_bars,
+                    )
+                )
             if not executions.empty:
                 last_simulated_time = executions["exec_time"].max()
         del bars, ranked_signals
@@ -579,6 +694,11 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
         "trades": pd.DataFrame(),
         "equity_curve": pd.DataFrame(),
         "final_positions": final_positions,
+        "policy_diagnostics": _concat_policy_diagnostics(policy_diagnostics),
+        "decision_trace": _concat_optional_frames(decision_traces),
+        "order_intents": _concat_optional_frames(order_intents),
+        "market_context": _concat_optional_frames(market_contexts),
+        "kline_windows": _concat_optional_frames(kline_windows),
     }
 
 
@@ -711,10 +831,12 @@ def _build_target_weights(
     budget_state: PolicyBudgetState | None = None,
     gross_exposure_scale_cap: float | None = None,
     scale_by_timestamp: dict[str, float] | None = None,
+    include_decision_trace: bool = False,
 ) -> TargetWeightBuildResult:
     if params.trade_policy == "naive_top_n":
+        target_weights = _build_buffered_target_weights(ranked_signals, params)
         return TargetWeightBuildResult(
-            target_weights=_build_buffered_target_weights(ranked_signals, params),
+            target_weights=target_weights,
             policy_state=policy_state
             if policy_state is not None
             else empty_portfolio_state(),
@@ -722,6 +844,11 @@ def _build_target_weights(
             if budget_state is not None
             else _initial_policy_budget_state(params),
             diagnostics=pd.DataFrame(),
+            decision_trace=(
+                _decision_trace_from_target_weights(target_weights)
+                if include_decision_trace
+                else pd.DataFrame(columns=DECISION_TRACE_COLUMNS)
+            ),
         )
     if params.trade_policy not in {"rank_buffer_drop", "cost_aware_optimizer"}:
         raise ValueError(f"unsupported trade policy: {params.trade_policy}")
@@ -733,6 +860,8 @@ def _build_target_weights(
     )
     default_policy = _policy_for_params(params, gross_exposure_scale=base_scale)
     diagnostics: list[pd.DataFrame] = []
+    decision_traces: list[pd.DataFrame] = []
+    order_intents: list[pd.DataFrame] = []
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
     grouped_signals = list(ranked_signals.groupby("signal_time", sort=True))
@@ -799,6 +928,12 @@ def _build_target_weights(
         if remaining_turnover_budget is not None:
             result = _enforce_path_turnover_cap(result, path_turnover_cap)
         state = result.policy_state
+        if include_decision_trace:
+            decision_trace = _decision_trace_from_policy_result(result)
+            if not decision_trace.empty:
+                decision_traces.append(decision_trace)
+            if not result.order_intents.empty:
+                order_intents.append(result.order_intents.copy())
         diagnostics_frame = result.diagnostics.copy()
         if remaining_turnover_budget is not None:
             planned_turnover = float(diagnostics_frame.loc[0, "planned_gross_turnover"])
@@ -861,6 +996,8 @@ def _build_target_weights(
             budget_period_key,
         ),
         diagnostics=_concat_policy_diagnostics(diagnostics),
+        decision_trace=_concat_optional_frames(decision_traces),
+        order_intents=_concat_optional_frames(order_intents),
     )
 
 
@@ -1203,6 +1340,551 @@ def _timestamp_key(value: object) -> str:
     return timestamp.isoformat()
 
 
+def _include_decision_trace(params: TreeScoreBacktestParams) -> bool:
+    return params.write_decision_trace or params.render_decision_report
+
+
+def _decision_trace_from_policy_result(result: StrategyPolicyResult) -> pd.DataFrame:
+    if result.trade_decisions.empty:
+        return pd.DataFrame(columns=DECISION_TRACE_COLUMNS)
+    trace = result.trade_decisions.copy()
+    if not result.portfolio_intent.empty:
+        enrichment_columns = [
+            column for column in ("rank", "score") if column not in trace.columns
+        ]
+        intent_columns = [
+            column
+            for column in ("timestamp", "instrument_id", *enrichment_columns)
+            if column in result.portfolio_intent.columns
+        ]
+        if (
+            enrichment_columns
+            and {"timestamp", "instrument_id"}.issubset(intent_columns)
+        ):
+            trace = trace.merge(
+                result.portfolio_intent.loc[:, intent_columns],
+                on=["timestamp", "instrument_id"],
+                how="left",
+            )
+    for column in DECISION_TRACE_COLUMNS:
+        if column not in trace.columns:
+            trace[column] = pd.NA
+    return trace.loc[:, DECISION_TRACE_COLUMNS]
+
+
+def _decision_trace_from_target_weights(target_weights: pd.DataFrame) -> pd.DataFrame:
+    if target_weights.empty:
+        return pd.DataFrame(columns=DECISION_TRACE_COLUMNS)
+    rows: list[dict[str, object]] = []
+    previous_weights: dict[str, float] = {}
+    for timestamp, group in target_weights.groupby("signal_time", sort=True):
+        group = group.sort_values(["rank", "instrument_id"]).copy()
+        target_by_id = {
+            str(row.instrument_id): float(row.target_weight)
+            for row in group.itertuples(index=False)
+        }
+        rank_by_id = {
+            str(row.instrument_id): getattr(row, "rank", pd.NA)
+            for row in group.itertuples(index=False)
+        }
+        score_by_id = {
+            str(row.instrument_id): getattr(row, "score", pd.NA)
+            for row in group.itertuples(index=False)
+        }
+        instrument_ids = list(dict.fromkeys([*target_by_id, *previous_weights]))
+        instrument_ids.sort(
+            key=lambda instrument_id: (
+                _rank_sort_key(rank_by_id.get(instrument_id)),
+                instrument_id,
+            )
+        )
+        for priority, instrument_id in enumerate(instrument_ids, start=1):
+            current = float(previous_weights.get(instrument_id, 0.0))
+            target = float(target_by_id.get(instrument_id, 0.0))
+            if current <= 1e-12 and target <= 1e-12:
+                continue
+            reason = _naive_decision_reason(current=current, target=target)
+            rows.append(
+                {
+                    "timestamp": timestamp,
+                    "instrument_id": instrument_id,
+                    "action": _decision_action(current=current, target=target, reason=reason),
+                    "current_weight": current,
+                    "aim_weight": target,
+                    "target_weight": target,
+                    "delta_weight": target - current,
+                    "rank": rank_by_id.get(instrument_id, pd.NA),
+                    "score": score_by_id.get(instrument_id, pd.NA),
+                    "expected_edge_bps": pd.NA,
+                    "estimated_cost_bps": pd.NA,
+                    "priority": priority,
+                    "decision_reason": reason,
+                    "constraint_flags": "",
+                }
+            )
+        previous_weights = target_by_id
+    if not rows:
+        return pd.DataFrame(columns=DECISION_TRACE_COLUMNS)
+    return pd.DataFrame.from_records(rows, columns=DECISION_TRACE_COLUMNS)
+
+
+def _rank_sort_key(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 10**9
+        return int(value)
+    except (TypeError, ValueError):
+        return 10**9
+
+
+def _naive_decision_reason(*, current: float, target: float) -> str:
+    if current <= 1e-12 and target > 1e-12:
+        return "entry_rank"
+    if current > 1e-12 and target <= 1e-12:
+        return "exit_rank"
+    if abs(target - current) <= 1e-12:
+        return "hold_buffer"
+    return "resize"
+
+
+def _decision_action(*, current: float, target: float, reason: str) -> str:
+    delta = target - current
+    if abs(delta) <= 1e-12:
+        return "no_trade" if reason in {"below_edge", "below_weight_band"} else "hold"
+    if current <= 0 and target > 0:
+        return "entry"
+    if current > 0 and target <= 0:
+        return "exit"
+    if delta > 0:
+        return "resize_up"
+    return "resize_down"
+
+
+def _concat_optional_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    non_empty = [frame for frame in frames if not frame.empty]
+    if not non_empty:
+        return pd.DataFrame()
+    return pd.concat(non_empty, ignore_index=True)
+
+
+def _decision_market_context(
+    decisions: pd.DataFrame,
+    executions: pd.DataFrame,
+    trades: pd.DataFrame,
+) -> pd.DataFrame:
+    if decisions.empty:
+        return pd.DataFrame()
+    context = decisions.loc[
+        :,
+        [
+            column
+            for column in (
+                "timestamp",
+                "instrument_id",
+                "action",
+                "target_weight",
+                "delta_weight",
+                "decision_reason",
+                "constraint_flags",
+            )
+            if column in decisions.columns
+        ],
+    ].copy()
+    context["instrument_id"] = context["instrument_id"].astype(str)
+    if executions.empty or "exec_time" not in executions.columns:
+        return context
+
+    next_exec_time = _next_execution_time_by_signal(
+        context["timestamp"].dropna().unique().tolist(),
+        executions["exec_time"].dropna().unique().tolist(),
+    )
+    context["exec_time"] = context["timestamp"].map(next_exec_time)
+    price_context = _execution_market_context(executions)
+    if not price_context.empty:
+        context = context.merge(
+            price_context,
+            on=["exec_time", "instrument_id"],
+            how="left",
+        )
+    if {"open_price", "close_price"}.issubset(context.columns):
+        open_price = pd.to_numeric(context["open_price"], errors="coerce")
+        close_price = pd.to_numeric(context["close_price"], errors="coerce")
+        context["bar_return"] = close_price / open_price - 1.0
+    trade_context = _execution_trade_context(trades)
+    if not trade_context.empty:
+        context = context.merge(
+            trade_context,
+            on=["exec_time", "instrument_id"],
+            how="left",
+        )
+    return context
+
+
+def _next_execution_time_by_signal(
+    signal_times: list[object],
+    exec_times: list[object],
+) -> dict[object, object]:
+    exec_values = sorted(exec_times, key=_timestamp_key)
+    exec_keys = [_timestamp_key(value) for value in exec_values]
+    output: dict[object, object] = {}
+    for signal_time in signal_times:
+        index = bisect_right(exec_keys, _timestamp_key(signal_time))
+        if index < len(exec_values):
+            output[signal_time] = exec_values[index]
+    return output
+
+
+def _execution_market_context(executions: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        column
+        for column in (
+            "exec_time",
+            "instrument_id",
+            "canonical_code",
+            "raw_name",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume",
+            "turnover",
+            "tradable_bar",
+            "limit_up_open",
+            "limit_down_open",
+            "target_weight",
+        )
+        if column in executions.columns
+    ]
+    if not {"exec_time", "instrument_id"}.issubset(columns):
+        return pd.DataFrame()
+    frame = executions.loc[:, columns].copy()
+    frame["instrument_id"] = frame["instrument_id"].astype(str)
+    if "target_weight" in frame.columns:
+        frame = frame.rename(columns={"target_weight": "execution_target_weight"})
+    return frame.drop_duplicates(
+        subset=["exec_time", "instrument_id"],
+        keep="first",
+    )
+
+
+def _execution_trade_context(trades: pd.DataFrame) -> pd.DataFrame:
+    if trades.empty or not {"timestamp", "instrument_id"}.issubset(trades.columns):
+        return pd.DataFrame()
+    frame = trades.copy()
+    frame["exec_time"] = frame["timestamp"]
+    frame["instrument_id"] = frame["instrument_id"].astype(str)
+    frame["shares"] = pd.to_numeric(
+        frame["shares"] if "shares" in frame.columns else pd.Series(0.0, index=frame.index),
+        errors="coerce",
+    ).fillna(0.0)
+    frame["price"] = pd.to_numeric(
+        frame["price"] if "price" in frame.columns else pd.Series(0.0, index=frame.index),
+        errors="coerce",
+    ).fillna(0.0)
+    if "notional" in frame.columns:
+        frame["_abs_notional"] = pd.to_numeric(
+            frame["notional"],
+            errors="coerce",
+        ).abs()
+    else:
+        frame["_abs_notional"] = (frame["shares"] * frame["price"]).abs()
+    frame["_price_weight"] = frame["price"] * frame["shares"].abs()
+    if "total_cost" not in frame.columns:
+        frame["total_cost"] = 0.0
+    frame["total_cost"] = pd.to_numeric(frame["total_cost"], errors="coerce").fillna(0.0)
+    grouped = frame.groupby(["exec_time", "instrument_id"], sort=False)
+    summary = grouped.agg(
+        trade_count=("instrument_id", "size"),
+        executed_shares=("shares", "sum"),
+        executed_notional=("_abs_notional", "sum"),
+        _price_weight=("_price_weight", "sum"),
+        _abs_shares=("shares", lambda values: values.abs().sum()),
+        total_cost=("total_cost", "sum"),
+    ).reset_index()
+    side_values = (
+        grouped["side"].agg(lambda values: ",".join(sorted(set(values.astype(str)))))
+        if "side" in frame.columns
+        else pd.Series(dtype=object)
+    )
+    if not side_values.empty:
+        summary = summary.merge(
+            side_values.rename("executed_side").reset_index(),
+            on=["exec_time", "instrument_id"],
+            how="left",
+        )
+    else:
+        summary["executed_side"] = ""
+    summary["avg_trade_price"] = summary["_price_weight"] / summary["_abs_shares"]
+    summary = summary.drop(columns=["_price_weight", "_abs_shares"])
+    return summary
+
+
+def _decision_kline_windows(
+    decisions: pd.DataFrame,
+    bars: pd.DataFrame,
+    market_context: pd.DataFrame,
+    *,
+    pre_bars: int,
+    post_bars: int,
+) -> pd.DataFrame:
+    if decisions.empty or bars.empty:
+        return _empty_decision_kline_window_frame()
+    required = {
+        "bar_end_time",
+        "instrument_id",
+        "open_price",
+        "high_price",
+        "low_price",
+        "close_price",
+    }
+    if not required.issubset(bars.columns):
+        return _empty_decision_kline_window_frame()
+    context = decisions.loc[
+        :,
+        [
+            column
+            for column in (
+                "timestamp",
+                "instrument_id",
+                "action",
+                "current_weight",
+                "target_weight",
+                "delta_weight",
+                "rank",
+                "score",
+                "decision_reason",
+            )
+            if column in decisions.columns
+        ],
+    ].copy()
+    context["instrument_id"] = context["instrument_id"].astype(str)
+    for column in ("current_weight", "target_weight", "delta_weight"):
+        if column in context.columns:
+            context[column] = pd.to_numeric(context[column], errors="coerce").fillna(0.0)
+        else:
+            context[column] = 0.0
+    context = context.loc[
+        (context["target_weight"].abs() > 1e-12)
+        | (context["current_weight"].abs() > 1e-12)
+        | (context["delta_weight"].abs() > 1e-12)
+    ].copy()
+    if context.empty:
+        return _empty_decision_kline_window_frame()
+
+    if not market_context.empty:
+        context_columns = [
+            column
+            for column in (
+                "timestamp",
+                "instrument_id",
+                "exec_time",
+                "canonical_code",
+                "raw_name",
+                "executed_side",
+                "executed_shares",
+                "executed_notional",
+                "avg_trade_price",
+            )
+            if column in market_context.columns
+        ]
+        if {"timestamp", "instrument_id"}.issubset(context_columns):
+            context = context.merge(
+                market_context.loc[:, context_columns],
+                on=["timestamp", "instrument_id"],
+                how="left",
+            )
+
+    if "exec_time" not in context.columns:
+        context["exec_time"] = pd.NA
+    missing_exec = context["exec_time"].isna()
+    if missing_exec.any():
+        next_exec_time = _next_execution_time_by_signal(
+            context.loc[missing_exec, "timestamp"].dropna().unique().tolist(),
+            bars["bar_end_time"].dropna().unique().tolist(),
+        )
+        context.loc[missing_exec, "exec_time"] = context.loc[
+            missing_exec,
+            "timestamp",
+        ].map(next_exec_time)
+    context = context.loc[context["exec_time"].notna()].copy()
+    if context.empty:
+        return _empty_decision_kline_window_frame()
+
+    price_columns = [
+        column
+        for column in (
+            "bar_end_time",
+            "instrument_id",
+            "canonical_code",
+            "raw_name",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume",
+            "turnover",
+            "tradable_bar",
+            "limit_up_open",
+            "limit_down_open",
+        )
+        if column in bars.columns
+    ]
+    price_frame = bars.loc[:, price_columns].copy()
+    price_frame["instrument_id"] = price_frame["instrument_id"].astype(str)
+    price_frame = price_frame.sort_values(
+        ["instrument_id", "bar_end_time"],
+        kind="stable",
+    )
+    rows: list[dict[str, object]] = []
+    for instrument_id, instrument_bars in price_frame.groupby("instrument_id", sort=False):
+        decision_rows = context.loc[context["instrument_id"] == instrument_id]
+        if decision_rows.empty:
+            continue
+        instrument_bars = instrument_bars.reset_index(drop=True)
+        index_by_time = {
+            _timestamp_key(getattr(row, "bar_end_time")): index
+            for index, row in enumerate(instrument_bars.itertuples(index=False))
+        }
+        for decision in decision_rows.itertuples(index=False):
+            exec_key = _timestamp_key(getattr(decision, "exec_time"))
+            exec_index = index_by_time.get(exec_key)
+            if exec_index is None:
+                continue
+            start = max(0, exec_index - pre_bars)
+            stop = min(len(instrument_bars), exec_index + post_bars + 1)
+            marker_side = _kline_marker_side(decision)
+            marker_price = _kline_marker_price(decision, instrument_bars.iloc[exec_index])
+            for bar_index in range(start, stop):
+                bar = instrument_bars.iloc[bar_index]
+                is_execution_bar = bar_index == exec_index
+                rows.append(
+                    {
+                        "decision_timestamp": getattr(decision, "timestamp"),
+                        "instrument_id": instrument_id,
+                        "canonical_code": _first_non_null(
+                            getattr(decision, "canonical_code", None),
+                            bar.get("canonical_code"),
+                        ),
+                        "raw_name": _first_non_null(
+                            getattr(decision, "raw_name", None),
+                            bar.get("raw_name"),
+                        ),
+                        "action": getattr(decision, "action", ""),
+                        "current_weight": getattr(decision, "current_weight", pd.NA),
+                        "target_weight": getattr(decision, "target_weight", pd.NA),
+                        "delta_weight": getattr(decision, "delta_weight", pd.NA),
+                        "rank": getattr(decision, "rank", pd.NA),
+                        "score": getattr(decision, "score", pd.NA),
+                        "decision_reason": getattr(decision, "decision_reason", ""),
+                        "exec_time": getattr(decision, "exec_time"),
+                        "bar_time": bar["bar_end_time"],
+                        "bar_offset": bar_index - exec_index,
+                        "open_price": bar.get("open_price"),
+                        "high_price": bar.get("high_price"),
+                        "low_price": bar.get("low_price"),
+                        "close_price": bar.get("close_price"),
+                        "volume": bar.get("volume"),
+                        "turnover": bar.get("turnover"),
+                        "tradable_bar": bar.get("tradable_bar"),
+                        "limit_up_open": bar.get("limit_up_open"),
+                        "limit_down_open": bar.get("limit_down_open"),
+                        "is_execution_bar": is_execution_bar,
+                        "marker_side": marker_side if is_execution_bar else "",
+                        "marker_price": (
+                            marker_price if is_execution_bar and marker_side else pd.NA
+                        ),
+                        "executed_side": getattr(decision, "executed_side", ""),
+                        "executed_shares": getattr(decision, "executed_shares", pd.NA),
+                        "executed_notional": getattr(decision, "executed_notional", pd.NA),
+                        "avg_trade_price": getattr(decision, "avg_trade_price", pd.NA),
+                    }
+                )
+    if not rows:
+        return _empty_decision_kline_window_frame()
+    return pd.DataFrame(rows).loc[:, _empty_decision_kline_window_frame().columns]
+
+
+def _kline_marker_side(decision: object) -> str:
+    executed_side = str(getattr(decision, "executed_side", "") or "").lower()
+    if "buy" in executed_side:
+        return "buy"
+    if "sell" in executed_side:
+        return "sell"
+    delta = _finite_float(getattr(decision, "delta_weight", None), default=0.0) or 0.0
+    if delta > 1e-12:
+        return "buy"
+    if delta < -1e-12:
+        return "sell"
+    return ""
+
+
+def _kline_marker_price(decision: object, exec_bar: pd.Series) -> object:
+    price = _finite_float(getattr(decision, "avg_trade_price", None))
+    if price is not None:
+        return price
+    return exec_bar.get("open_price")
+
+
+def _first_non_null(*values: object) -> object:
+    for value in values:
+        if value is None:
+            continue
+        try:
+            if pd.isna(value):
+                continue
+        except (TypeError, ValueError):
+            pass
+        return value
+    return pd.NA
+
+
+def _empty_decision_kline_window_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "decision_timestamp",
+            "instrument_id",
+            "canonical_code",
+            "raw_name",
+            "action",
+            "current_weight",
+            "target_weight",
+            "delta_weight",
+            "rank",
+            "score",
+            "decision_reason",
+            "exec_time",
+            "bar_time",
+            "bar_offset",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume",
+            "turnover",
+            "tradable_bar",
+            "limit_up_open",
+            "limit_down_open",
+            "is_execution_bar",
+            "marker_side",
+            "marker_price",
+            "executed_side",
+            "executed_shares",
+            "executed_notional",
+            "avg_trade_price",
+        ]
+    )
+
+
+def _finite_float(value: object, default: float | None = None) -> float | None:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    if not pd.notna(number):
+        return default
+    return number
+
+
 def _concat_policy_diagnostics(frames: list[pd.DataFrame]) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
@@ -1394,6 +2076,16 @@ def _summary_payload(
             "data_access_mode": params.data_access_mode,
             "streaming_chunk": params.streaming_chunk,
             "streaming_chunk_padding_days": params.streaming_chunk_padding_days,
+            "write_decision_trace": params.write_decision_trace,
+            "render_decision_report": params.render_decision_report,
+            "decision_report_max_instruments": params.decision_report_max_instruments,
+            "decision_report_max_timestamps": params.decision_report_max_timestamps,
+            "decision_report_max_decisions": params.decision_report_max_decisions,
+            "decision_report_kline_pre_bars": params.decision_report_kline_pre_bars,
+            "decision_report_kline_post_bars": params.decision_report_kline_post_bars,
+            "decision_report_max_kline_charts_per_timestamp": (
+                params.decision_report_max_kline_charts_per_timestamp
+            ),
         },
         "bar_count": int(bar_count),
         "signal_count": int(signal_count),
@@ -1476,6 +2168,28 @@ def _empty_target_weight_frame() -> pd.DataFrame:
     )
 
 
+def _tree_score_price_columns(frame: pd.DataFrame) -> list[str]:
+    return [
+        column
+        for column in (
+            "bar_end_time",
+            "instrument_id",
+            "canonical_code",
+            "raw_name",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume",
+            "turnover",
+            "tradable_bar",
+            "limit_up_open",
+            "limit_down_open",
+        )
+        if column in frame.columns
+    ]
+
+
 def _build_tree_score_executions(
     bars: pd.DataFrame,
     signals: pd.DataFrame,
@@ -1495,17 +2209,7 @@ def _build_tree_score_executions(
     shifted = shifted.loc[shifted["exec_time"].notna()].copy()
     prices = bars.loc[
         :,
-        [
-            "bar_end_time",
-            "instrument_id",
-            "canonical_code",
-            "open_price",
-            "close_price",
-            "turnover",
-            "tradable_bar",
-            "limit_up_open",
-            "limit_down_open",
-        ],
+        _tree_score_price_columns(bars),
     ].rename(columns={"bar_end_time": "exec_time"})
     if sparse:
         relevant_instruments = {str(value) for value in tracked_instruments or set()}
@@ -1607,17 +2311,7 @@ def _price_execution_rows_from_index(
     candidate = bars.take(row_indices)
     prices = candidate.loc[
         candidate["instrument_id"].astype(str).isin(tracked_instruments),
-        [
-            "bar_end_time",
-            "instrument_id",
-            "canonical_code",
-            "open_price",
-            "close_price",
-            "turnover",
-            "tradable_bar",
-            "limit_up_open",
-            "limit_down_open",
-        ],
+        _tree_score_price_columns(candidate),
     ].rename(columns={"bar_end_time": "exec_time"})
     return prices.assign(target_weight=pd.NA)
 
@@ -1646,8 +2340,12 @@ def _empty_tree_score_execution_frame() -> pd.DataFrame:
             "exec_time",
             "instrument_id",
             "canonical_code",
+            "raw_name",
             "open_price",
+            "high_price",
+            "low_price",
             "close_price",
+            "volume",
             "turnover",
             "tradable_bar",
             "limit_up_open",
@@ -1677,6 +2375,75 @@ def _write_outputs(result: dict[str, object], params: TreeScoreBacktestParams) -
         json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    if not _include_decision_trace(params):
+        return
+    decision_trace = _result_frame(result, "decision_trace")
+    market_context = _result_frame(result, "market_context")
+    kline_windows = _result_frame(result, "kline_windows")
+    policy_diagnostics = _result_frame(result, "policy_diagnostics")
+    order_intents = _result_frame(result, "order_intents")
+    if not decision_trace.empty:
+        decision_trace.to_parquet(params.output_dir / "decision_trace.parquet", index=False)
+    if not market_context.empty:
+        market_context.to_parquet(
+            params.output_dir / "decision_market_context.parquet",
+            index=False,
+        )
+    if not kline_windows.empty:
+        kline_windows.to_parquet(
+            params.output_dir / "decision_kline_windows.parquet",
+            index=False,
+        )
+    if not policy_diagnostics.empty:
+        policy_diagnostics.to_parquet(
+            params.output_dir / "policy_diagnostics.parquet",
+            index=False,
+        )
+    if not order_intents.empty:
+        order_intents.to_parquet(params.output_dir / "order_intents.parquet", index=False)
+    if params.render_decision_report:
+        render_decision_report(
+            summary=summary if isinstance(summary, dict) else {},
+            decision_trace=decision_trace,
+            market_context=market_context,
+            kline_windows=kline_windows,
+            policy_diagnostics=policy_diagnostics,
+            trades=_frame_from_result_or_csv(result, "trades", params.output_dir / "trades.csv"),
+            equity_curve=_frame_from_result_or_csv(
+                result,
+                "equity_curve",
+                params.output_dir / "equity_curve.csv",
+            ),
+            output_path=params.output_dir / "decision_report.html",
+            config=DecisionReportConfig(
+                max_instruments=params.decision_report_max_instruments,
+                max_timestamps=params.decision_report_max_timestamps,
+                max_decisions=params.decision_report_max_decisions,
+                max_kline_charts_per_timestamp=(
+                    params.decision_report_max_kline_charts_per_timestamp
+                ),
+            ),
+        )
+
+
+def _result_frame(result: dict[str, object], key: str) -> pd.DataFrame:
+    value = result.get(key)
+    if isinstance(value, pd.DataFrame):
+        return value
+    return pd.DataFrame()
+
+
+def _frame_from_result_or_csv(
+    result: dict[str, object],
+    key: str,
+    path: Path,
+) -> pd.DataFrame:
+    frame = _result_frame(result, key)
+    if not frame.empty:
+        return frame
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
 
 
 def _parse_args() -> TreeScoreBacktestParams:
@@ -1760,6 +2527,29 @@ def _parse_args() -> TreeScoreBacktestParams:
     )
     parser.add_argument("--streaming-chunk-padding-days", type=int, default=10)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--write-decision-trace",
+        action="store_true",
+        help=(
+            "write decision trace, market context, policy diagnostics, "
+            "and order intent parquet artifacts"
+        ),
+    )
+    parser.add_argument(
+        "--render-decision-report",
+        action="store_true",
+        help="render a static HTML decision review report in the output directory",
+    )
+    parser.add_argument("--decision-report-max-instruments", type=int, default=60)
+    parser.add_argument("--decision-report-max-timestamps", type=int, default=80)
+    parser.add_argument("--decision-report-max-decisions", type=int, default=500)
+    parser.add_argument("--decision-report-kline-pre-bars", type=int, default=12)
+    parser.add_argument("--decision-report-kline-post-bars", type=int, default=12)
+    parser.add_argument(
+        "--decision-report-max-kline-charts-per-timestamp",
+        type=int,
+        default=50,
+    )
     args = parser.parse_args()
     if args.top_n <= 0:
         raise ValueError("--top-n must be positive")
@@ -1857,6 +2647,20 @@ def _parse_args() -> TreeScoreBacktestParams:
         raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
     if args.streaming_chunk_padding_days < 0:
         raise ValueError("--streaming-chunk-padding-days must be non-negative")
+    if args.decision_report_max_instruments <= 0:
+        raise ValueError("--decision-report-max-instruments must be positive")
+    if args.decision_report_max_timestamps <= 0:
+        raise ValueError("--decision-report-max-timestamps must be positive")
+    if args.decision_report_max_decisions <= 0:
+        raise ValueError("--decision-report-max-decisions must be positive")
+    if args.decision_report_kline_pre_bars < 0:
+        raise ValueError("--decision-report-kline-pre-bars must be non-negative")
+    if args.decision_report_kline_post_bars < 0:
+        raise ValueError("--decision-report-kline-post-bars must be non-negative")
+    if args.decision_report_max_kline_charts_per_timestamp <= 0:
+        raise ValueError(
+            "--decision-report-max-kline-charts-per-timestamp must be positive"
+        )
     return TreeScoreBacktestParams(
         predictions_path=Path(args.predictions_path),
         catalog_path=Path(args.catalog_path),
@@ -1912,6 +2716,16 @@ def _parse_args() -> TreeScoreBacktestParams:
         streaming_chunk=args.streaming_chunk,
         streaming_chunk_padding_days=args.streaming_chunk_padding_days,
         output_dir=Path(args.output_dir),
+        write_decision_trace=args.write_decision_trace,
+        render_decision_report=args.render_decision_report,
+        decision_report_max_instruments=args.decision_report_max_instruments,
+        decision_report_max_timestamps=args.decision_report_max_timestamps,
+        decision_report_max_decisions=args.decision_report_max_decisions,
+        decision_report_kline_pre_bars=args.decision_report_kline_pre_bars,
+        decision_report_kline_post_bars=args.decision_report_kline_post_bars,
+        decision_report_max_kline_charts_per_timestamp=(
+            args.decision_report_max_kline_charts_per_timestamp
+        ),
     )
 
 

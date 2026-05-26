@@ -15,6 +15,11 @@ from quant_research.backtest.cn_equity import (
     simulate_target_weight_executions,
     target_weight_execution_diagnostics,
 )
+from quant_research.backtest.decision_report import (
+    DECISION_TRACE_COLUMNS,
+    DecisionReportConfig,
+    render_decision_report,
+)
 from quant_research.backtest.engine import BacktestEngine, BacktestSimulator
 from quant_research.backtest.execution import ExecutionModel
 from quant_research.backtest.ledger import (
@@ -47,6 +52,8 @@ __all__ = [
     "BacktestResult",
     "BacktestSimulator",
     "CnEquityExecutionConstraintsConfig",
+    "DECISION_TRACE_COLUMNS",
+    "DecisionReportConfig",
     "ExecutionModel",
     "FillRow",
     "LedgerSnapshotRow",
@@ -70,6 +77,7 @@ __all__ = [
     "ledger_to_frame",
     "lots_to_frame",
     "merge_execution_constraint_counts",
+    "render_decision_report",
     "orders_to_frame",
     "simulate_target_weight_execution_batches",
     "simulate_target_weight_executions",
