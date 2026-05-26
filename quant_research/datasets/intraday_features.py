@@ -10,12 +10,17 @@ import pandas as pd
 
 _VALID_GROUPS = {
     "reversal",
+    "cross_sectional_reversal",
+    "conditional_reversal",
+    "eod_reversal",
     "momentum",
     "volatility",
+    "volatility_state_change",
     "price_position",
     "range_volatility",
     "efficiency",
     "volume",
+    "volume_distribution_shape",
     "turnover",
     "turnover_stability",
     "liquidity_reliability",
@@ -43,6 +48,7 @@ _VALID_GROUPS = {
     "sell_pressure_recovery",
     "sell_pressure_exhaustion",
     "sell_pressure_exhaustion_persistence",
+    "microstructure_recovery_speed",
     "same_slot_intraday_memory",
     "overnight_intraday_tug_of_war",
     "weak_tape_overnight_gap",
@@ -58,13 +64,23 @@ class IntradayFeatureConfig:
     """Configuration for 5-minute intraday alpha feature generation."""
 
     factor_groups: tuple[str, ...] = ("reversal",)
-    reversal_lookback_bars: tuple[int, ...] = (1, 3, 6)
+    reversal_lookback_bars: tuple[int, ...] = (1, 6, 12, 24)
+    cross_sectional_reversal_lookback_bars: tuple[int, ...] = (1, 6, 12, 24)
+    conditional_reversal_lookback_bars: tuple[int, ...] = (1, 6, 12, 24)
+    conditional_reversal_state_windows: tuple[int, ...] = (12,)
+    conditional_reversal_low_vol_quantile: float = 0.5
+    conditional_reversal_min_volume_ratio: float = 0.0
+    eod_reversal_lookback_bars: tuple[int, ...] = (1, 6, 12, 24)
+    eod_reversal_tail_bars: int = 6
+    eod_reversal_weight: float = 1.5
     momentum_lookback_bars: tuple[int, ...] = (3, 6, 12)
     volatility_windows: tuple[int, ...] = (6, 12, 24)
+    volatility_state_change_specs: tuple[tuple[int, int], ...] = ((12, 48), (24, 96))
     price_position_windows: tuple[int, ...] = (48,)
     range_volatility_windows: tuple[int, ...] = (12, 48)
     efficiency_windows: tuple[int, ...] = (12, 48)
     volume_windows: tuple[int, ...] = (12, 48)
+    volume_distribution_windows: tuple[int, ...] = (24, 48, 96)
     turnover_windows: tuple[int, ...] = (12, 48)
     turnover_stability_windows: tuple[int, ...] = (48,)
     liquidity_reliability_windows: tuple[int, ...] = (48,)
@@ -90,6 +106,11 @@ class IntradayFeatureConfig:
     sell_pressure_exhaustion_persistence_specs: tuple[tuple[int, int, int], ...] = (
         (96, 24, 48),
     )
+    microstructure_recovery_windows: tuple[int, ...] = (24, 48)
+    microstructure_recovery_acceleration_specs: tuple[tuple[int, int], ...] = (
+        (12, 48),
+        (24, 96),
+    )
     same_slot_memory_windows: tuple[int, ...] = (5, 20)
     weak_tape_gap_windows: tuple[int, ...] = (48,)
     sell_pressure_quality_windows: tuple[int, ...] = (48,)
@@ -108,12 +129,26 @@ class IntradayFeatureConfig:
             raise ValueError(f"unknown factor groups: {sorted(unknown)}")
         for name, values in (
             ("reversal_lookback_bars", self.reversal_lookback_bars),
+            (
+                "cross_sectional_reversal_lookback_bars",
+                self.cross_sectional_reversal_lookback_bars,
+            ),
+            (
+                "conditional_reversal_lookback_bars",
+                self.conditional_reversal_lookback_bars,
+            ),
+            (
+                "conditional_reversal_state_windows",
+                self.conditional_reversal_state_windows,
+            ),
+            ("eod_reversal_lookback_bars", self.eod_reversal_lookback_bars),
             ("momentum_lookback_bars", self.momentum_lookback_bars),
             ("volatility_windows", self.volatility_windows),
             ("price_position_windows", self.price_position_windows),
             ("range_volatility_windows", self.range_volatility_windows),
             ("efficiency_windows", self.efficiency_windows),
             ("volume_windows", self.volume_windows),
+            ("volume_distribution_windows", self.volume_distribution_windows),
             ("turnover_windows", self.turnover_windows),
             ("turnover_stability_windows", self.turnover_stability_windows),
             ("liquidity_reliability_windows", self.liquidity_reliability_windows),
@@ -139,6 +174,7 @@ class IntradayFeatureConfig:
             ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
             ("sell_pressure_recovery_windows", self.sell_pressure_recovery_windows),
             ("sell_pressure_exhaustion_windows", self.sell_pressure_exhaustion_windows),
+            ("microstructure_recovery_windows", self.microstructure_recovery_windows),
             ("same_slot_memory_windows", self.same_slot_memory_windows),
             ("weak_tape_gap_windows", self.weak_tape_gap_windows),
             ("sell_pressure_quality_windows", self.sell_pressure_quality_windows),
@@ -158,10 +194,42 @@ class IntradayFeatureConfig:
         ):
             if any(value <= 0 for value in values):
                 raise ValueError(f"{name} values must be positive")
+        if not 0.0 < self.conditional_reversal_low_vol_quantile <= 1.0:
+            raise ValueError(
+                "conditional_reversal_low_vol_quantile must be in (0, 1]"
+            )
+        if self.conditional_reversal_min_volume_ratio <= -1.0:
+            raise ValueError(
+                "conditional_reversal_min_volume_ratio must be greater than -1"
+            )
+        if self.eod_reversal_tail_bars <= 0:
+            raise ValueError("eod_reversal_tail_bars must be positive")
+        if self.eod_reversal_weight <= 0.0:
+            raise ValueError("eod_reversal_weight must be positive")
+        if any(value <= 1 for value in self.volume_distribution_windows):
+            raise ValueError("volume_distribution_windows values must be at least 2")
         if any(short <= 0 or long <= 0 for short, long in self.daily_moving_average_pairs):
             raise ValueError("daily_moving_average_pairs values must be positive")
         if any(short >= long for short, long in self.daily_moving_average_pairs):
             raise ValueError("daily_moving_average_pairs must be ordered short < long")
+        for short_window, long_window in self.volatility_state_change_specs:
+            if short_window <= 1 or long_window <= 1:
+                raise ValueError(
+                    "volatility_state_change_specs values must be at least 2"
+                )
+            if short_window >= long_window:
+                raise ValueError(
+                    "volatility_state_change_specs must be ordered short < long"
+                )
+        for short_window, long_window in self.microstructure_recovery_acceleration_specs:
+            if short_window <= 1 or long_window <= 1:
+                raise ValueError(
+                    "microstructure_recovery_acceleration_specs values must be at least 2"
+                )
+            if short_window >= long_window:
+                raise ValueError(
+                    "microstructure_recovery_acceleration_specs must be ordered short < long"
+                )
         for long_window, short_window, medium_window in (
             self.sell_pressure_exhaustion_persistence_specs
         ):
@@ -220,7 +288,9 @@ def build_intraday_feature_matrix(
         required.append("open_price")
     if groups & {"price_position", "range_volatility"}:
         required.extend(["high_price", "low_price"])
-    if groups & {"volume", "volume_confirmed_momentum"}:
+    if groups & {"volume", "volume_confirmed_momentum", "conditional_reversal"}:
+        required.append("volume")
+    if "volume_distribution_shape" in groups:
         required.append("volume")
     if "money_flow" in groups:
         required.extend(["high_price", "low_price", "volume"])
@@ -243,6 +313,7 @@ def build_intraday_feature_matrix(
         "sell_pressure_recovery",
         "sell_pressure_exhaustion",
         "sell_pressure_exhaustion_persistence",
+        "microstructure_recovery_speed",
         "sell_pressure_quality_state",
     }:
         required.append("turnover")
@@ -263,6 +334,15 @@ def build_intraday_feature_matrix(
     )
     feature_columns: list[str] = []
     one_bar_return = grouped["close_price"].pct_change(periods=1)
+    lookback_returns: dict[int, pd.Series] = {}
+
+    def lookback_return(lookback_bars: int) -> pd.Series:
+        if lookback_bars not in lookback_returns:
+            lookback_returns[lookback_bars] = grouped["close_price"].pct_change(
+                periods=lookback_bars
+            )
+        return lookback_returns[lookback_bars]
+
     if "bar_return" in groups:
         frame["open_price"] = frame["open_price"].astype(float)
         column = "intraday_bar_return_5m"
@@ -271,7 +351,74 @@ def build_intraday_feature_matrix(
     if "reversal" in groups:
         for lookback_bars in config.reversal_lookback_bars:
             column = f"intraday_reversal_5m_lb{lookback_bars}"
-            output[column] = -grouped["close_price"].pct_change(periods=lookback_bars)
+            output[column] = -lookback_return(lookback_bars)
+            feature_columns.append(column)
+    if "cross_sectional_reversal" in groups:
+        for lookback_bars in config.cross_sectional_reversal_lookback_bars:
+            returns = lookback_return(lookback_bars)
+            market_return = returns.groupby(frame["bar_end_time"]).transform("median")
+            column = f"intraday_cross_sectional_reversal_5m_lb{lookback_bars}"
+            output[column] = -(returns - market_return)
+            feature_columns.append(column)
+    if "conditional_reversal" in groups:
+        frame["volume"] = frame["volume"].astype(float)
+        volume_grouped = frame.groupby("instrument_id", sort=False)["volume"]
+        low_vol_by_window: dict[int, pd.Series] = {}
+        volume_confirmed_by_window: dict[int, pd.Series] = {}
+        for window in config.conditional_reversal_state_windows:
+            realized_volatility = one_bar_return.groupby(frame["instrument_id"]).transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).std()
+            )
+            low_vol_threshold = realized_volatility.groupby(
+                frame["bar_end_time"]
+            ).transform(
+                lambda values: values.quantile(
+                    config.conditional_reversal_low_vol_quantile
+                )
+            )
+            low_vol_by_window[window] = (
+                realized_volatility.notna()
+                & low_vol_threshold.notna()
+                & (realized_volatility <= low_vol_threshold)
+            )
+            volume_mean = volume_grouped.transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).mean()
+            )
+            volume_ratio = frame["volume"] / volume_mean.where(volume_mean != 0.0) - 1.0
+            volume_confirmed_by_window[window] = (
+                volume_ratio >= config.conditional_reversal_min_volume_ratio
+            )
+        for lookback_bars in config.conditional_reversal_lookback_bars:
+            returns = lookback_return(lookback_bars)
+            reversal = -returns
+            recent_loser = returns < 0.0
+            for window in config.conditional_reversal_state_windows:
+                column = (
+                    "intraday_low_vol_volume_confirmed_reversal_5m_"
+                    f"lb{lookback_bars}_w{window}"
+                )
+                output[column] = reversal.where(
+                    recent_loser
+                    & low_vol_by_window[window]
+                    & volume_confirmed_by_window[window]
+                )
+                feature_columns.append(column)
+    if "eod_reversal" in groups:
+        eod_tail = _session_tail_mask(frame, tail_bars=config.eod_reversal_tail_bars)
+        for lookback_bars in config.eod_reversal_lookback_bars:
+            column = (
+                f"intraday_eod_reversal_5m_lb{lookback_bars}"
+                f"_tail{config.eod_reversal_tail_bars}"
+            )
+            output[column] = (
+                -lookback_return(lookback_bars) * config.eod_reversal_weight
+            ).where(eod_tail)
             feature_columns.append(column)
     if "momentum" in groups:
         for lookback_bars in config.momentum_lookback_bars:
@@ -306,6 +453,40 @@ def build_intraday_feature_matrix(
                 lambda values: values.rolling(window, min_periods=window).std()
             )
             feature_columns.append(column)
+    if "volatility_state_change" in groups:
+        realized_volatility_by_window: dict[int, pd.Series] = {}
+        unique_windows = tuple(
+            sorted(
+                {
+                    window
+                    for spec in config.volatility_state_change_specs
+                    for window in spec
+                }
+            )
+        )
+        for window in unique_windows:
+            realized_volatility_by_window[window] = one_bar_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).std())
+        for short_window, long_window in config.volatility_state_change_specs:
+            short_volatility = realized_volatility_by_window[short_window]
+            long_volatility = realized_volatility_by_window[long_window]
+            relative_column = (
+                "intraday_volatility_state_change_5m_"
+                f"s{short_window}_l{long_window}"
+            )
+            trend_column = (
+                "intraday_volatility_state_trend_5m_"
+                f"s{short_window}_l{long_window}"
+            )
+            output[relative_column] = (
+                short_volatility / long_volatility.where(long_volatility != 0.0) - 1.0
+            )
+            output[trend_column] = (
+                short_volatility
+                - short_volatility.groupby(frame["instrument_id"]).shift(short_window)
+            ) / long_volatility.where(long_volatility != 0.0)
+            feature_columns.extend([relative_column, trend_column])
     if "downside_volatility" in groups:
         downside_return = one_bar_return.clip(upper=0.0)
         for window in config.downside_volatility_windows:
@@ -933,6 +1114,69 @@ def build_intraday_feature_matrix(
             column = f"intraday_volume_ratio_5m_w{window}"
             output[column] = frame["volume"] / mean - 1.0
             feature_columns.append(column)
+    if "volume_distribution_shape" in groups:
+        frame["volume"] = frame["volume"].astype(float)
+        volume_grouped = frame.groupby("instrument_id", sort=False)["volume"]
+        for window in config.volume_distribution_windows:
+            rolling_mean = volume_grouped.transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).mean()
+            )
+            rolling_std = volume_grouped.transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).std()
+            )
+            zscore = (frame["volume"] - rolling_mean) / rolling_std.where(
+                rolling_std != 0.0
+            )
+            burstiness_column = f"intraday_volume_burstiness_5m_w{window}"
+            u_shape_column = f"intraday_volume_u_shape_5m_w{window}"
+            back_loaded_column = f"intraday_volume_back_loaded_5m_w{window}"
+            concentration_column = f"intraday_volume_concentration_5m_w{window}"
+            output[burstiness_column] = zscore.abs()
+            half_window = window // 2
+            back_volume = volume_grouped.transform(
+                lambda values, half_window=half_window: values.rolling(
+                    half_window,
+                    min_periods=half_window,
+                ).sum()
+            )
+            front_volume = back_volume.groupby(frame["instrument_id"]).shift(half_window)
+            total_volume = front_volume + back_volume
+            back_share = back_volume / total_volume.where(total_volume != 0.0)
+            output[back_loaded_column] = back_share - 0.5
+            rolling_volume_sum = volume_grouped.transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).sum()
+            )
+            volume_share = frame["volume"] / rolling_volume_sum.where(
+                rolling_volume_sum != 0.0
+            )
+            rolling_squared_volume = frame["volume"].pow(2).groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values, window=window: values.rolling(window, min_periods=window).sum()
+            )
+            output[concentration_column] = rolling_squared_volume / rolling_volume_sum.pow(
+                2
+            ).where(rolling_volume_sum != 0.0)
+            output[u_shape_column] = output[burstiness_column] + output[
+                concentration_column
+            ]
+            feature_columns.extend(
+                [
+                    burstiness_column,
+                    u_shape_column,
+                    back_loaded_column,
+                    concentration_column,
+                ]
+            )
     if "turnover" in groups:
         frame["turnover"] = frame["turnover"].astype(float)
         turnover_grouped = frame.groupby("instrument_id", sort=False)["turnover"]
@@ -1096,6 +1340,65 @@ def build_intraday_feature_matrix(
                 * capacity_quality
                 * recovery_balance
             )
+            feature_columns.append(column)
+    if "microstructure_recovery_speed" in groups:
+        frame["turnover"] = frame["turnover"].astype(float)
+        positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
+        downside_return = one_bar_return.clip(upper=0.0).abs().where(
+            one_bar_return.notna()
+        )
+        turnover = frame["turnover"].where(one_bar_return.notna())
+        downside_turnover = turnover.where(one_bar_return.lt(0.0), 0.0)
+        recovery_windows = set(config.microstructure_recovery_windows)
+        for spec in config.microstructure_recovery_acceleration_specs:
+            recovery_windows.update(spec)
+        recovery_by_window: dict[int, pd.Series] = {}
+        for window in sorted(recovery_windows):
+            rolling_positive_return = positive_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values, window=window: values.rolling(window, min_periods=window).sum())
+            rolling_downside_return = downside_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values, window=window: values.rolling(window, min_periods=window).sum())
+            recovery_ratio = rolling_positive_return / rolling_downside_return.where(
+                rolling_downside_return != 0.0
+            )
+            half_window = window // 2
+            if half_window <= 0:
+                raise ValueError("microstructure_recovery_windows values must be at least 2")
+            recent_downside_turnover = downside_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values, half_window=half_window: values.rolling(
+                    half_window,
+                    min_periods=half_window,
+                ).sum()
+            )
+            previous_downside_turnover = recent_downside_turnover.groupby(
+                frame["instrument_id"]
+            ).shift(half_window)
+            total_downside_turnover = previous_downside_turnover + recent_downside_turnover
+            pressure_relief = (
+                previous_downside_turnover - recent_downside_turnover
+            ) / total_downside_turnover.where(total_downside_turnover != 0.0)
+            recovery_speed = np.log1p(recovery_ratio.clip(lower=0.0)) * (
+                1.0 + pressure_relief.clip(lower=0.0)
+            )
+            recovery_by_window[window] = recovery_speed
+            if window in config.microstructure_recovery_windows:
+                column = f"intraday_microstructure_recovery_speed_5m_w{window}"
+                output[column] = recovery_speed
+                feature_columns.append(column)
+        for short_window, long_window in (
+            config.microstructure_recovery_acceleration_specs
+        ):
+            column = (
+                "intraday_microstructure_recovery_acceleration_5m_"
+                f"s{short_window}_l{long_window}"
+            )
+            output[column] = recovery_by_window[short_window] - recovery_by_window[
+                long_window
+            ]
             feature_columns.append(column)
     if "liquidity_impact" in groups:
         frame["turnover"] = frame["turnover"].astype(float)
@@ -1403,6 +1706,37 @@ def _intraday_slot(frame: pd.DataFrame) -> pd.Series:
     if parsed.notna().all():
         return parsed.dt.strftime("%H:%M:%S")
     return frame["bar_end_time"].astype(str)
+
+
+def _session_tail_mask(frame: pd.DataFrame, *, tail_bars: int) -> pd.Series:
+    parsed = pd.to_datetime(frame["bar_end_time"], errors="coerce", format="ISO8601")
+    if parsed.notna().all():
+        minutes = parsed.dt.hour * 60 + parsed.dt.minute
+        session_close_minutes = 15 * 60
+        first_tail_minutes = session_close_minutes - 5 * (tail_bars - 1)
+        return (
+            (minutes >= first_tail_minutes) & (minutes <= session_close_minutes)
+        ).astype(bool)
+    session_date = _session_date(frame)
+    sorted_frame = (
+        frame.assign(_session_date=session_date, _row_id=frame.index)
+        .sort_values(["instrument_id", "_session_date", "bar_end_time"])
+        .copy()
+    )
+    session_grouped = sorted_frame.groupby(
+        ["instrument_id", "_session_date"],
+        sort=False,
+    )
+    session_size = session_grouped["_row_id"].transform("size")
+    position_in_session = session_grouped.cumcount()
+    bars_to_session_end = session_size - position_in_session - 1
+    tail_mask = bars_to_session_end < tail_bars
+    return (
+        pd.Series(tail_mask.to_numpy(), index=sorted_frame["_row_id"])
+        .reindex(frame.index)
+        .fillna(False)
+        .astype(bool)
+    )
 
 
 def _session_date(frame: pd.DataFrame) -> pd.Series:

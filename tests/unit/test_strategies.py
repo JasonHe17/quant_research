@@ -24,8 +24,11 @@ from examples.run_tree_score_backtest import (
     _build_segment_tree_score_executions,
     _build_tree_score_executions,
     _build_target_weights,
+    _cost_pressure_scale,
+    _cost_pressure_turnover_cap,
     _load_ranked_score_signals,
     _next_segment_end,
+    _realized_transaction_cost_bps,
     _resolved_policy_estimated_cost_bps,
     _score_rank_limit,
     _run_tree_score_backtest_streaming,
@@ -161,6 +164,61 @@ def test_rank_buffer_drop_policy_exits_beyond_exit_rank_and_enters_replacement()
     assert targets["inst-new"] == pytest.approx(1.0)
     assert reasons["inst-held"] == "exit_rank"
     assert reasons["inst-new"] == "entry_rank"
+
+
+def test_rank_buffer_drop_policy_skips_ineligible_new_entries_without_mixing_rank() -> None:
+    forecasts = pd.DataFrame(
+        [
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-blocked", 0.9, 1),
+                "entry_eligible": False,
+            },
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-good", 0.8, 2),
+                "entry_eligible": True,
+            },
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-next", 0.7, 3),
+                "entry_eligible": True,
+            },
+        ]
+    )
+
+    result = RankBufferDropPolicy(
+        RankBufferDropConfig(target_count=1, entry_rank=1, exit_rank=3)
+    ).decide(forecasts)
+
+    decisions = result.trade_decisions.set_index("instrument_id")
+    assert decisions.loc["inst-good", "target_weight"] == pytest.approx(1.0)
+    assert decisions.loc["inst-good", "decision_reason"] == "entry_rank"
+    assert "inst-blocked" not in decisions.index
+
+
+def test_rank_buffer_drop_policy_entry_eligibility_does_not_force_exit() -> None:
+    forecasts = pd.DataFrame(
+        [
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-held", 0.9, 1),
+                "entry_eligible": False,
+            },
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-new", 0.8, 2),
+                "entry_eligible": True,
+            },
+        ]
+    )
+    state = pd.DataFrame(
+        [{"instrument_id": "inst-held", "current_weight": 1.0, "holding_bars": 5}]
+    )
+
+    result = RankBufferDropPolicy(
+        RankBufferDropConfig(target_count=1, entry_rank=1, exit_rank=1)
+    ).decide(forecasts, state)
+
+    decisions = result.trade_decisions.set_index("instrument_id")
+    assert decisions.loc["inst-held", "target_weight"] == pytest.approx(1.0)
+    assert decisions.loc["inst-held", "decision_reason"] == "hold_buffer"
+    assert "inst-new" not in decisions.index
 
 
 def test_rank_buffer_drop_policy_uses_no_trade_band_for_small_resizes() -> None:
@@ -813,6 +871,64 @@ def test_tree_score_target_builder_uses_min_of_schedule_and_drawdown_brake(
     assert result.target_weights["target_weight"].sum() == pytest.approx(0.4)
 
 
+def test_tree_score_target_builder_records_cost_pressure_scale(tmp_path) -> None:
+    ranked = pd.DataFrame(
+        [
+            {"signal_time": "t0", "instrument_id": "inst-a", "score": 0.9, "rank": 1},
+            {"signal_time": "t0", "instrument_id": "inst-b", "score": 0.8, "rank": 2},
+        ]
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        top_n=2,
+        policy_entry_rank=2,
+        policy_exit_rank=2,
+    )
+
+    result = _build_target_weights(
+        ranked,
+        params,
+        gross_exposure_scale_cap=0.6,
+        cost_pressure_scale=0.6,
+        realized_cost_bps=125.0,
+    )
+
+    assert result.target_weights["target_weight"].sum() == pytest.approx(0.6)
+    assert "drawdown_brake_scale" not in result.diagnostics.columns
+    assert result.diagnostics.loc[0, "cost_pressure_scale"] == pytest.approx(0.6)
+    assert bool(result.diagnostics.loc[0, "cost_pressure_active"]) is True
+    assert result.diagnostics.loc[0, "realized_cost_bps"] == pytest.approx(125.0)
+
+
+def test_tree_score_target_builder_applies_cost_pressure_turnover_cap(tmp_path) -> None:
+    ranked = pd.DataFrame(
+        [
+            {"signal_time": "t0", "instrument_id": "inst-a", "score": 0.9, "rank": 1},
+            {"signal_time": "t0", "instrument_id": "inst-b", "score": 0.1, "rank": 2},
+        ]
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        trade_policy="cost_aware_optimizer",
+        top_n=1,
+        optimizer_candidate_rank=2,
+        optimizer_score_to_edge_bps=100.0,
+    )
+
+    result = _build_target_weights(
+        ranked,
+        params,
+        cost_pressure_scale=1.0,
+        cost_pressure_turnover_cap=0.4,
+        realized_cost_bps=1000.0,
+    )
+
+    assert result.target_weights["target_weight"].sum() == pytest.approx(0.4)
+    assert result.diagnostics.loc[0, "planned_gross_turnover"] == pytest.approx(0.4)
+    assert result.diagnostics.loc[0, "cost_pressure_turnover_cap"] == pytest.approx(0.4)
+    assert bool(result.diagnostics.loc[0, "cost_pressure_turnover_active"]) is True
+
+
 def test_tree_score_target_builder_supports_cost_aware_optimizer(tmp_path) -> None:
     ranked = pd.DataFrame(
         [
@@ -1038,6 +1154,40 @@ def test_tree_score_loader_preserves_optimizer_forecast_columns(tmp_path) -> Non
     assert ranked.loc[0, "expected_edge_bps"] == pytest.approx(100.0)
 
 
+def test_tree_score_loader_preserves_entry_eligible_column(tmp_path) -> None:
+    score_path = tmp_path / "scores.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "t0",
+                "instrument_id": "inst-a",
+                "score": 1.0,
+                "entry_eligible": False,
+            },
+            {
+                "timestamp": "t0",
+                "instrument_id": "inst-b",
+                "score": 0.5,
+                "entry_eligible": True,
+            },
+        ]
+    ).to_parquet(score_path, index=False)
+    params = replace(
+        _tree_score_params(tmp_path),
+        predictions_path=score_path,
+        policy_entry_rank=2,
+        policy_exit_rank=2,
+    )
+
+    ranked = _load_ranked_score_signals(params, start="t0", end="t0")
+
+    assert "entry_eligible" in ranked.columns
+    assert ranked.set_index("instrument_id")["entry_eligible"].to_dict() == {
+        "inst-a": False,
+        "inst-b": True,
+    }
+
+
 def test_tree_score_sparse_executions_keep_only_targets_and_tracked_holdings() -> None:
     bars = pd.DataFrame(
         [
@@ -1163,6 +1313,9 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         policy_gross_exposure_scale_path=None,
         policy_drawdown_brake_threshold=None,
         policy_drawdown_brake_reduced_scale=0.5,
+        policy_cost_pressure_threshold_bps=None,
+        policy_cost_pressure_reduced_scale=0.7,
+        policy_cost_pressure_max_gross_turnover_per_rebalance=None,
         optimizer_candidate_rank=None,
         optimizer_score_to_edge_bps=100.0,
         optimizer_min_net_edge_bps=0.0,
@@ -1321,3 +1474,85 @@ def test_streaming_with_drawdown_brake_dispatches_rebalance_path(
 
     assert calls == ["rebalance"]
     assert result["summary"] == {}
+
+
+def test_streaming_with_cost_pressure_dispatches_rebalance_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    params = replace(
+        _tree_score_params(tmp_path),
+        policy_cost_pressure_threshold_bps=1000.0,
+        output_dir=tmp_path,
+    )
+    backtest_params = baseline_backtest.BacktestParams(
+        catalog_path=Path("catalog.json"),
+        start="2024-01-02T09:30:00+08:00",
+        end="2024-01-03T15:00:00+08:00",
+        top_n=1,
+        initial_cash=1_000_000.0,
+        lookback_bars=1,
+        min_avg_turnover=None,
+        liquidity_window_bars=1,
+        commission_bps=0.0,
+        slippage_bps=0.0,
+        lot_size=100,
+        max_symbols=None,
+        output_dir=tmp_path,
+        data_access_mode="fast_parquet",
+        streaming_chunk="month",
+        streaming_chunk_padding_days=0,
+    )
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "examples.run_tree_score_backtest._run_tree_score_backtest_streaming_rebalance_drawdown",
+        lambda *args, **kwargs: calls.append("rebalance") or {"summary": {}, "metrics": {}, "trades": pd.DataFrame(), "equity_curve": pd.DataFrame(), "final_positions": pd.DataFrame()},
+    )
+
+    result = _run_tree_score_backtest_streaming(params, backtest_params)
+
+    assert calls == ["rebalance"]
+    assert result["summary"] == {}
+
+
+def test_cost_pressure_scale_uses_realized_transaction_cost_bps(tmp_path) -> None:
+    params = replace(
+        _tree_score_params(tmp_path),
+        initial_cash=1_000_000.0,
+        policy_cost_pressure_threshold_bps=15.0,
+        policy_cost_pressure_reduced_scale=0.6,
+    )
+    totals = {
+        "total_commission": 500.0,
+        "total_stamp_tax": 750.0,
+        "total_slippage_cost": 250.0,
+    }
+
+    assert _realized_transaction_cost_bps(totals, params.initial_cash) == pytest.approx(15.0)
+    assert _cost_pressure_scale(params, totals) == pytest.approx(0.6)
+    assert _cost_pressure_scale(
+        replace(params, policy_cost_pressure_threshold_bps=20.0),
+        totals,
+    ) == pytest.approx(1.0)
+
+
+def test_cost_pressure_turnover_cap_uses_realized_transaction_cost_bps(tmp_path) -> None:
+    params = replace(
+        _tree_score_params(tmp_path),
+        initial_cash=1_000_000.0,
+        policy_cost_pressure_threshold_bps=15.0,
+        policy_cost_pressure_max_gross_turnover_per_rebalance=0.05,
+    )
+    totals = {
+        "total_commission": 500.0,
+        "total_stamp_tax": 750.0,
+        "total_slippage_cost": 250.0,
+    }
+
+    assert _cost_pressure_turnover_cap(params, totals) == pytest.approx(0.05)
+    assert _cost_pressure_turnover_cap(
+        replace(params, policy_cost_pressure_threshold_bps=20.0),
+        totals,
+    ) is None

@@ -48,7 +48,12 @@ def main() -> None:
     methods = _build_overlay_scores(args, output_dir=output_dir)
     scenarios = _scenarios(args)
     commands = _run_backtests(args, output_dir=output_dir, methods=methods, scenarios=scenarios)
-    rows = _collect_rows(methods=methods, scenarios=scenarios, output_dir=output_dir)
+    rows = _collect_rows(
+        methods=methods,
+        scenarios=scenarios,
+        output_dir=output_dir,
+        policy=args.policy,
+    )
     summary = {
         "params": _summary_params(args),
         "methods": methods,
@@ -76,7 +81,10 @@ def _build_overlay_scores(args: argparse.Namespace, *, output_dir: Path) -> dict
     condition = _condition_lookup(args)
     methods: dict[str, Any] = {}
     for weight in args.overlay_weights:
-        if not 0 <= weight <= 1:
+        if args.overlay_mode == "optimizer_risk_penalty":
+            if weight < 0:
+                raise ValueError("optimizer_risk_penalty weights must be non-negative")
+        elif not 0 <= weight <= 1:
             raise ValueError("overlay weights must be in [0, 1]")
         method = f"{args.method_prefix}_{_weight_label(weight)}"
         method_dir = score_root / method
@@ -102,6 +110,10 @@ def _build_overlay_scores(args: argparse.Namespace, *, output_dir: Path) -> dict
                 overlay_weight=weight,
                 condition=condition,
                 rank_normalize=args.rank_normalize,
+                decision_timing=args.decision_timing,
+                condition_primary_mode=args.condition_primary_mode,
+                overlay_mode=args.overlay_mode,
+                downside_penalty_quantile=args.downside_penalty_quantile,
             )
             scores.to_parquet(output_path, index=False)
             row_count += int(len(scores))
@@ -112,7 +124,19 @@ def _build_overlay_scores(args: argparse.Namespace, *, output_dir: Path) -> dict
             "partition_count": partition_count,
             "row_count": row_count,
             "overlay_weight": weight,
-            "primary_weight": 1.0 - weight,
+            "primary_weight": 1.0
+            if args.overlay_mode in {"entry_exclusion", "optimizer_risk_penalty"}
+            else 1.0 - weight,
+            "overlay_mode": args.overlay_mode,
+            "entry_exclusion_quantile": weight
+            if args.overlay_mode == "entry_exclusion" and weight > 0
+            else None,
+            "risk_penalty_bps_scale": weight
+            if args.overlay_mode == "optimizer_risk_penalty"
+            else None,
+            "risk_penalty_quantile": args.downside_penalty_quantile
+            if args.overlay_mode == "optimizer_risk_penalty"
+            else None,
             "condition": _condition_summary(args),
         }
     return methods
@@ -155,6 +179,10 @@ def _overlay_partition(
     overlay_weight: float,
     condition: dict[str, bool] | None,
     rank_normalize: bool,
+    decision_timing: str,
+    condition_primary_mode: str = "current",
+    overlay_mode: str = "blend",
+    downside_penalty_quantile: float = 0.2,
 ) -> pd.DataFrame:
     primary = pd.read_parquet(primary_path, columns=["timestamp", "instrument_id", "score"])
     satellite = pd.read_parquet(
@@ -187,21 +215,175 @@ def _overlay_partition(
             errors="coerce",
         )
     frame["satellite_component"] = frame["satellite_component"].fillna(0.0)
+    if condition_primary_mode == "daily_first":
+        frame = _use_daily_first_primary_component_for_condition(
+            frame,
+            condition=condition,
+        )
+    elif condition_primary_mode != "current":
+        raise ValueError(f"unsupported condition primary mode: {condition_primary_mode}")
     if condition is None:
         effective_weight = pd.Series(float(overlay_weight), index=frame.index)
     else:
         active = frame["timestamp"].astype(str).map(condition).fillna(False).astype(bool)
         effective_weight = pd.Series(0.0, index=frame.index)
         effective_weight.loc[active] = float(overlay_weight)
-    frame["score"] = (
-        (1.0 - effective_weight) * frame["primary_component"]
-        + effective_weight * frame["satellite_component"]
+    frame["score"] = _combine_overlay_components(
+        frame,
+        effective_weight=effective_weight,
+        overlay_mode=overlay_mode,
+        downside_penalty_quantile=downside_penalty_quantile,
     )
     output = frame.loc[:, ["timestamp", "instrument_id", "score"]].copy()
+    if overlay_mode == "entry_exclusion":
+        if overlay_weight == 0:
+            output["entry_eligible"] = True
+        else:
+            output["entry_eligible"] = _entry_exclusion_mask(
+                frame,
+                effective_weight=effective_weight,
+                entry_exclusion_quantile=overlay_weight,
+            )
+    elif overlay_mode == "optimizer_risk_penalty":
+        output["risk_penalty_bps"] = _optimizer_risk_penalty_bps(
+            frame,
+            effective_weight=effective_weight,
+            risk_penalty_quantile=downside_penalty_quantile,
+        )
+    if decision_timing == "daily_first_plus_condition":
+        output = _daily_first_plus_condition_decisions(output, condition=condition)
+    elif decision_timing != "all":
+        raise ValueError(f"unsupported decision timing: {decision_timing}")
     return output.sort_values(
         ["timestamp", "score", "instrument_id"],
         ascending=[True, False, True],
     ).reset_index(drop=True)
+
+
+def _combine_overlay_components(
+    frame: pd.DataFrame,
+    *,
+    effective_weight: pd.Series,
+    overlay_mode: str,
+    downside_penalty_quantile: float,
+) -> pd.Series:
+    if overlay_mode == "blend":
+        return (
+            (1.0 - effective_weight) * frame["primary_component"]
+            + effective_weight * frame["satellite_component"]
+        )
+    if overlay_mode == "entry_exclusion":
+        return frame["primary_component"]
+    if overlay_mode == "optimizer_risk_penalty":
+        return frame["primary_component"]
+    if overlay_mode != "downside_penalty":
+        raise ValueError(f"unsupported overlay mode: {overlay_mode}")
+    if not 0.0 < downside_penalty_quantile < 1.0:
+        raise ValueError("downside_penalty_quantile must be in (0, 1)")
+    threshold = frame.groupby("timestamp", sort=False)["satellite_component"].transform(
+        lambda values: values.quantile(downside_penalty_quantile)
+    )
+    penalty = (threshold - frame["satellite_component"]).clip(lower=0.0)
+    return frame["primary_component"] - effective_weight * penalty
+
+
+def _entry_exclusion_mask(
+    frame: pd.DataFrame,
+    *,
+    effective_weight: pd.Series,
+    entry_exclusion_quantile: float,
+) -> pd.Series:
+    if not 0.0 < entry_exclusion_quantile < 1.0:
+        raise ValueError("entry_exclusion_quantile must be in (0, 1)")
+    threshold = frame.groupby("timestamp", sort=False)["satellite_component"].transform(
+        lambda values: values.quantile(entry_exclusion_quantile)
+    )
+    active = effective_weight.astype(float).gt(0.0)
+    return ~(active & frame["satellite_component"].lt(threshold))
+
+
+def _optimizer_risk_penalty_bps(
+    frame: pd.DataFrame,
+    *,
+    effective_weight: pd.Series,
+    risk_penalty_quantile: float,
+) -> pd.Series:
+    if not 0.0 < risk_penalty_quantile < 1.0:
+        raise ValueError("risk_penalty_quantile must be in (0, 1)")
+    threshold = frame.groupby("timestamp", sort=False)["satellite_component"].transform(
+        lambda values: values.quantile(risk_penalty_quantile)
+    )
+    penalty_depth = (threshold - frame["satellite_component"]).clip(lower=0.0)
+    return effective_weight.astype(float) * penalty_depth
+
+
+def _use_daily_first_primary_component_for_condition(
+    frame: pd.DataFrame,
+    *,
+    condition: dict[str, bool] | None,
+) -> pd.DataFrame:
+    if condition is None:
+        raise ValueError("daily_first condition primary mode requires --condition-schedule")
+    parsed = pd.to_datetime(frame["timestamp"], errors="coerce", format="ISO8601")
+    if parsed.isna().any():
+        raise ValueError("daily_first condition primary mode requires parseable timestamps")
+    output = frame.copy()
+    output["_parsed_timestamp"] = parsed
+    output["_session_date"] = parsed.dt.strftime("%Y-%m-%d")
+    timestamp_frame = (
+        output.loc[:, ["timestamp", "_session_date", "_parsed_timestamp"]]
+        .drop_duplicates()
+        .sort_values(["_session_date", "_parsed_timestamp"], kind="mergesort")
+    )
+    first_timestamps = set(
+        timestamp_frame.drop_duplicates("_session_date", keep="first")["timestamp"]
+    )
+    anchors = output.loc[
+        output["timestamp"].isin(first_timestamps),
+        ["_session_date", "instrument_id", "primary_component"],
+    ].rename(columns={"primary_component": "_daily_first_primary_component"})
+    output = output.merge(
+        anchors,
+        on=["_session_date", "instrument_id"],
+        how="left",
+    )
+    active = output["timestamp"].astype(str).map(condition).fillna(False).astype(bool)
+    anchored = output["_daily_first_primary_component"].notna()
+    replace = active & anchored
+    output.loc[replace, "primary_component"] = output.loc[
+        replace,
+        "_daily_first_primary_component",
+    ]
+    return output.drop(
+        columns=["_parsed_timestamp", "_session_date", "_daily_first_primary_component"],
+    )
+
+
+def _daily_first_plus_condition_decisions(
+    scores: pd.DataFrame,
+    *,
+    condition: dict[str, bool] | None,
+) -> pd.DataFrame:
+    if condition is None:
+        raise ValueError("daily_first_plus_condition requires --condition-schedule")
+    timestamps = scores.loc[:, ["timestamp"]].drop_duplicates().copy()
+    parsed = pd.to_datetime(timestamps["timestamp"], errors="coerce", format="ISO8601")
+    if parsed.isna().any():
+        raise ValueError("daily_first_plus_condition requires parseable timestamps")
+    timestamps["_parsed_timestamp"] = parsed
+    timestamps["_session_date"] = parsed.dt.strftime("%Y-%m-%d")
+    timestamps = timestamps.sort_values(
+        ["_session_date", "_parsed_timestamp"],
+        kind="mergesort",
+    )
+    first_daily = timestamps.groupby("_session_date", sort=False).cumcount() == 0
+    condition_active = (
+        timestamps["timestamp"].astype(str).map(condition).fillna(False).astype(bool)
+    )
+    keep_timestamps = set(
+        timestamps.loc[first_daily | condition_active, "timestamp"].astype(str)
+    )
+    return scores.loc[scores["timestamp"].astype(str).isin(keep_timestamps)].copy()
 
 
 def _scenarios(args: argparse.Namespace) -> list[Scenario]:
@@ -412,6 +594,41 @@ def _backtest_job(
         "--optimizer-weighting",
         args.optimizer_weighting,
     ]
+    if args.policy_max_gross_turnover_per_rebalance is not None:
+        command.extend(
+            [
+                "--policy-max-gross-turnover-per-rebalance",
+                str(args.policy_max_gross_turnover_per_rebalance),
+            ]
+        )
+    if args.policy_total_gross_turnover_budget is not None:
+        command.extend(
+            [
+                "--policy-total-gross-turnover-budget",
+                str(args.policy_total_gross_turnover_budget),
+            ]
+        )
+    if args.policy_cost_pressure_threshold_bps is not None:
+        command.extend(
+            [
+                "--policy-cost-pressure-threshold-bps",
+                str(args.policy_cost_pressure_threshold_bps),
+            ]
+        )
+    if args.policy_cost_pressure_reduced_scale != 0.7:
+        command.extend(
+            [
+                "--policy-cost-pressure-reduced-scale",
+                str(args.policy_cost_pressure_reduced_scale),
+            ]
+        )
+    if args.policy_cost_pressure_max_gross_turnover_per_rebalance is not None:
+        command.extend(
+            [
+                "--policy-cost-pressure-max-gross-turnover-per-rebalance",
+                str(args.policy_cost_pressure_max_gross_turnover_per_rebalance),
+            ]
+        )
     if args.policy_gross_exposure_scale_path:
         command.extend(
             ["--policy-gross-exposure-scale-path", args.policy_gross_exposure_scale_path]
@@ -449,6 +666,7 @@ def _collect_rows(
     methods: dict[str, Any],
     scenarios: list[Scenario],
     output_dir: Path,
+    policy: str,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for method in methods:
@@ -458,7 +676,7 @@ def _collect_rows(
                 / scenario.name
                 / "backtests"
                 / method
-                / "partial_rebalance_daily"
+                / policy
                 / "summary.json"
             )
             payload = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -468,7 +686,7 @@ def _collect_rows(
                     "scenario": scenario.name,
                     "description": scenario.description,
                     "method": method,
-                    "policy": "partial_rebalance_daily",
+                    "policy": policy,
                     "total_return": _number(metrics.get("total_return")),
                     "final_equity": _number(metrics.get("final_equity")),
                     "gross_turnover": _number(metrics.get("gross_turnover")),
@@ -614,9 +832,28 @@ def _summary_params(args: argparse.Namespace) -> dict[str, Any]:
         "primary_score_dir": args.primary_score_dir,
         "satellite_score_dir": args.satellite_score_dir,
         "overlay_weights": args.overlay_weights,
+        "overlay_mode": args.overlay_mode,
+        "downside_penalty_quantile": args.downside_penalty_quantile,
         "rank_normalize": args.rank_normalize,
+        "condition_primary_mode": args.condition_primary_mode,
         "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
+        "policy_max_gross_turnover_per_rebalance": (
+            args.policy_max_gross_turnover_per_rebalance
+        ),
+        "policy_total_gross_turnover_budget": args.policy_total_gross_turnover_budget,
+        "policy_turnover_budget_period": args.policy_turnover_budget_period,
+        "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
+        "policy_cost_pressure_threshold_bps": (
+            args.policy_cost_pressure_threshold_bps
+        ),
+        "policy_cost_pressure_reduced_scale": (
+            args.policy_cost_pressure_reduced_scale
+        ),
+        "policy_cost_pressure_max_gross_turnover_per_rebalance": (
+            args.policy_cost_pressure_max_gross_turnover_per_rebalance
+        ),
         "condition": _condition_summary(args),
+        "decision_timing": args.decision_timing,
         "profile": args.profile,
         "years": args.years,
         "job_workers": args.job_workers,
@@ -624,6 +861,10 @@ def _summary_params(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _weight_label(weight: float) -> str:
+    if weight >= 1.0:
+        if float(weight).is_integer():
+            return f"w{int(weight):02d}"
+        return f"w{str(weight).replace('.', 'p')}"
     tenths_of_percent = int(round(weight * 1000))
     if tenths_of_percent % 10 == 0:
         return f"w{tenths_of_percent // 10:02d}"
@@ -671,6 +912,49 @@ def _parse_args() -> argparse.Namespace:
         default=True,
         help="rank-normalize each input score within timestamp before blending",
     )
+    parser.add_argument(
+        "--overlay-mode",
+        choices=(
+            "blend",
+            "downside_penalty",
+            "entry_exclusion",
+            "optimizer_risk_penalty",
+        ),
+        default="blend",
+        help=(
+            "blend linearly combines primary and satellite ranks; "
+            "downside_penalty keeps the primary score and only penalizes names in "
+            "the weak satellite tail; entry_exclusion keeps the primary score and "
+            "uses each positive overlay weight as the excluded lower-tail satellite "
+            "quantile; optimizer_risk_penalty keeps the primary score and writes "
+            "risk_penalty_bps for weak satellite-tail names"
+        ),
+    )
+    parser.add_argument(
+        "--downside-penalty-quantile",
+        type=float,
+        default=0.2,
+        help="satellite rank quantile below which downside_penalty subtracts score",
+    )
+    parser.add_argument(
+        "--decision-timing",
+        choices=("all", "daily_first_plus_condition"),
+        default="all",
+        help=(
+            "which score timestamps to expose to the backtest; "
+            "daily_first_plus_condition keeps the first timestamp of each session "
+            "plus condition-active timestamps"
+        ),
+    )
+    parser.add_argument(
+        "--condition-primary-mode",
+        choices=("current", "daily_first"),
+        default="current",
+        help=(
+            "primary score used when condition is active; daily_first anchors "
+            "condition-active rows to the session's first primary ranking"
+        ),
+    )
     parser.add_argument("--condition-schedule")
     parser.add_argument("--condition-column", default="risk_state")
     parser.add_argument("--condition-values", nargs="+", default=["reduced", "blocked"])
@@ -698,9 +982,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-exit-rank", type=int, default=150)
     parser.add_argument("--policy-max-entries-per-rebalance", type=int, default=10)
     parser.add_argument("--policy-max-exits-per-rebalance", type=int, default=10)
+    parser.add_argument("--policy-max-gross-turnover-per-rebalance", type=float)
+    parser.add_argument("--policy-total-gross-turnover-budget", type=float)
     parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-turnover-budget-period", default="path")
     parser.add_argument("--policy-drawdown-brake-reduced-scale", type=float, default=0.5)
+    parser.add_argument("--policy-cost-pressure-threshold-bps", type=float)
+    parser.add_argument("--policy-cost-pressure-reduced-scale", type=float, default=0.7)
+    parser.add_argument(
+        "--policy-cost-pressure-max-gross-turnover-per-rebalance",
+        type=float,
+    )
     parser.add_argument("--min-trade-weight", type=float, default=0.0005)
     parser.add_argument("--limit-up-bps", type=float, default=980.0)
     parser.add_argument("--limit-down-bps", type=float, default=980.0)
@@ -716,7 +1008,48 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--job-workers", type=int, default=2)
     parser.add_argument("--resume-existing", action="store_true")
     parser.add_argument("--print-summary", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not 0.0 < args.downside_penalty_quantile < 1.0:
+        raise ValueError("--downside-penalty-quantile must be in (0, 1)")
+    if args.overlay_mode == "entry_exclusion":
+        invalid_weights = [
+            weight for weight in args.overlay_weights if weight != 0 and not 0.0 < weight < 1.0
+        ]
+        if invalid_weights:
+            raise ValueError(
+                "entry_exclusion overlay weights must be 0 for control or quantiles in (0, 1)"
+            )
+    if args.overlay_mode == "optimizer_risk_penalty":
+        invalid_weights = [weight for weight in args.overlay_weights if weight < 0]
+        if invalid_weights:
+            raise ValueError("optimizer_risk_penalty weights must be non-negative")
+    if (
+        args.policy_max_gross_turnover_per_rebalance is not None
+        and args.policy_max_gross_turnover_per_rebalance < 0
+    ):
+        raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
+    if (
+        args.policy_total_gross_turnover_budget is not None
+        and args.policy_total_gross_turnover_budget < 0
+    ):
+        raise ValueError("--policy-total-gross-turnover-budget must be non-negative")
+    if args.policy_turnover_budget_pacing < 0:
+        raise ValueError("--policy-turnover-budget-pacing must be non-negative")
+    if (
+        args.policy_cost_pressure_threshold_bps is not None
+        and args.policy_cost_pressure_threshold_bps < 0
+    ):
+        raise ValueError("--policy-cost-pressure-threshold-bps must be non-negative")
+    if not 0 <= args.policy_cost_pressure_reduced_scale <= 1:
+        raise ValueError("--policy-cost-pressure-reduced-scale must be in [0, 1]")
+    if (
+        args.policy_cost_pressure_max_gross_turnover_per_rebalance is not None
+        and args.policy_cost_pressure_max_gross_turnover_per_rebalance < 0
+    ):
+        raise ValueError(
+            "--policy-cost-pressure-max-gross-turnover-per-rebalance must be non-negative"
+        )
+    return args
 
 
 if __name__ == "__main__":

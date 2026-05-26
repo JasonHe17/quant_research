@@ -321,6 +321,8 @@ class RankBufferDropPolicy:
         )
         entries: list[str] = []
         rejected_edge: list[str] = []
+        has_entry_eligibility = "entry_eligible" in ranked.columns
+        eligible_entry_rank = 0
         if cfg.gross_exposure_scale <= 0:
             entry_budget = 0
         if entry_budget > 0:
@@ -328,7 +330,13 @@ class RankBufferDropPolicy:
                 instrument_id = str(row.instrument_id)
                 if instrument_id in active or instrument_id in state_by_id:
                     continue
-                if int(row.rank) > cfg.entry_rank:
+                if has_entry_eligibility and not _entry_eligible_from_row(row):
+                    continue
+                if has_entry_eligibility:
+                    eligible_entry_rank += 1
+                    if eligible_entry_rank > cfg.entry_rank:
+                        break
+                elif int(row.rank) > cfg.entry_rank:
                     break
                 edge = _expected_edge_bps(row)
                 if cfg.min_expected_edge_bps is not None and edge < (
@@ -444,11 +452,7 @@ class CostAwareOptimizerPolicy:
         cfg = self.config
         forecast_by_id = _optimizer_forecast_mapping(ranked, cfg)
         state_by_id = _state_mapping(state)
-        candidate_ids = [
-            str(row.instrument_id)
-            for row in ranked.itertuples(index=False)
-            if int(row.rank) <= cfg.candidate_rank
-        ]
+        candidate_ids = _optimizer_candidate_ids(ranked, cfg.candidate_rank)
         held_ids = [
             instrument_id
             for instrument_id, payload in state_by_id.items()
@@ -633,6 +637,10 @@ def _forecast_mapping(ranked: pd.DataFrame) -> dict[str, dict[str, object]]:
             "score": float(score_values[index]),
             "expected_edge_bps": expected_edge,
         }
+        if "entry_eligible" in ranked.columns:
+            mapping[str(instrument_id)]["entry_eligible"] = _entry_eligible_value(
+                ranked["entry_eligible"].iloc[index]
+            )
     return mapping
 
 
@@ -665,7 +673,28 @@ def _optimizer_forecast_mapping(
             "risk_penalty_bps": risk_penalty,
             "net_edge_bps": net_edge,
         }
+        if "entry_eligible" in ranked.columns:
+            mapping[str(instrument_id)]["entry_eligible"] = _entry_eligible_value(
+                ranked["entry_eligible"].iloc[index]
+            )
     return mapping
+
+
+def _optimizer_candidate_ids(ranked: pd.DataFrame, candidate_rank: int) -> list[str]:
+    has_entry_eligibility = "entry_eligible" in ranked.columns
+    candidates: list[str] = []
+    eligible_rank = 0
+    for row in ranked.itertuples(index=False):
+        if has_entry_eligibility:
+            if not _entry_eligible_from_row(row):
+                continue
+            eligible_rank += 1
+            if eligible_rank > candidate_rank:
+                break
+        elif int(row.rank) > candidate_rank:
+            break
+        candidates.append(str(row.instrument_id))
+    return candidates
 
 
 def _state_mapping(state: pd.DataFrame) -> dict[str, dict[str, object]]:
@@ -746,6 +775,18 @@ def _expected_edge_bps(row: object) -> float:
     if value is None or pd.isna(value):
         return 0.0
     return float(value)
+
+
+def _entry_eligible_from_row(row: object) -> bool:
+    return _entry_eligible_value(getattr(row, "entry_eligible", True))
+
+
+def _entry_eligible_value(value: object) -> bool:
+    if value is None or pd.isna(value):
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "n", "off"}
+    return bool(value)
 
 
 def _optimizer_selection_score(

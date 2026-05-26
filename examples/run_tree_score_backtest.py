@@ -81,6 +81,9 @@ class TreeScoreBacktestParams:
     policy_gross_exposure_scale_path: Path | None
     policy_drawdown_brake_threshold: float | None
     policy_drawdown_brake_reduced_scale: float
+    policy_cost_pressure_threshold_bps: float | None
+    policy_cost_pressure_reduced_scale: float
+    policy_cost_pressure_max_gross_turnover_per_rebalance: float | None
     optimizer_candidate_rank: int | None
     optimizer_score_to_edge_bps: float
     optimizer_min_net_edge_bps: float
@@ -169,6 +172,8 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         return _run_tree_score_backtest_streaming(params, backtest_params)
     if params.policy_drawdown_brake_threshold is not None:
         raise ValueError("drawdown brake requires --data-access-mode fast_parquet")
+    if params.policy_cost_pressure_threshold_bps is not None:
+        raise ValueError("cost pressure brake requires --data-access-mode fast_parquet")
 
     ranked_signals = _load_ranked_score_signals(params)
     target_build = _build_target_weights(ranked_signals, params)
@@ -245,6 +250,13 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "policy_drawdown_brake_reduced_scale": (
                 params.policy_drawdown_brake_reduced_scale
             ),
+            "policy_cost_pressure_threshold_bps": params.policy_cost_pressure_threshold_bps,
+            "policy_cost_pressure_reduced_scale": (
+                params.policy_cost_pressure_reduced_scale
+            ),
+            "policy_cost_pressure_max_gross_turnover_per_rebalance": (
+                params.policy_cost_pressure_max_gross_turnover_per_rebalance
+            ),
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
             "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
@@ -287,7 +299,10 @@ def _run_tree_score_backtest_streaming(
 ) -> dict[str, object]:
     if params.hold_rank_buffer is not None and params.trade_policy == "naive_top_n":
         raise ValueError("streaming score backtests do not support hold-rank buffer yet")
-    if params.policy_drawdown_brake_threshold is not None:
+    if (
+        params.policy_drawdown_brake_threshold is not None
+        or params.policy_cost_pressure_threshold_bps is not None
+    ):
         return _run_tree_score_backtest_streaming_rebalance_drawdown(
             params,
             backtest_params,
@@ -512,13 +527,30 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
                 current_equity=current_equity,
                 peak_equity=peak_equity,
             )
+            cost_pressure_scale = _cost_pressure_scale(params, trade_metric_totals)
+            cost_pressure_turnover_cap = _cost_pressure_turnover_cap(
+                params,
+                trade_metric_totals,
+            )
+            realized_cost_bps = _realized_transaction_cost_bps(
+                trade_metric_totals,
+                params.initial_cash,
+            )
+            gross_exposure_scale_cap = _min_optional_scale(
+                drawdown_brake_scale,
+                cost_pressure_scale,
+            )
             target_build = _build_target_weights(
                 group,
                 params,
                 policy_state=policy_state,
                 budget_state=budget_state,
-                gross_exposure_scale_cap=drawdown_brake_scale,
+                gross_exposure_scale_cap=gross_exposure_scale_cap,
                 scale_by_timestamp=scale_by_timestamp,
+                drawdown_brake_scale=drawdown_brake_scale,
+                cost_pressure_scale=cost_pressure_scale,
+                cost_pressure_turnover_cap=cost_pressure_turnover_cap,
+                realized_cost_bps=realized_cost_bps,
             )
             signals = target_build.target_weights
             policy_state = target_build.policy_state
@@ -603,6 +635,7 @@ def _load_ranked_score_signals(
                 "risk_penalty_bps",
                 "health_risk_bps",
                 "optimizer_risk_penalty_bps",
+                "entry_eligible",
             )
             if column in available_columns
         ]
@@ -711,6 +744,10 @@ def _build_target_weights(
     budget_state: PolicyBudgetState | None = None,
     gross_exposure_scale_cap: float | None = None,
     scale_by_timestamp: dict[str, float] | None = None,
+    drawdown_brake_scale: float | None = None,
+    cost_pressure_scale: float | None = None,
+    cost_pressure_turnover_cap: float | None = None,
+    realized_cost_bps: float | None = None,
 ) -> TargetWeightBuildResult:
     if params.trade_policy == "naive_top_n":
         return TargetWeightBuildResult(
@@ -761,6 +798,15 @@ def _build_target_weights(
             remaining_turnover_budget=remaining_turnover_budget,
             remaining_decision_count=len(grouped_signals) - index,
         )
+        if cost_pressure_turnover_cap is not None:
+            policy_turnover_cap = _min_optional_turnover_cap(
+                policy_turnover_cap,
+                cost_pressure_turnover_cap,
+            )
+            path_turnover_cap = _min_optional_turnover_cap(
+                path_turnover_cap,
+                cost_pressure_turnover_cap,
+            )
         if scale_by_timestamp:
             scale = scale_by_timestamp.get(
                 _timestamp_key(signal_time),
@@ -791,12 +837,13 @@ def _build_target_weights(
                 "risk_penalty_bps",
                 "health_risk_bps",
                 "optimizer_risk_penalty_bps",
+                "entry_eligible",
             )
             if column in forecast_frame.columns
         ]
         forecasts = forecast_frame.loc[:, forecast_columns]
         result = policy.decide(forecasts, state)
-        if remaining_turnover_budget is not None:
+        if path_turnover_cap is not None:
             result = _enforce_path_turnover_cap(result, path_turnover_cap)
         state = result.policy_state
         diagnostics_frame = result.diagnostics.copy()
@@ -811,11 +858,28 @@ def _build_target_weights(
             diagnostics_frame["turnover_path_budget_after"] = remaining_turnover_budget
             diagnostics_frame["turnover_budget_period"] = params.policy_turnover_budget_period
             diagnostics_frame["turnover_budget_period_key"] = budget_period_key
-        if gross_exposure_scale_cap is not None:
-            diagnostics_frame["drawdown_brake_scale"] = float(gross_exposure_scale_cap)
+        drawdown_diag_scale = drawdown_brake_scale
+        if (
+            drawdown_diag_scale is None
+            and gross_exposure_scale_cap is not None
+            and cost_pressure_scale is None
+        ):
+            drawdown_diag_scale = gross_exposure_scale_cap
+        if drawdown_diag_scale is not None:
+            diagnostics_frame["drawdown_brake_scale"] = float(drawdown_diag_scale)
             diagnostics_frame["drawdown_brake_active"] = bool(
-                gross_exposure_scale_cap < 1.0
+                drawdown_diag_scale < 1.0
             )
+        if cost_pressure_scale is not None:
+            diagnostics_frame["cost_pressure_scale"] = float(cost_pressure_scale)
+            diagnostics_frame["cost_pressure_active"] = bool(cost_pressure_scale < 1.0)
+        if cost_pressure_turnover_cap is not None:
+            diagnostics_frame["cost_pressure_turnover_cap"] = float(
+                cost_pressure_turnover_cap
+            )
+            diagnostics_frame["cost_pressure_turnover_active"] = True
+        if realized_cost_bps is not None:
+            diagnostics_frame["realized_cost_bps"] = float(realized_cost_bps)
         diagnostics.append(diagnostics_frame)
         target = result.portfolio_intent.loc[
             result.portfolio_intent["policy_target_weight"].astype(float) > 0,
@@ -888,6 +952,67 @@ def _drawdown_brake_scale(
     if drawdown <= threshold:
         return params.policy_drawdown_brake_reduced_scale
     return 1.0
+
+
+def _cost_pressure_scale(
+    params: TreeScoreBacktestParams,
+    trade_metric_totals: dict[str, float],
+) -> float | None:
+    threshold_bps = params.policy_cost_pressure_threshold_bps
+    if threshold_bps is None:
+        return None
+    realized_cost_bps = _realized_transaction_cost_bps(
+        trade_metric_totals,
+        params.initial_cash,
+    )
+    if realized_cost_bps >= threshold_bps:
+        return params.policy_cost_pressure_reduced_scale
+    return 1.0
+
+
+def _cost_pressure_turnover_cap(
+    params: TreeScoreBacktestParams,
+    trade_metric_totals: dict[str, float],
+) -> float | None:
+    threshold_bps = params.policy_cost_pressure_threshold_bps
+    cap = params.policy_cost_pressure_max_gross_turnover_per_rebalance
+    if threshold_bps is None or cap is None:
+        return None
+    realized_cost_bps = _realized_transaction_cost_bps(
+        trade_metric_totals,
+        params.initial_cash,
+    )
+    if realized_cost_bps >= threshold_bps:
+        return cap
+    return None
+
+
+def _realized_transaction_cost_bps(
+    trade_metric_totals: dict[str, float],
+    initial_cash: float,
+) -> float:
+    if initial_cash <= 0:
+        return 0.0
+    transaction_cost = (
+        float(trade_metric_totals.get("total_commission", 0.0))
+        + float(trade_metric_totals.get("total_stamp_tax", 0.0))
+        + float(trade_metric_totals.get("total_slippage_cost", 0.0))
+    )
+    return transaction_cost / float(initial_cash) * 10_000.0
+
+
+def _min_optional_scale(*scales: float | None) -> float | None:
+    active_scales = [float(scale) for scale in scales if scale is not None]
+    if not active_scales:
+        return None
+    return min(active_scales)
+
+
+def _min_optional_turnover_cap(*caps: float | None) -> float | None:
+    active_caps = [float(cap) for cap in caps if cap is not None]
+    if not active_caps:
+        return None
+    return min(active_caps)
 
 
 def _policy_for_params(
@@ -1235,6 +1360,13 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             "drawdown_brake_active_count": 0,
             "average_drawdown_brake_scale": 0.0,
             "min_drawdown_brake_scale": 0.0,
+            "cost_pressure_active_count": 0,
+            "average_cost_pressure_scale": 0.0,
+            "min_cost_pressure_scale": 0.0,
+            "cost_pressure_turnover_active_count": 0,
+            "average_cost_pressure_turnover_cap": 0.0,
+            "min_cost_pressure_turnover_cap": 0.0,
+            "max_realized_cost_bps": 0.0,
             "turnover_budget_period_count": 0,
             "turnover_path_budget_remaining": 0.0,
         }
@@ -1267,6 +1399,31 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
         diagnostics["drawdown_brake_active"]
         if "drawdown_brake_active" in diagnostics.columns
         else pd.Series(dtype=bool)
+    )
+    cost_pressure_scale = (
+        diagnostics["cost_pressure_scale"]
+        if "cost_pressure_scale" in diagnostics.columns
+        else pd.Series(dtype=float)
+    )
+    cost_pressure_active = (
+        diagnostics["cost_pressure_active"]
+        if "cost_pressure_active" in diagnostics.columns
+        else pd.Series(dtype=bool)
+    )
+    cost_pressure_turnover_cap = (
+        diagnostics["cost_pressure_turnover_cap"]
+        if "cost_pressure_turnover_cap" in diagnostics.columns
+        else pd.Series(dtype=float)
+    )
+    cost_pressure_turnover_active = (
+        diagnostics["cost_pressure_turnover_active"]
+        if "cost_pressure_turnover_active" in diagnostics.columns
+        else pd.Series(dtype=bool)
+    )
+    realized_cost_bps = (
+        diagnostics["realized_cost_bps"]
+        if "realized_cost_bps" in diagnostics.columns
+        else pd.Series(dtype=float)
     )
     return {
         "decision_timestamp_count": int(len(diagnostics)),
@@ -1315,6 +1472,41 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
         "min_drawdown_brake_scale": (
             float(drawdown_brake_scale.astype(float).min())
             if not drawdown_brake_scale.empty
+            else 0.0
+        ),
+        "cost_pressure_active_count": (
+            int(cost_pressure_active.astype(bool).sum())
+            if not cost_pressure_active.empty
+            else 0
+        ),
+        "average_cost_pressure_scale": (
+            float(cost_pressure_scale.astype(float).mean())
+            if not cost_pressure_scale.empty
+            else 0.0
+        ),
+        "min_cost_pressure_scale": (
+            float(cost_pressure_scale.astype(float).min())
+            if not cost_pressure_scale.empty
+            else 0.0
+        ),
+        "cost_pressure_turnover_active_count": (
+            int(cost_pressure_turnover_active.astype(bool).sum())
+            if not cost_pressure_turnover_active.empty
+            else 0
+        ),
+        "average_cost_pressure_turnover_cap": (
+            float(cost_pressure_turnover_cap.astype(float).mean())
+            if not cost_pressure_turnover_cap.empty
+            else 0.0
+        ),
+        "min_cost_pressure_turnover_cap": (
+            float(cost_pressure_turnover_cap.astype(float).min())
+            if not cost_pressure_turnover_cap.empty
+            else 0.0
+        ),
+        "max_realized_cost_bps": (
+            float(realized_cost_bps.astype(float).max())
+            if not realized_cost_bps.empty
             else 0.0
         ),
         "turnover_budget_period_count": (
@@ -1375,6 +1567,13 @@ def _summary_payload(
             "policy_drawdown_brake_threshold": params.policy_drawdown_brake_threshold,
             "policy_drawdown_brake_reduced_scale": (
                 params.policy_drawdown_brake_reduced_scale
+            ),
+            "policy_cost_pressure_threshold_bps": params.policy_cost_pressure_threshold_bps,
+            "policy_cost_pressure_reduced_scale": (
+                params.policy_cost_pressure_reduced_scale
+            ),
+            "policy_cost_pressure_max_gross_turnover_per_rebalance": (
+                params.policy_cost_pressure_max_gross_turnover_per_rebalance
             ),
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
@@ -1723,6 +1922,9 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--policy-gross-exposure-scale-path")
     parser.add_argument("--policy-drawdown-brake-threshold", type=float)
     parser.add_argument("--policy-drawdown-brake-reduced-scale", type=float, default=0.5)
+    parser.add_argument("--policy-cost-pressure-threshold-bps", type=float)
+    parser.add_argument("--policy-cost-pressure-reduced-scale", type=float, default=0.7)
+    parser.add_argument("--policy-cost-pressure-max-gross-turnover-per-rebalance", type=float)
     parser.add_argument("--optimizer-candidate-rank", type=int)
     parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
     parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
@@ -1819,6 +2021,20 @@ def _parse_args() -> TreeScoreBacktestParams:
         raise ValueError("--policy-drawdown-brake-threshold must be in (-1, 0)")
     if not 0 <= args.policy_drawdown_brake_reduced_scale <= 1:
         raise ValueError("--policy-drawdown-brake-reduced-scale must be in [0, 1]")
+    if (
+        args.policy_cost_pressure_threshold_bps is not None
+        and args.policy_cost_pressure_threshold_bps < 0
+    ):
+        raise ValueError("--policy-cost-pressure-threshold-bps must be non-negative")
+    if not 0 <= args.policy_cost_pressure_reduced_scale <= 1:
+        raise ValueError("--policy-cost-pressure-reduced-scale must be in [0, 1]")
+    if (
+        args.policy_cost_pressure_max_gross_turnover_per_rebalance is not None
+        and args.policy_cost_pressure_max_gross_turnover_per_rebalance < 0
+    ):
+        raise ValueError(
+            "--policy-cost-pressure-max-gross-turnover-per-rebalance must be non-negative"
+        )
     if args.optimizer_candidate_rank is not None and args.optimizer_candidate_rank <= 0:
         raise ValueError("--optimizer-candidate-rank must be positive")
     if args.optimizer_score_to_edge_bps < 0:
@@ -1893,6 +2109,11 @@ def _parse_args() -> TreeScoreBacktestParams:
         ),
         policy_drawdown_brake_threshold=args.policy_drawdown_brake_threshold,
         policy_drawdown_brake_reduced_scale=args.policy_drawdown_brake_reduced_scale,
+        policy_cost_pressure_threshold_bps=args.policy_cost_pressure_threshold_bps,
+        policy_cost_pressure_reduced_scale=args.policy_cost_pressure_reduced_scale,
+        policy_cost_pressure_max_gross_turnover_per_rebalance=(
+            args.policy_cost_pressure_max_gross_turnover_per_rebalance
+        ),
         optimizer_candidate_rank=args.optimizer_candidate_rank,
         optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,
         optimizer_min_net_edge_bps=args.optimizer_min_net_edge_bps,

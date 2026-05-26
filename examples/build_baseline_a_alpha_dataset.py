@@ -164,12 +164,32 @@ def _build_partition_dataset(
         IntradayFeatureConfig(
             factor_groups=tuple(args.factor_groups),
             reversal_lookback_bars=tuple(args.lookback_bars),
+            cross_sectional_reversal_lookback_bars=tuple(
+                args.cross_sectional_reversal_lookback_bars
+            ),
+            conditional_reversal_lookback_bars=tuple(
+                args.conditional_reversal_lookback_bars
+            ),
+            conditional_reversal_state_windows=tuple(
+                args.conditional_reversal_state_windows
+            ),
+            conditional_reversal_low_vol_quantile=(
+                args.conditional_reversal_low_vol_quantile
+            ),
+            conditional_reversal_min_volume_ratio=(
+                args.conditional_reversal_min_volume_ratio
+            ),
+            eod_reversal_lookback_bars=tuple(args.eod_reversal_lookback_bars),
+            eod_reversal_tail_bars=args.eod_reversal_tail_bars,
+            eod_reversal_weight=args.eod_reversal_weight,
             momentum_lookback_bars=tuple(args.momentum_lookback_bars),
             volatility_windows=tuple(args.volatility_windows),
+            volatility_state_change_specs=tuple(args.volatility_state_change_specs),
             price_position_windows=tuple(args.price_position_windows),
             range_volatility_windows=tuple(args.range_volatility_windows),
             efficiency_windows=tuple(args.efficiency_windows),
             volume_windows=tuple(args.volume_windows),
+            volume_distribution_windows=tuple(args.volume_distribution_windows),
             turnover_windows=tuple(args.turnover_windows),
             vwap_deviation_windows=tuple(args.vwap_deviation_windows),
             downside_volatility_windows=tuple(args.downside_volatility_windows),
@@ -210,6 +230,12 @@ def _build_partition_dataset(
             ),
             sell_pressure_exhaustion_persistence_specs=tuple(
                 args.sell_pressure_exhaustion_persistence_specs
+            ),
+            microstructure_recovery_windows=tuple(
+                args.microstructure_recovery_windows
+            ),
+            microstructure_recovery_acceleration_specs=tuple(
+                args.microstructure_recovery_acceleration_specs
             ),
             same_slot_memory_windows=tuple(args.same_slot_memory_windows),
             weak_tape_gap_windows=tuple(args.weak_tape_gap_windows),
@@ -435,12 +461,34 @@ def _write_summary(
             "end": args.end,
             "factor_groups": args.factor_groups,
             "lookback_bars": args.lookback_bars,
+            "cross_sectional_reversal_lookback_bars": (
+                args.cross_sectional_reversal_lookback_bars
+            ),
+            "conditional_reversal_lookback_bars": (
+                args.conditional_reversal_lookback_bars
+            ),
+            "conditional_reversal_state_windows": (
+                args.conditional_reversal_state_windows
+            ),
+            "conditional_reversal_low_vol_quantile": (
+                args.conditional_reversal_low_vol_quantile
+            ),
+            "conditional_reversal_min_volume_ratio": (
+                args.conditional_reversal_min_volume_ratio
+            ),
+            "eod_reversal_lookback_bars": args.eod_reversal_lookback_bars,
+            "eod_reversal_tail_bars": args.eod_reversal_tail_bars,
+            "eod_reversal_weight": args.eod_reversal_weight,
             "momentum_lookback_bars": args.momentum_lookback_bars,
             "volatility_windows": args.volatility_windows,
+            "volatility_state_change_specs": [
+                list(spec) for spec in args.volatility_state_change_specs
+            ],
             "price_position_windows": args.price_position_windows,
             "range_volatility_windows": args.range_volatility_windows,
             "efficiency_windows": args.efficiency_windows,
             "volume_windows": args.volume_windows,
+            "volume_distribution_windows": args.volume_distribution_windows,
             "turnover_windows": args.turnover_windows,
             "turnover_stability_windows": args.turnover_stability_windows,
             "liquidity_reliability_windows": args.liquidity_reliability_windows,
@@ -468,6 +516,10 @@ def _write_summary(
             "sell_pressure_exhaustion_windows": args.sell_pressure_exhaustion_windows,
             "sell_pressure_exhaustion_persistence_specs": [
                 list(spec) for spec in args.sell_pressure_exhaustion_persistence_specs
+            ],
+            "microstructure_recovery_windows": args.microstructure_recovery_windows,
+            "microstructure_recovery_acceleration_specs": [
+                list(spec) for spec in args.microstructure_recovery_acceleration_specs
             ],
             "same_slot_memory_windows": args.same_slot_memory_windows,
             "weak_tape_gap_windows": args.weak_tape_gap_windows,
@@ -526,12 +578,17 @@ def _parse_args() -> argparse.Namespace:
         choices=(
             "all",
             "reversal",
+            "cross_sectional_reversal",
+            "conditional_reversal",
+            "eod_reversal",
             "momentum",
             "volatility",
+            "volatility_state_change",
             "price_position",
             "range_volatility",
             "efficiency",
             "volume",
+            "volume_distribution_shape",
             "turnover",
             "turnover_stability",
             "liquidity_reliability",
@@ -559,6 +616,7 @@ def _parse_args() -> argparse.Namespace:
             "sell_pressure_recovery",
             "sell_pressure_exhaustion",
             "sell_pressure_exhaustion_persistence",
+            "microstructure_recovery_speed",
             "same_slot_intraday_memory",
             "overnight_intraday_tug_of_war",
             "weak_tape_overnight_gap",
@@ -567,7 +625,35 @@ def _parse_args() -> argparse.Namespace:
             "daily_moving_average",
         ),
     )
-    parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 3, 6])
+    parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 6, 12, 24])
+    parser.add_argument(
+        "--cross-sectional-reversal-lookback-bars",
+        type=int,
+        nargs="+",
+        default=[1, 6, 12, 24],
+    )
+    parser.add_argument(
+        "--conditional-reversal-lookback-bars",
+        type=int,
+        nargs="+",
+        default=[1, 6, 12, 24],
+    )
+    parser.add_argument(
+        "--conditional-reversal-state-windows",
+        type=int,
+        nargs="+",
+        default=[12],
+    )
+    parser.add_argument("--conditional-reversal-low-vol-quantile", type=float, default=0.5)
+    parser.add_argument("--conditional-reversal-min-volume-ratio", type=float, default=0.0)
+    parser.add_argument(
+        "--eod-reversal-lookback-bars",
+        type=int,
+        nargs="+",
+        default=[1, 6, 12, 24],
+    )
+    parser.add_argument("--eod-reversal-tail-bars", type=int, default=6)
+    parser.add_argument("--eod-reversal-weight", type=float, default=1.5)
     parser.add_argument(
         "--momentum-lookback-bars",
         type=int,
@@ -575,10 +661,23 @@ def _parse_args() -> argparse.Namespace:
         default=[3, 6, 12],
     )
     parser.add_argument("--volatility-windows", type=int, nargs="+", default=[6, 12, 24])
+    parser.add_argument(
+        "--volatility-state-change-specs",
+        type=_two_window_spec,
+        nargs="+",
+        default=[(12, 48), (24, 96)],
+        help="short:long volatility windows, for example 12:48",
+    )
     parser.add_argument("--price-position-windows", type=int, nargs="+", default=[48])
     parser.add_argument("--range-volatility-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--efficiency-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--volume-windows", type=int, nargs="+", default=[12, 48])
+    parser.add_argument(
+        "--volume-distribution-windows",
+        type=int,
+        nargs="+",
+        default=[24, 48, 96],
+    )
     parser.add_argument("--turnover-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument("--turnover-stability-windows", type=int, nargs="+", default=[48])
     parser.add_argument(
@@ -681,6 +780,19 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--microstructure-recovery-windows",
+        type=int,
+        nargs="+",
+        default=[24, 48],
+    )
+    parser.add_argument(
+        "--microstructure-recovery-acceleration-specs",
+        type=_two_window_spec,
+        nargs="+",
+        default=[(12, 48), (24, 96)],
+        help="short:long recovery-speed windows, for example 12:48",
+    )
+    parser.add_argument(
         "--same-slot-memory-windows",
         type=int,
         nargs="+",
@@ -759,10 +871,33 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if any(value <= 0 for value in args.lookback_bars):
         raise ValueError("--lookback-bars values must be positive")
+    if any(value <= 0 for value in args.cross_sectional_reversal_lookback_bars):
+        raise ValueError(
+            "--cross-sectional-reversal-lookback-bars values must be positive"
+        )
+    if any(value <= 0 for value in args.conditional_reversal_lookback_bars):
+        raise ValueError("--conditional-reversal-lookback-bars values must be positive")
+    if any(value <= 0 for value in args.conditional_reversal_state_windows):
+        raise ValueError("--conditional-reversal-state-windows values must be positive")
+    if not 0.0 < args.conditional_reversal_low_vol_quantile <= 1.0:
+        raise ValueError("--conditional-reversal-low-vol-quantile must be in (0, 1]")
+    if args.conditional_reversal_min_volume_ratio <= -1.0:
+        raise ValueError("--conditional-reversal-min-volume-ratio must be greater than -1")
+    if any(value <= 0 for value in args.eod_reversal_lookback_bars):
+        raise ValueError("--eod-reversal-lookback-bars values must be positive")
+    if args.eod_reversal_tail_bars <= 0:
+        raise ValueError("--eod-reversal-tail-bars must be positive")
+    if args.eod_reversal_weight <= 0.0:
+        raise ValueError("--eod-reversal-weight must be positive")
     if any(value <= 0 for value in args.momentum_lookback_bars):
         raise ValueError("--momentum-lookback-bars values must be positive")
     if any(value <= 0 for value in args.volatility_windows):
         raise ValueError("--volatility-windows values must be positive")
+    for short_window, long_window in args.volatility_state_change_specs:
+        if short_window <= 1 or long_window <= 1:
+            raise ValueError("--volatility-state-change-specs values must be at least 2")
+        if short_window >= long_window:
+            raise ValueError("--volatility-state-change-specs must be ordered short:long")
     if any(value <= 0 for value in args.price_position_windows):
         raise ValueError("--price-position-windows values must be positive")
     if any(value <= 0 for value in args.range_volatility_windows):
@@ -771,6 +906,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--efficiency-windows values must be positive")
     if any(value <= 0 for value in args.volume_windows):
         raise ValueError("--volume-windows values must be positive")
+    if any(value <= 1 for value in args.volume_distribution_windows):
+        raise ValueError("--volume-distribution-windows values must be at least 2")
     if any(value <= 0 for value in args.turnover_windows):
         raise ValueError("--turnover-windows values must be positive")
     if any(value <= 0 for value in args.turnover_stability_windows):
@@ -839,6 +976,17 @@ def _parse_args() -> argparse.Namespace:
                 "--sell-pressure-exhaustion-persistence-specs must be ordered "
                 "long:short:medium with long greater than short and medium"
             )
+    if any(value <= 1 for value in args.microstructure_recovery_windows):
+        raise ValueError("--microstructure-recovery-windows values must be at least 2")
+    for short_window, long_window in args.microstructure_recovery_acceleration_specs:
+        if short_window <= 1 or long_window <= 1:
+            raise ValueError(
+                "--microstructure-recovery-acceleration-specs values must be at least 2"
+            )
+        if short_window >= long_window:
+            raise ValueError(
+                "--microstructure-recovery-acceleration-specs must be ordered short:long"
+            )
     if any(value <= 0 for value in args.same_slot_memory_windows):
         raise ValueError("--same-slot-memory-windows values must be positive")
     if any(value <= 0 for value in args.weak_tape_gap_windows):
@@ -888,12 +1036,34 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "end": args.end,
         "factor_groups": list(args.factor_groups),
         "lookback_bars": list(args.lookback_bars),
+        "cross_sectional_reversal_lookback_bars": list(
+            args.cross_sectional_reversal_lookback_bars
+        ),
+        "conditional_reversal_lookback_bars": list(
+            args.conditional_reversal_lookback_bars
+        ),
+        "conditional_reversal_state_windows": list(
+            args.conditional_reversal_state_windows
+        ),
+        "conditional_reversal_low_vol_quantile": (
+            args.conditional_reversal_low_vol_quantile
+        ),
+        "conditional_reversal_min_volume_ratio": (
+            args.conditional_reversal_min_volume_ratio
+        ),
+        "eod_reversal_lookback_bars": list(args.eod_reversal_lookback_bars),
+        "eod_reversal_tail_bars": args.eod_reversal_tail_bars,
+        "eod_reversal_weight": args.eod_reversal_weight,
         "momentum_lookback_bars": list(args.momentum_lookback_bars),
         "volatility_windows": list(args.volatility_windows),
+        "volatility_state_change_specs": [
+            list(spec) for spec in args.volatility_state_change_specs
+        ],
         "price_position_windows": list(args.price_position_windows),
         "range_volatility_windows": list(args.range_volatility_windows),
         "efficiency_windows": list(args.efficiency_windows),
         "volume_windows": list(args.volume_windows),
+        "volume_distribution_windows": list(args.volume_distribution_windows),
         "turnover_windows": list(args.turnover_windows),
         "turnover_stability_windows": list(args.turnover_stability_windows),
         "liquidity_reliability_windows": list(args.liquidity_reliability_windows),
@@ -926,6 +1096,10 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "sell_pressure_exhaustion_windows": list(args.sell_pressure_exhaustion_windows),
         "sell_pressure_exhaustion_persistence_specs": [
             list(spec) for spec in args.sell_pressure_exhaustion_persistence_specs
+        ],
+        "microstructure_recovery_windows": list(args.microstructure_recovery_windows),
+        "microstructure_recovery_acceleration_specs": [
+            list(spec) for spec in args.microstructure_recovery_acceleration_specs
         ],
         "same_slot_memory_windows": list(args.same_slot_memory_windows),
         "weak_tape_gap_windows": list(args.weak_tape_gap_windows),
@@ -968,12 +1142,22 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
             "max_lookback_bars": max(
                 [
                     *args.lookback_bars,
+                    *args.cross_sectional_reversal_lookback_bars,
+                    *args.conditional_reversal_lookback_bars,
+                    *args.conditional_reversal_state_windows,
+                    *args.eod_reversal_lookback_bars,
                     *args.momentum_lookback_bars,
                     *args.volatility_windows,
+                    *[
+                        window
+                        for spec in args.volatility_state_change_specs
+                        for window in spec
+                    ],
                     *args.price_position_windows,
                     *args.range_volatility_windows,
                     *args.efficiency_windows,
                     *args.volume_windows,
+                    *args.volume_distribution_windows,
                     *args.turnover_windows,
                     *args.turnover_stability_windows,
                     *args.liquidity_reliability_windows,
@@ -1003,6 +1187,12 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *[
                         window
                         for spec in args.sell_pressure_exhaustion_persistence_specs
+                        for window in spec
+                    ],
+                    *args.microstructure_recovery_windows,
+                    *[
+                        window
+                        for spec in args.microstructure_recovery_acceleration_specs
                         for window in spec
                     ],
                     *(window * 48 for window in args.same_slot_memory_windows),
@@ -1076,6 +1266,18 @@ def _liquidity_reliability_recovery_spec(value: str) -> tuple[int, int, int]:
     except ValueError as exc:
         raise argparse.ArgumentTypeError(
             "liquidity reliability recovery spec values must be integers"
+        ) from exc
+
+
+def _two_window_spec(value: str) -> tuple[int, int]:
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError("expected short:long, for example 12:48")
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "two-window spec values must be integers"
         ) from exc
 
 
