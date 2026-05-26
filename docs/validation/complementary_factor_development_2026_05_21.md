@@ -1,5 +1,11 @@
 # Complementary Factor Development - 2026-05-21
 
+Status note, 2026-05-26: this is a historical development review. Phrases such
+as "current leading equal annual-budget-52" refer to the comparison baseline
+used during the 2026-05-21 review, not to the latest research frontier. For
+current baseline hierarchy and frontier selection, use
+`docs/validation/factor_development_standard.md`.
+
 This report records three targeted factor-development branches after the
 compact-core and sell-pressure persistence reviews:
 
@@ -233,10 +239,10 @@ so promotion should wait for candidate review, combination with the existing
 compact core, and a drawdown/risk gate review.
 
 Follow-up integration review on 2026-05-22 changed the lifecycle decision to
-`watchlist`: direct inclusion in the current leading equal annual-budget-52
+`watchlist`: direct inclusion in the then-leading equal annual-budget-52
 portfolio was strongly dilutive. Adding both balance windows returned 4.49%
 with -25.11% max drawdown, and adding only the l48 window returned 2.80% with
-max drawdown of -22.85%, versus the leading baseline 33.44% with -7.85% max
+max drawdown of -22.85%, versus the then-leading baseline 33.44% with -7.85% max
 drawdown. See
 `docs/validation/liquidity_reliability_recovery_balance_integration_2026_05_22.md`.
 
@@ -256,7 +262,7 @@ The useful results are:
 5. Balanced low-liquidity recovery is a viable standalone research signal, but
    it is not a viable default `candidate` after portfolio integration review.
    It should remain on `watchlist` until a portfolio-level allocator or gate
-   proves incremental value versus the current leading baseline.
+   proves incremental value versus the then-leading baseline.
 
 The next step should not be another local recovery-balance variant. Future
 factor work should require immediate incremental validation against the leading

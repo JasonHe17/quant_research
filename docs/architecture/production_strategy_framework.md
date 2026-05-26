@@ -424,8 +424,18 @@ Live-readiness acceptance:
   `optimizer-score-to-edge-bps=0`, `optimizer-risk-penalty-multiplier=0`, and
   full-sample regime gate schedule. Output:
   `runs/candidate_factor_portfolios/calibrated_edge_optimizer_validation_promoted_budget010`.
+- [x] Validate an optimizer risk-penalty satellite with explicit cost-pressure
+  turnover control. The 2026-05-25 volume-concentration branch
+  `vc_opt_risk_cp0010_w50` passes standard validation with path turnover budget
+  `155` and per-rebalance turnover cap `0.01` after `1000` bps realized
+  transaction-cost pressure:
+  `runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_volume_concentration_optimizer_risk_penalty_cost_pressure_cap0010_standard`.
+- [ ] Decide whether the validated volume-concentration cost-pressure branch
+  should become a governed allocator entry. Until that review is complete, keep
+  it as a research frontier rather than an active/default policy.
 - [ ] Replace raw bucket-volatility risk penalties with downside or uncertainty
-  calibrated risk inputs before enabling optimizer risk penalties by default.
+  calibrated risk inputs before enabling generic optimizer risk penalties by
+  default.
 - [ ] Add paper-trading contracts for broker adapters, order IDs, fills, and
   reconciliation.
 

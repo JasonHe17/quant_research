@@ -2,15 +2,21 @@
 
 Date: 2026-05-22
 
+Status note, 2026-05-26: this is a historical integration review. Its
+"current leading" equal annual-budget-52 baseline was the then-current
+comparison target for this factor, not the latest research frontier. For
+current baseline hierarchy and frontier selection, use
+`docs/validation/factor_development_standard.md`.
+
 ## Decision
 
 Do not integrate `intraday_liquidity_reliability_recovery_balance_5m` into the
-current leading equal-weight candidate portfolio.
+then-leading equal-weight candidate portfolio.
 
 The factor remains useful research evidence, but it is not a production-ready
-complement to the current leading combination. It passes standalone factor and
+complement to the then-leading combination. It passes standalone factor and
 standalone policy validation, yet it is strongly dilutive when added to the
-existing equal annual-budget-52 framework.
+then-leading equal annual-budget-52 framework.
 
 Registry action: move from `candidate` to `watchlist` with decision reason
 `portfolio_negative`.
@@ -74,7 +80,7 @@ explicit capped factor budget before it can be considered again.
 ## Follow-Up Rule
 
 Future factor development should require an incremental portfolio test against
-the current leading baseline before keeping a factor as a default `candidate`.
+the then-leading baseline before keeping a factor as a default `candidate`.
 Strong standalone IC and standalone policy validation are necessary but not
 sufficient.
 

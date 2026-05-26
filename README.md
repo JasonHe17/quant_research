@@ -148,10 +148,16 @@ conda run -n quant python examples/run_legacy_factor_revalidation.py \
   --resume-existing
 ```
 
-The current operational combination-validation baseline is
+The current controlled combination-validation baseline is still
 `decorrelated + partial_rebalance_daily` over the standard comparison set.
-Older strategy notes about cost-aware optimizer or annual turnover-budget
-branches are historical experiments unless a task explicitly selects them.
+Do not treat that baseline as the latest research frontier. As of the
+2026-05-25 time-series-decomposition review, the latest portfolio-native
+frontier is the volume-concentration optimizer risk-penalty branch
+`vc_opt_risk_cp0010_w50`: path gross-turnover budget `155`, cost-pressure
+turnover cap `0.01` after `1000` bps realized transaction-cost pressure, and
+standard validation status `pass`. It is documented in
+`docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md`
+and is not yet a live/default allocator registry entry.
 
 ## DataPortal v0
 

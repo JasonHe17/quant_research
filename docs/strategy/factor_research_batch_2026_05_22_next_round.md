@@ -1,5 +1,13 @@
 # Factor Research Batch - 2026-05-22 Next Round
 
+Status note, 2026-05-26: this is a historical batch review. Its references to
+the "current leading" equal annual-budget-52 branch, active/default replay, and
+daily-MA frontier are preserved as the decision context for the 2026-05-22
+research round. For current portfolio-frontier comparisons, use
+`docs/validation/factor_development_standard.md`; optimizer-native work should
+compare against the 2026-05-25 volume-concentration cost-pressure frontier
+`vc_opt_risk_cp0010_w50`.
+
 This batch starts the next factor-development round after the compact-core,
 sell-pressure persistence, and liquidity-recovery balance reviews.
 
@@ -50,7 +58,7 @@ Evidence:
 3. For any admitted feature, run candidate review before portfolio validation.
 4. Run an incremental portfolio test against both:
    - compact-core `decorrelated + partial_rebalance_daily`;
-   - current leading `equal` annual-budget-52 branch.
+   - then-leading `equal` annual-budget-52 branch.
 5. Report a dedicated 2024-01 and 2024-06 table. A factor that improves only
    full-window IC but worsens those months should remain watchlist or reject.
 

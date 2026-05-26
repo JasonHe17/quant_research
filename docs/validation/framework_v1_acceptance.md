@@ -115,11 +115,13 @@ For factor-promotion work, use the baseline hierarchy in
 `docs/validation/factor_development_standard.md` rather than comparing only to a
 naive control. Every strategy-level review should state the naive/control
 anchor, the active/default baseline, and the research frontier baseline when
-one exists. As of the 2026-05-19 daily moving-average review,
-`score_budget_gate_v1` remains the active/default baseline, while the fixed
-`high_dispersion_current` ribbon-dispersion gate is the research frontier
-challenger. Future daily-MA-family candidates must report marginal contribution
-against that frontier as well as against the active baseline.
+one exists. `score_budget_gate_v1` remains the active/default baseline. The
+research frontier is family-specific: daily-MA-family candidates should compare
+against the fixed `high_dispersion_current` ribbon-dispersion gate, while
+optimizer-native portfolio candidates should compare against the 2026-05-25
+volume-concentration cost-pressure frontier `vc_opt_risk_cp0010_w50`. A
+research frontier is not an active/default change unless a separate
+default-change review says so.
 
 ## Required Outputs
 

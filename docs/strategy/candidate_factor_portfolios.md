@@ -1,11 +1,67 @@
 # Candidate Factor Portfolio Experiments
 
-Status note, 2026-05-19: this file is a historical experiment log. It contains
-older "current default" decisions from optimizer and turnover-budget branches.
-For new factor promotion or framework compatibility work, follow
+Status note, 2026-05-26: this file is a historical experiment log plus a
+frontier index. It contains older "current default" decisions from optimizer,
+gate, and turnover-budget branches. For new factor promotion or framework
+compatibility work, follow
 `docs/validation/factor_development_standard.md` and use
 `examples/run_candidate_policy_validation.py` with the standard comparison set
 unless the task explicitly selects one of the historical branches below.
+
+Current state:
+
+- Controlled validation baseline: `decorrelated + partial_rebalance_daily`.
+  This remains the standard comparison path for factor promotion plumbing.
+- Latest portfolio-native research frontier:
+  `vc_opt_risk_cp0010_w50`, from the 2026-05-25
+  time-series-decomposition / volume-concentration review.
+- Active/default allocator: unchanged. The latest frontier is not yet a live
+  allocator registry entry and must not be described as the active default.
+
+## Latest Frontier - Volume Concentration Cost-Pressure Optimizer
+
+The 2026-05-25 time-series-decomposition batch rejected the full seven-feature
+time-series basket as a standalone long-only alpha basket and rejected direct
+compact-core rank overlays. The useful result came from using only the
+volume-concentration family as an optimizer-native risk-penalty satellite.
+
+Authoritative review:
+
+```text
+docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md
+```
+
+Validation artifact:
+
+```text
+runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_volume_concentration_optimizer_risk_penalty_cost_pressure_cap0010_standard/validation_summary.json
+```
+
+Configuration:
+
+- score branch: volume concentration windows `w24`, `w48`, `w96`;
+- selected method: `vc_opt_risk_cp0010_w50`;
+- trade policy: cost-aware optimizer;
+- path gross-turnover budget: `155`;
+- cost-pressure control: after realized transaction costs reach `1000` bps of
+  initial capital, cap per-rebalance gross turnover at `0.01`;
+- candidate status: portfolio-native research frontier, not active/default.
+
+Standard validation completed with `overall_status=pass`, zero failed checks,
+and zero warnings.
+
+| method | full base | full high cost | 2023 base | 2024 base | 2025 base | full turnover | read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `vc_opt_risk_cp0010_w00` | 14.13% | 8.84% | 4.11% | 0.33% | 24.66% | 146.72 | No concentration penalty; best high-cost stress |
+| `vc_opt_risk_cp0010_w25` | 14.68% | 8.19% | 5.21% | 3.00% | 24.26% | 146.45 | Middle risk-penalty setting |
+| `vc_opt_risk_cp0010_w50` | 16.07% | 8.10% | 5.40% | 3.22% | 24.13% | 146.23 | Latest frontier; best full-base and annual-stability profile |
+
+Decision: use `vc_opt_risk_cp0010_w50` as the latest research-frontier
+comparator for optimizer-native portfolio experiments. Do not use the
+unconstrained optimizer, static budget compression, net-edge threshold,
+uniform budget pacing, drawdown brake, direct rank blend, direct downside
+score penalty, or hard entry-exclusion branches as promotion candidates; those
+branches are rejected in the batch review.
 
 This document defines the first portfolio-layer experiment for factors that pass
 the standard admission gates.
@@ -739,7 +795,7 @@ the next integration target for the portfolio layer. This is not evidence that
 the isolated sleeve lost `34.96%` in the same 2023-2025 window after the
 single-factor score path was fixed.
 
-Follow-up standard validation on the current leading `equal` annual-budget
+Follow-up standard validation on the then-leading `equal` annual-budget
 candidate:
 
 ```text
@@ -761,7 +817,7 @@ the same downside-volatility gate schedule. The wrapper completed with
 Decision update: do not make the downside-volatility gate part of the default
 `equal` annual-budget configuration. The gate remains valuable for
 `decorrelated` and for defensive risk-control experiments, but it is not a
-global default because it reduces the current leading `equal` configuration's
+global default because it reduces the then-leading `equal` configuration's
 full-window and high-cost returns. Keep it as an explicit optional profile until
 either the gate is recalibrated for `equal` or a market-regime selector chooses
 between gated and ungated exposure.

@@ -73,10 +73,13 @@ the evidence paths for all material comparisons.
   of the 2026-05-19 daily moving-average review, this remains
   `score_budget_gate_v1`.
 - Research frontier baseline: the strongest reviewed challenger that has not
-  necessarily become the active default. As of the 2026-05-19 daily
-  moving-average review, this is the fixed `high_dispersion_current`
-  ribbon-dispersion gross-exposure gate. Its evidence lives under
-  `runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/`.
+  necessarily become the active default. The frontier is family-specific:
+  daily-moving-average work should still compare against the fixed
+  `high_dispersion_current` ribbon-dispersion gross-exposure gate from
+  `runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/`;
+  optimizer-native portfolio work should compare against the latest
+  volume-concentration cost-pressure frontier `vc_opt_risk_cp0010_w50` from
+  `runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_volume_concentration_optimizer_risk_penalty_cost_pressure_cap0010_standard/`.
 
 New factor batches must report marginal contribution against the research
 frontier whenever the frontier is in the same strategy family or can be
@@ -196,10 +199,13 @@ The validator treats missing active-factor safety metadata as a hard error.
    set, methods `decorrelated equal ic_weighted`, and primary gate
    `decorrelated + partial_rebalance_daily`. Keep scenario construction serial
    unless a task explicitly opts into scenario parallelism; the expensive
-   score-backtest subprocess layer defaults to six workers. Historical strategy
-   notes about the cost-aware optimizer, `equal` score combination, or annual
-   gross-turnover budget `52` are research branches, not the default factor
-   promotion path.
+   score-backtest subprocess layer defaults to six workers. Cost-aware
+   optimizer branches are not the default factor-promotion path, but they are
+   no longer all historical rejects: as of the 2026-05-25
+   time-series-decomposition review, `vc_opt_risk_cp0010_w50` is the latest
+   optimizer-native research frontier. The older `equal` annual gross-turnover
+   budget `52` branch remains historical unless a task explicitly reopens that
+   path.
 
    Standard policy validation now builds lagged factor-leg health diagnostics in
    `monitor` mode by default. This writes per-factor rolling IC,
@@ -228,7 +234,10 @@ The validator treats missing active-factor safety metadata as a hard error.
    against both `score_budget_gate_v1` and the fixed
    `high_dispersion_current` frontier. Do not use the dynamic train-window
    selector from `daily_ma_ribbon_dispersion_walk_forward_v1` as a default
-   comparator; it was explicitly rejected in the promoted-candidate review.
+   comparator; it was explicitly rejected in the promoted-candidate review. For
+   optimizer-native risk-penalty or cost-pressure research, compare against
+   `vc_opt_risk_cp0010_w50` and state explicitly that it is a research frontier,
+   not the active/default allocator.
 
    ```bash
    conda run -n quant python examples/run_candidate_policy_validation.py \
