@@ -341,8 +341,10 @@ def build_intraday_feature_matrix(
     frame = bars.sort_values(["instrument_id", "bar_end_time"]).copy()
     frame["close_price"] = frame["close_price"].astype(float)
     grouped = frame.groupby("instrument_id", sort=False)
-    output = frame.loc[:, ["bar_end_time", "instrument_id"]].rename(
-        columns={"bar_end_time": "timestamp"}
+    output = _FeatureOutput(
+        frame.loc[:, ["bar_end_time", "instrument_id"]].rename(
+            columns={"bar_end_time": "timestamp"}
+        )
     )
     feature_columns: list[str] = []
     one_bar_return = grouped["close_price"].pct_change(periods=1)
@@ -1570,9 +1572,37 @@ def build_intraday_feature_matrix(
                 )
             )
             feature_columns.append(column)
-    return output.loc[output[feature_columns].notna().any(axis=1)].reset_index(
+    result = output.to_frame(feature_columns)
+    return result.loc[result[feature_columns].notna().any(axis=1)].reset_index(
         drop=True
     )
+
+
+class _FeatureOutput:
+    """Collect feature columns and materialize once to avoid DataFrame fragmentation."""
+
+    def __init__(self, base: pd.DataFrame) -> None:
+        self._base = base
+        self._features: dict[str, object] = {}
+
+    def __setitem__(self, column: str, values: object) -> None:
+        self._features[column] = values
+
+    def __getitem__(self, column: str) -> object:
+        if column in self._features:
+            return self._features[column]
+        return self._base[column]
+
+    def to_frame(self, feature_columns: list[str]) -> pd.DataFrame:
+        del feature_columns
+        if not self._features:
+            return self._base.copy()
+        ordered_columns = list(self._features)
+        features = pd.DataFrame(
+            {column: self._features[column] for column in ordered_columns},
+            index=self._base.index,
+        )
+        return pd.concat([self._base, features], axis=1)
 
 
 def _expanded_groups(groups: tuple[str, ...]) -> set[str]:

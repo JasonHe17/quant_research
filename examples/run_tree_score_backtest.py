@@ -126,6 +126,7 @@ class BarTimeIndex:
     """Row lookup index for repeated time-window slices inside one bars chunk."""
 
     bar_times: list[object]
+    next_time_by_time: dict[object, object]
     row_indices_by_time: dict[object, object]
 
 
@@ -772,7 +773,7 @@ def _build_target_weights(
     diagnostics: list[pd.DataFrame] = []
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
-    grouped_signals = list(ranked_signals.groupby("signal_time", sort=True))
+    grouped_signals, group_count = _signal_groups(ranked_signals)
     current_budget_state = (
         budget_state if budget_state is not None else _initial_policy_budget_state(params)
     )
@@ -791,12 +792,12 @@ def _build_target_weights(
         policy_turnover_cap = _policy_turnover_cap_for_signal(
             params,
             remaining_turnover_budget=remaining_turnover_budget,
-            remaining_decision_count=len(grouped_signals) - index,
+            remaining_decision_count=group_count - index,
         )
         path_turnover_cap = _path_turnover_cap_for_signal(
             params,
             remaining_turnover_budget=remaining_turnover_budget,
-            remaining_decision_count=len(grouped_signals) - index,
+            remaining_decision_count=group_count - index,
         )
         if cost_pressure_turnover_cap is not None:
             policy_turnover_cap = _min_optional_turnover_cap(
@@ -824,11 +825,10 @@ def _build_target_weights(
                 gross_exposure_scale=base_scale,
                 turnover_cap=policy_turnover_cap,
             )
-        forecast_frame = group.rename(columns={"signal_time": "timestamp"})
         forecast_columns = [
             column
             for column in (
-                "timestamp",
+                "signal_time",
                 "instrument_id",
                 "score",
                 "rank",
@@ -839,9 +839,11 @@ def _build_target_weights(
                 "optimizer_risk_penalty_bps",
                 "entry_eligible",
             )
-            if column in forecast_frame.columns
+            if column in group.columns
         ]
-        forecasts = forecast_frame.loc[:, forecast_columns]
+        forecasts = group.loc[:, forecast_columns].rename(
+            columns={"signal_time": "timestamp"}
+        )
         result = policy.decide(forecasts, state)
         if path_turnover_cap is not None:
             result = _enforce_path_turnover_cap(result, path_turnover_cap)
@@ -926,6 +928,18 @@ def _build_target_weights(
         ),
         diagnostics=_concat_policy_diagnostics(diagnostics),
     )
+
+
+def _signal_groups(
+    ranked_signals: pd.DataFrame,
+) -> tuple[list[tuple[object, pd.DataFrame]], int]:
+    if ranked_signals.empty:
+        return [], 0
+    signal_times = ranked_signals["signal_time"].drop_duplicates().tolist()
+    if len(signal_times) == 1:
+        return [(signal_times[0], ranked_signals)], 1
+    groups = list(ranked_signals.groupby("signal_time", sort=True))
+    return groups, len(groups)
 
 
 def _effective_gross_exposure_scale(
@@ -1713,7 +1727,7 @@ def _build_tree_score_executions(
         if not relevant_instruments:
             return pd.DataFrame(columns=[*prices.columns, "target_weight"])
         prices = prices.loc[
-            prices["instrument_id"].astype(str).isin(relevant_instruments)
+            _instrument_isin(prices["instrument_id"], relevant_instruments)
         ].copy()
     if shifted.empty:
         return prices.assign(target_weight=pd.NA)
@@ -1725,8 +1739,13 @@ def _build_tree_score_executions(
 
 
 def _bar_time_index(bars: pd.DataFrame) -> BarTimeIndex:
+    bar_times = sorted(bars["bar_end_time"].unique().tolist())
     return BarTimeIndex(
-        bar_times=sorted(bars["bar_end_time"].unique().tolist()),
+        bar_times=bar_times,
+        next_time_by_time={
+            bar_time: bar_times[index + 1]
+            for index, bar_time in enumerate(bar_times[:-1])
+        },
         row_indices_by_time=dict(bars.groupby("bar_end_time", sort=False).indices),
     )
 
@@ -1757,9 +1776,7 @@ def _build_segment_tree_score_executions(
     if prices.empty or signals.empty:
         return prices
     shifted = signals.copy()
-    shifted["exec_time"] = shifted["signal_time"].map(
-        _next_time_by_signal(signals, bar_time_index.bar_times)
-    )
+    shifted["exec_time"] = shifted["signal_time"].map(bar_time_index.next_time_by_time)
     shifted = shifted.loc[shifted["exec_time"].notna()]
     if shifted.empty:
         return prices
@@ -1805,7 +1822,7 @@ def _price_execution_rows_from_index(
         return _empty_tree_score_execution_frame()
     candidate = bars.take(row_indices)
     prices = candidate.loc[
-        candidate["instrument_id"].astype(str).isin(tracked_instruments),
+        _instrument_isin(candidate["instrument_id"], tracked_instruments),
         [
             "bar_end_time",
             "instrument_id",
@@ -1819,6 +1836,15 @@ def _price_execution_rows_from_index(
         ],
     ].rename(columns={"bar_end_time": "exec_time"})
     return prices.assign(target_weight=pd.NA)
+
+
+def _instrument_isin(values: pd.Series, instruments: set[str]) -> pd.Series:
+    if pd.api.types.is_string_dtype(values.dtype) and pd.api.types.infer_dtype(
+        values,
+        skipna=True,
+    ) in {"string", "unicode", "empty"}:
+        return values.isin(instruments)
+    return values.astype(str).isin(instruments)
 
 
 def _time_window_row_indices(

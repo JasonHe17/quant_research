@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
 
 import pandas as pd
 
@@ -283,10 +283,12 @@ def simulate_target_weight_executions(
     trades: list[dict[str, object]] = []
     equity_rows: list[dict[str, object]] = []
     shares_by_instrument = _shares_by_instrument(state.lots)
-    for exec_time, group in executions.groupby("exec_time", sort=True):
+    execution_arrays = _execution_arrays(executions, config)
+    execution_groups = executions.groupby("exec_time", sort=True).indices
+    for exec_time, row_indices in execution_groups.items():
         trade_date = str(exec_time)[:10]
         _roll_lots_to_sellable(state, trade_date)
-        targets = _target_weights_by_instrument(group)
+        targets = _target_weights_by_instrument(row_indices, execution_arrays)
         relevant_instruments = set(state.lots) | set(targets)
         (
             execution_price_by_instrument,
@@ -297,9 +299,9 @@ def simulate_target_weight_executions(
             limit_down_by_instrument,
             capacity_by_instrument,
         ) = _execution_maps_for_group(
-            group,
+            row_indices,
             relevant_instruments,
-            config,
+            execution_arrays,
         )
         state.last_prices.update(sizing_price_by_instrument)
         equity = state.cash + _positions_value_from_shares(
@@ -899,20 +901,59 @@ def _roll_lots_to_sellable(
     state.previous_date = trade_date
 
 
-def _target_weights_by_instrument(group: pd.DataFrame) -> dict[str, float]:
+def _execution_arrays(
+    executions: pd.DataFrame,
+    config: TargetWeightExecutionConfig,
+) -> dict[str, Any]:
+    return {
+        "instrument_id": executions["instrument_id"].to_numpy(copy=False),
+        "target_weight": executions["target_weight"].to_numpy(copy=False),
+        "execution_price": executions[config.price_field].to_numpy(copy=False),
+        "sizing_price": executions[config.sizing_price_field].to_numpy(copy=False),
+        "mark_price": executions[config.mark_price_field].to_numpy(copy=False),
+        "tradable": (
+            executions[config.tradable_field].to_numpy(copy=False)
+            if config.tradable_field in executions.columns
+            else None
+        ),
+        "limit_up": (
+            executions[config.limit_up_field].to_numpy(copy=False)
+            if config.limit_up_field in executions.columns
+            else None
+        ),
+        "limit_down": (
+            executions[config.limit_down_field].to_numpy(copy=False)
+            if config.limit_down_field in executions.columns
+            else None
+        ),
+        "capacity": (
+            executions[config.capacity_notional_field].to_numpy(copy=False)
+            if config.capacity_notional_field is not None
+            and config.capacity_notional_field in executions.columns
+            else None
+        ),
+    }
+
+
+def _target_weights_by_instrument(
+    row_indices: Iterable[int],
+    arrays: dict[str, Any],
+) -> dict[str, float]:
     targets: dict[str, float] = {}
-    instrument_values = group["instrument_id"].to_numpy(copy=False)
-    target_values = group["target_weight"].to_numpy(copy=False)
-    for instrument_id, target_weight in zip(instrument_values, target_values):
+    instrument_values = arrays["instrument_id"]
+    target_values = arrays["target_weight"]
+    for index in row_indices:
+        instrument_id = instrument_values[index]
+        target_weight = target_values[index]
         if pd.notna(target_weight):
             targets[str(instrument_id)] = float(target_weight)
     return targets
 
 
 def _execution_maps_for_group(
-    group: pd.DataFrame,
+    row_indices: Iterable[int],
     relevant_instruments: set[str],
-    config: TargetWeightExecutionConfig,
+    arrays: dict[str, Any],
 ) -> tuple[
     dict[str, float],
     dict[str, float],
@@ -940,46 +981,44 @@ def _execution_maps_for_group(
             capacity_by_instrument,
         )
 
-    instrument_values = group["instrument_id"].to_numpy(copy=False)
-    execution_prices = group[config.price_field].to_numpy(copy=False)
-    sizing_prices = group[config.sizing_price_field].to_numpy(copy=False)
-    mark_prices = group[config.mark_price_field].to_numpy(copy=False)
-    tradable_values = (
-        group[config.tradable_field].to_numpy(copy=False)
-        if config.tradable_field in group.columns
-        else None
-    )
-    limit_up_values = (
-        group[config.limit_up_field].to_numpy(copy=False)
-        if config.limit_up_field in group.columns
-        else None
-    )
-    limit_down_values = (
-        group[config.limit_down_field].to_numpy(copy=False)
-        if config.limit_down_field in group.columns
-        else None
-    )
-    capacity_values = (
-        group[config.capacity_notional_field].to_numpy(copy=False)
-        if config.capacity_notional_field is not None
-        and config.capacity_notional_field in group.columns
-        else None
-    )
-    for index, instrument_value in enumerate(instrument_values):
+    instrument_values = arrays["instrument_id"]
+    execution_prices = arrays["execution_price"]
+    sizing_prices = arrays["sizing_price"]
+    mark_prices = arrays["mark_price"]
+    tradable_values = arrays["tradable"]
+    limit_up_values = arrays["limit_up"]
+    limit_down_values = arrays["limit_down"]
+    capacity_values = arrays["capacity"]
+    for index in row_indices:
+        instrument_value = instrument_values[index]
         instrument_id = str(instrument_value)
         if instrument_id not in relevant_instruments:
             continue
-        execution_price_by_instrument[instrument_id] = float(execution_prices[index])
-        sizing_price_by_instrument[instrument_id] = float(sizing_prices[index])
-        mark_price_by_instrument[instrument_id] = float(mark_prices[index])
+        execution_price_by_instrument[instrument_id] = float(
+            execution_prices[index]
+        )
+        sizing_price_by_instrument[instrument_id] = float(
+            sizing_prices[index]
+        )
+        mark_price_by_instrument[instrument_id] = float(
+            mark_prices[index]
+        )
         if tradable_values is not None:
-            tradable_by_instrument[instrument_id] = bool(tradable_values[index])
+            tradable_by_instrument[instrument_id] = bool(
+                tradable_values[index]
+            )
         if limit_up_values is not None:
-            limit_up_by_instrument[instrument_id] = bool(limit_up_values[index])
+            limit_up_by_instrument[instrument_id] = bool(
+                limit_up_values[index]
+            )
         if limit_down_values is not None:
-            limit_down_by_instrument[instrument_id] = bool(limit_down_values[index])
+            limit_down_by_instrument[instrument_id] = bool(
+                limit_down_values[index]
+            )
         if capacity_values is not None:
-            capacity_by_instrument[instrument_id] = float(capacity_values[index])
+            capacity_by_instrument[instrument_id] = float(
+                capacity_values[index]
+            )
     return (
         execution_price_by_instrument,
         sizing_price_by_instrument,

@@ -781,6 +781,46 @@ def test_tree_score_target_builder_supports_rank_buffer_drop_policy(tmp_path) ->
     assert result.diagnostics["planned_gross_turnover"].sum() == pytest.approx(1.0)
 
 
+def test_tree_score_target_builder_single_timestamp_path_matches_batch(
+    tmp_path,
+) -> None:
+    ranked = pd.DataFrame(
+        [
+            {"signal_time": "t0", "instrument_id": "inst-a", "score": 0.9, "rank": 1},
+            {"signal_time": "t0", "instrument_id": "inst-b", "score": 0.8, "rank": 2},
+            {"signal_time": "t1", "instrument_id": "inst-b", "score": 0.9, "rank": 1},
+            {"signal_time": "t1", "instrument_id": "inst-a", "score": 0.8, "rank": 2},
+        ]
+    )
+    params = _tree_score_params(tmp_path)
+
+    batch = _build_target_weights(ranked, params)
+    first = _build_target_weights(ranked.loc[ranked["signal_time"] == "t0"], params)
+    second = _build_target_weights(
+        ranked.loc[ranked["signal_time"] == "t1"],
+        params,
+        policy_state=first.policy_state,
+        budget_state=first.budget_state,
+    )
+    stitched_targets = pd.concat(
+        [first.target_weights, second.target_weights],
+        ignore_index=True,
+    )
+    stitched_diagnostics = pd.concat(
+        [first.diagnostics, second.diagnostics],
+        ignore_index=True,
+    )
+
+    pd.testing.assert_frame_equal(
+        stitched_targets.reset_index(drop=True),
+        batch.target_weights.reset_index(drop=True),
+    )
+    pd.testing.assert_frame_equal(
+        stitched_diagnostics.reset_index(drop=True),
+        batch.diagnostics.reset_index(drop=True),
+    )
+
+
 def test_tree_score_target_builder_applies_timestamp_gross_exposure_schedule(
     tmp_path,
 ) -> None:

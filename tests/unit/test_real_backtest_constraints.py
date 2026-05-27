@@ -21,6 +21,7 @@ from examples.run_baseline_a_real_backtest import (
     BacktestParams,
     SimulationState,
     _add_execution_constraint_columns,
+    _bar_time_index,
     _build_next_bar_executions,
     _build_reversal_signals,
     _execution_event_constraint_counts,
@@ -159,6 +160,64 @@ def test_simulation_blocks_limit_up_buys_and_limit_down_sells() -> None:
     assert sum(int(lot["shares"]) for lot in next_state.lots["held"]) == 1_000
 
 
+def test_simulation_is_independent_of_execution_frame_index() -> None:
+    executions = pd.DataFrame(
+        [
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "buy-a",
+                "canonical_code": "600001.SH",
+                "open_price": 10.0,
+                "close_price": 11.0,
+                "turnover": 1_000_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 0.5,
+            },
+            {
+                "exec_time": "2025-01-03T09:35:00+08:00",
+                "instrument_id": "buy-b",
+                "canonical_code": "600002.SH",
+                "open_price": 20.0,
+                "close_price": 19.0,
+                "turnover": 1_000_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 0.5,
+            },
+            {
+                "exec_time": "2025-01-06T09:35:00+08:00",
+                "instrument_id": "buy-a",
+                "canonical_code": "600001.SH",
+                "open_price": 11.0,
+                "close_price": 11.5,
+                "turnover": 1_000_000.0,
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+                "target_weight": 0.0,
+            },
+        ],
+        index=[10, 20, 30],
+    )
+    params = _params(lot_size=1)
+
+    indexed_trades, indexed_equity, indexed_positions, _ = _simulate(
+        executions,
+        params,
+    )
+    reset_trades, reset_equity, reset_positions, _ = _simulate(
+        executions.reset_index(drop=True),
+        params,
+    )
+
+    pd.testing.assert_frame_equal(indexed_trades, reset_trades)
+    pd.testing.assert_frame_equal(indexed_equity, reset_equity)
+    pd.testing.assert_frame_equal(indexed_positions, reset_positions)
+
+
 def test_baseline_execution_builder_keeps_only_targets_and_tracked_holdings() -> None:
     bars = pd.DataFrame(
         [
@@ -201,6 +260,45 @@ def test_baseline_execution_builder_keeps_only_targets_and_tracked_holdings() ->
     ]
     assert target.iloc[0] == pytest.approx(1.0)
     assert pd.isna(held.iloc[0])
+
+
+def test_baseline_execution_builder_matches_precomputed_time_index() -> None:
+    bars = pd.DataFrame(
+        [
+            _bar("t0", "inst-a"),
+            _bar("t0", "inst-held"),
+            _bar("t0", "inst-unused"),
+            _bar("t1", "inst-a"),
+            _bar("t1", "inst-held"),
+            _bar("t1", "inst-unused"),
+            _bar("t2", "inst-a"),
+            _bar("t2", "inst-held"),
+            _bar("t2", "inst-unused"),
+        ]
+    )
+    signals = pd.DataFrame(
+        [
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-a",
+                "target_weight": 1.0,
+            }
+        ]
+    )
+
+    default = _build_next_bar_executions(
+        bars,
+        signals,
+        tracked_instruments={"inst-held"},
+    ).reset_index(drop=True)
+    indexed = _build_next_bar_executions(
+        bars,
+        signals,
+        tracked_instruments={"inst-held"},
+        bar_time_index=_bar_time_index(bars),
+    ).reset_index(drop=True)
+
+    pd.testing.assert_frame_equal(indexed, default)
 
 
 def test_reversal_signals_select_top_names_with_stable_tie_breaks() -> None:

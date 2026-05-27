@@ -72,6 +72,13 @@ class StreamingWorkUnit:
     signal_end: str
 
 
+@dataclass(frozen=True, slots=True)
+class BarTimeIndex:
+    bar_times: list[object]
+    next_time_by_time: dict[object, object]
+    row_indices_by_time: dict[object, object]
+
+
 SimulationState = TargetWeightSimulationState
 
 
@@ -134,10 +141,12 @@ def run_backtest_streaming(params: BacktestParams) -> dict[str, object]:
         signals = _build_reversal_signals(bars, params)
         signals = _filter_signals_to_work_unit(signals, work_unit)
         total_signals += len(signals)
+        bar_time_index = _bar_time_index(bars)
         executions = _build_next_bar_executions(
             bars,
             signals,
             tracked_instruments=set(state.lots),
+            bar_time_index=bar_time_index,
         )
         if executions.empty:
             continue
@@ -205,7 +214,11 @@ def run_backtest(bars: pd.DataFrame, params: BacktestParams) -> dict[str, object
     if bars.empty:
         raise ValueError("no bars loaded for requested period/universe")
     signals = _build_reversal_signals(bars, params)
-    executions = _build_next_bar_executions(bars, signals)
+    executions = _build_next_bar_executions(
+        bars,
+        signals,
+        bar_time_index=_bar_time_index(bars),
+    )
     if executions.empty:
         raise ValueError("no executable signals after lookback and next-bar shift")
     execution_constraint_counts = _execution_constraint_counts(executions)
@@ -623,45 +636,78 @@ def _build_next_bar_executions(
     signals: pd.DataFrame,
     *,
     tracked_instruments: set[str] | None = None,
+    bar_time_index: BarTimeIndex | None = None,
 ) -> pd.DataFrame:
-    signal_times = sorted(signals["signal_time"].unique().tolist())
-    all_times = sorted(bars["bar_end_time"].unique().tolist())
-    next_time_by_signal = {
-        signal_time: all_times[index + 1]
-        for index, signal_time in enumerate(all_times[:-1])
-        if signal_time in signal_times
-    }
+    bar_time_index = bar_time_index or _bar_time_index(bars)
     shifted = signals.copy()
-    shifted["exec_time"] = shifted["signal_time"].map(next_time_by_signal)
+    shifted["exec_time"] = shifted["signal_time"].map(
+        bar_time_index.next_time_by_time
+    )
     shifted = shifted.loc[shifted["exec_time"].notna()].copy()
-    prices = bars.loc[
-        :,
-        [
-            "bar_end_time",
-            "instrument_id",
-            "canonical_code",
-            "open_price",
-            "close_price",
-            "turnover",
-            "tradable_bar",
-            "limit_up_open",
-            "limit_down_open",
-        ],
-    ].rename(columns={"bar_end_time": "exec_time"})
+    price_columns = [
+        "bar_end_time",
+        "instrument_id",
+        "canonical_code",
+        "open_price",
+        "close_price",
+        "turnover",
+        "tradable_bar",
+        "limit_up_open",
+        "limit_down_open",
+    ]
     exec_times = shifted["exec_time"].drop_duplicates().tolist()
-    prices = prices.loc[prices["exec_time"].isin(exec_times)].copy()
+    row_indices = _row_indices_for_times(bar_time_index, exec_times)
+    prices = bars.take(row_indices).loc[:, price_columns].rename(
+        columns={"bar_end_time": "exec_time"}
+    )
     relevant_instruments = {str(value) for value in tracked_instruments or set()}
     if not shifted.empty:
         relevant_instruments.update(shifted["instrument_id"].astype(str).unique())
     if not relevant_instruments:
         return pd.DataFrame(columns=[*prices.columns, "target_weight"])
     prices = prices.loc[
-        prices["instrument_id"].astype(str).isin(relevant_instruments)
+        _instrument_isin(prices["instrument_id"], relevant_instruments)
     ].copy()
     targets = shifted.loc[
         :, ["exec_time", "instrument_id", "target_weight"]
     ].copy()
     return prices.merge(targets, on=["exec_time", "instrument_id"], how="left")
+
+
+def _bar_time_index(bars: pd.DataFrame) -> BarTimeIndex:
+    bar_times = sorted(bars["bar_end_time"].unique().tolist())
+    return BarTimeIndex(
+        bar_times=bar_times,
+        next_time_by_time={
+            bar_time: bar_times[index + 1]
+            for index, bar_time in enumerate(bar_times[:-1])
+        },
+        row_indices_by_time=dict(bars.groupby("bar_end_time", sort=False).indices),
+    )
+
+
+def _row_indices_for_times(
+    bar_time_index: BarTimeIndex,
+    times: list[object],
+) -> list[int]:
+    if not times:
+        return []
+    row_indices: list[int] = []
+    for value in set(times):
+        indices = bar_time_index.row_indices_by_time.get(value)
+        if indices is not None:
+            row_indices.extend(indices)
+    row_indices.sort()
+    return row_indices
+
+
+def _instrument_isin(values: pd.Series, instruments: set[str]) -> pd.Series:
+    if pd.api.types.is_string_dtype(values.dtype) and pd.api.types.infer_dtype(
+        values,
+        skipna=True,
+    ) in {"string", "unicode", "empty"}:
+        return values.isin(instruments)
+    return values.astype(str).isin(instruments)
 
 
 def _simulate(
