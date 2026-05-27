@@ -49,6 +49,7 @@ _VALID_GROUPS = {
     "sell_pressure_recovery",
     "sell_pressure_exhaustion",
     "sell_pressure_exhaustion_persistence",
+    "microstructure_exhaustion_alert",
     "microstructure_recovery_speed",
     "same_slot_intraday_memory",
     "overnight_intraday_tug_of_war",
@@ -107,6 +108,7 @@ class IntradayFeatureConfig:
     sell_pressure_exhaustion_persistence_specs: tuple[tuple[int, int, int], ...] = (
         (96, 24, 48),
     )
+    microstructure_exhaustion_windows: tuple[int, ...] = (48,)
     microstructure_recovery_windows: tuple[int, ...] = (24, 48)
     microstructure_recovery_acceleration_specs: tuple[tuple[int, int], ...] = (
         (12, 48),
@@ -177,6 +179,10 @@ class IntradayFeatureConfig:
             ("downside_turnover_decay_windows", self.downside_turnover_decay_windows),
             ("sell_pressure_recovery_windows", self.sell_pressure_recovery_windows),
             ("sell_pressure_exhaustion_windows", self.sell_pressure_exhaustion_windows),
+            (
+                "microstructure_exhaustion_windows",
+                self.microstructure_exhaustion_windows,
+            ),
             ("microstructure_recovery_windows", self.microstructure_recovery_windows),
             ("same_slot_memory_windows", self.same_slot_memory_windows),
             ("weak_tape_gap_windows", self.weak_tape_gap_windows),
@@ -253,6 +259,10 @@ class IntradayFeatureConfig:
                     "sell_pressure_exhaustion_persistence_specs must be ordered "
                     "long > short and long > medium"
                 )
+        if any(value <= 1 for value in self.microstructure_exhaustion_windows):
+            raise ValueError(
+                "microstructure_exhaustion_windows values must be at least 2"
+            )
         for long_window, capacity_window, recovery_window in (
             self.liquidity_reliability_recovery_specs
         ):
@@ -324,6 +334,7 @@ def build_intraday_feature_matrix(
         "sell_pressure_recovery",
         "sell_pressure_exhaustion",
         "sell_pressure_exhaustion_persistence",
+        "microstructure_exhaustion_alert",
         "microstructure_recovery_speed",
         "sell_pressure_quality_state",
     }:
@@ -335,6 +346,7 @@ def build_intraday_feature_matrix(
         "market_state",
         "event_shock_proxy",
         "regime_conditioned",
+        "microstructure_exhaustion_alert",
     }:
         required.extend(["limit_up_open", "limit_down_open"])
     _require_columns(bars, tuple(required))
@@ -642,6 +654,119 @@ def build_intraday_feature_matrix(
                 absorption_score * (1.0 - recovery_balance) * (1.0 + tape_pressure)
             )
             feature_columns.extend([quality_column, risk_column])
+    if "microstructure_exhaustion_alert" in groups:
+        turnover = frame["turnover"].astype(float).where(one_bar_return.notna())
+        positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
+        downside_return = one_bar_return.clip(upper=0.0).abs().where(
+            one_bar_return.notna()
+        )
+        downside_turnover = turnover.where(one_bar_return.lt(0.0), 0.0)
+        limit_up_rate = frame["limit_up_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_down_rate = frame["limit_down_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_pressure = (limit_down_rate - limit_up_rate).clip(lower=0.0)
+        for window in config.microstructure_exhaustion_windows:
+            half_window = window // 2
+            if half_window <= 0:
+                raise ValueError(
+                    "microstructure_exhaustion_windows values must be at least 2"
+                )
+            rolling_downside_turnover = downside_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            rolling_downside_return = downside_return.groupby(
+                frame["instrument_id"]
+            ).transform(lambda values: values.rolling(window, min_periods=window).sum())
+            recent_downside_turnover = downside_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(
+                    half_window,
+                    min_periods=half_window,
+                ).sum()
+            )
+            previous_downside_turnover = recent_downside_turnover.groupby(
+                frame["instrument_id"]
+            ).shift(half_window)
+            recent_downside_return = downside_return.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(
+                    half_window,
+                    min_periods=half_window,
+                ).sum()
+            )
+            previous_downside_return = recent_downside_return.groupby(
+                frame["instrument_id"]
+            ).shift(half_window)
+            recent_positive_return = positive_return.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values: values.rolling(
+                    half_window,
+                    min_periods=half_window,
+                ).sum()
+            )
+            previous_positive_return = recent_positive_return.groupby(
+                frame["instrument_id"]
+            ).shift(half_window)
+
+            absorption_load = np.log1p(
+                (
+                    rolling_downside_turnover
+                    / rolling_downside_return.where(rolling_downside_return != 0.0)
+                ).clip(lower=0.0)
+            )
+            absorption_speed = recent_downside_turnover / previous_downside_turnover.where(
+                previous_downside_turnover != 0.0
+            )
+            recent_impact = recent_downside_return / recent_downside_turnover.where(
+                recent_downside_turnover != 0.0
+            )
+            previous_impact = previous_downside_return / previous_downside_turnover.where(
+                previous_downside_turnover != 0.0
+            )
+            impact_total = recent_impact + previous_impact
+            impact_acceleration = (
+                (recent_impact - previous_impact)
+                / impact_total.where(impact_total != 0.0)
+            ).clip(lower=0.0)
+            previous_recovery = (
+                previous_positive_return
+                / previous_downside_return.where(previous_downside_return != 0.0)
+            )
+            recent_recovery = (
+                recent_positive_return
+                / recent_downside_return.where(recent_downside_return != 0.0)
+            )
+            recovery_total = previous_recovery.abs() + recent_recovery.abs()
+            recovery_decay = (
+                (previous_recovery - recent_recovery)
+                / recovery_total.where(recovery_total != 0.0)
+            ).clip(lower=0.0).fillna(0.0)
+            lagged_limit_pressure = _lagged_rolling_timestamp_state(
+                frame["bar_end_time"],
+                limit_pressure,
+                window,
+            )
+            limit_withdrawal_proxy = (
+                limit_pressure + (limit_pressure - lagged_limit_pressure).clip(lower=0.0)
+            )
+            impact_strain = (
+                absorption_load
+                * np.log1p(absorption_speed.clip(lower=0.0))
+                * impact_acceleration
+            )
+            strain_column = f"intraday_microstructure_impact_strain_5m_w{window}"
+            alert_column = f"intraday_microstructure_exhaustion_alert_5m_w{window}"
+            output[strain_column] = impact_strain
+            output[alert_column] = impact_strain * (1.0 + recovery_decay) * (
+                1.0 + limit_withdrawal_proxy
+            )
+            feature_columns.extend([strain_column, alert_column])
     if groups & {"sell_pressure_exhaustion", "sell_pressure_exhaustion_persistence"}:
         positive_return = one_bar_return.clip(lower=0.0).where(one_bar_return.notna())
         downside_return = one_bar_return.clip(upper=0.0).abs().where(

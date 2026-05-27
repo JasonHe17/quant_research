@@ -68,6 +68,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "sell_pressure_recovery",
             "sell_pressure_exhaustion",
             "sell_pressure_exhaustion_persistence",
+            "microstructure_exhaustion_alert",
             "microstructure_recovery_speed",
             "same_slot_intraday_memory",
             "overnight_intraday_tug_of_war",
@@ -109,6 +110,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         sell_pressure_recovery_windows=(3,),
         sell_pressure_exhaustion_windows=(4,),
         sell_pressure_exhaustion_persistence_specs=((4, 2, 3),),
+        microstructure_exhaustion_windows=(4,),
         microstructure_recovery_windows=(4,),
         microstructure_recovery_acceleration_specs=((2, 4),),
         same_slot_memory_windows=(1,),
@@ -173,6 +175,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_sell_pressure_recovery_5m_w3" in features
     assert "intraday_sell_pressure_exhaustion_5m_w4" in features
     assert "intraday_sell_pressure_exhaustion_persistence_5m_l4_s2_m3" in features
+    assert "intraday_microstructure_impact_strain_5m_w4" in features
+    assert "intraday_microstructure_exhaustion_alert_5m_w4" in features
     assert "intraday_microstructure_recovery_speed_5m_w4" in features
     assert "intraday_microstructure_recovery_acceleration_5m_s2_l4" in features
     assert "intraday_same_slot_residual_return_5m_d1" in features
@@ -269,6 +273,8 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_sell_pressure_recovery_5m_w48" in features
     assert "intraday_sell_pressure_exhaustion_5m_w48" in features
     assert "intraday_sell_pressure_exhaustion_persistence_5m_l96_s24_m48" in features
+    assert "intraday_microstructure_impact_strain_5m_w48" in features
+    assert "intraday_microstructure_exhaustion_alert_5m_w48" in features
     assert "intraday_same_slot_residual_return_5m_d5" in features
     assert "intraday_overnight_intraday_disagreement_5m" in features
     assert "intraday_sell_pressure_absorption_quality_5m_w48" in features
@@ -889,6 +895,66 @@ def test_sell_pressure_exhaustion_persistence_penalizes_short_window_bounces() -
             + values["intraday_sell_pressure_exhaustion_5m_w3"]
         )
     )
+
+
+def test_microstructure_exhaustion_alert_combines_impact_recovery_and_limit_pressure() -> None:
+    closes = [10.0, 9.8, 9.9, 9.7, 9.0]
+    turnovers = [100.0, 100.0, 80.0, 150.0, 200.0]
+    limit_down = [False, False, False, False, True]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+                "turnover": turnover,
+                "limit_up_open": False,
+                "limit_down_open": limit_down_open,
+            }
+            for i, (close, turnover, limit_down_open) in enumerate(
+                zip(closes, turnovers, limit_down)
+            )
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("microstructure_exhaustion_alert",),
+            microstructure_exhaustion_windows=(4,),
+        ),
+    )
+
+    values = features.iloc[-1]
+    previous_downside_return = (10.0 - 9.8) / 10.0
+    recent_downside_return = (9.9 - 9.7) / 9.9 + (9.7 - 9.0) / 9.7
+    previous_downside_turnover = 100.0
+    recent_downside_turnover = 150.0 + 200.0
+    rolling_absorption = (
+        previous_downside_turnover + recent_downside_turnover
+    ) / (previous_downside_return + recent_downside_return)
+    absorption_load = math.log1p(rolling_absorption)
+    absorption_speed = recent_downside_turnover / previous_downside_turnover
+    previous_impact = previous_downside_return / previous_downside_turnover
+    recent_impact = recent_downside_return / recent_downside_turnover
+    impact_acceleration = (recent_impact - previous_impact) / (
+        recent_impact + previous_impact
+    )
+    previous_positive_return = (9.9 - 9.8) / 9.8
+    previous_recovery = previous_positive_return / previous_downside_return
+    recovery_decay = 1.0
+    limit_withdrawal_proxy = 2.0
+    expected_strain = (
+        absorption_load * math.log1p(absorption_speed) * impact_acceleration
+    )
+
+    assert values["intraday_microstructure_impact_strain_5m_w4"] == pytest.approx(
+        expected_strain
+    )
+    assert values["intraday_microstructure_exhaustion_alert_5m_w4"] == pytest.approx(
+        expected_strain * (1.0 + recovery_decay) * (1.0 + limit_withdrawal_proxy)
+    )
+    assert previous_recovery > 0.0
 
 
 def test_same_slot_intraday_memory_uses_lagged_same_time_residuals() -> None:

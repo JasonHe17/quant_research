@@ -234,6 +234,9 @@ def _build_partition_dataset(
             microstructure_recovery_windows=tuple(
                 args.microstructure_recovery_windows
             ),
+            microstructure_exhaustion_windows=tuple(
+                args.microstructure_exhaustion_windows
+            ),
             microstructure_recovery_acceleration_specs=tuple(
                 args.microstructure_recovery_acceleration_specs
             ),
@@ -524,6 +527,9 @@ def _write_summary(
                 list(spec) for spec in args.sell_pressure_exhaustion_persistence_specs
             ],
             "microstructure_recovery_windows": args.microstructure_recovery_windows,
+            "microstructure_exhaustion_windows": (
+                args.microstructure_exhaustion_windows
+            ),
             "microstructure_recovery_acceleration_specs": [
                 list(spec) for spec in args.microstructure_recovery_acceleration_specs
             ],
@@ -625,6 +631,7 @@ def _parse_args() -> argparse.Namespace:
             "sell_pressure_recovery",
             "sell_pressure_exhaustion",
             "sell_pressure_exhaustion_persistence",
+            "microstructure_exhaustion_alert",
             "microstructure_recovery_speed",
             "same_slot_intraday_memory",
             "overnight_intraday_tug_of_war",
@@ -793,6 +800,12 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         nargs="+",
         default=[24, 48],
+    )
+    parser.add_argument(
+        "--microstructure-exhaustion-windows",
+        type=int,
+        nargs="+",
+        default=[48],
     )
     parser.add_argument(
         "--microstructure-recovery-acceleration-specs",
@@ -999,6 +1012,8 @@ def _parse_args() -> argparse.Namespace:
             )
     if any(value <= 1 for value in args.microstructure_recovery_windows):
         raise ValueError("--microstructure-recovery-windows values must be at least 2")
+    if any(value <= 1 for value in args.microstructure_exhaustion_windows):
+        raise ValueError("--microstructure-exhaustion-windows values must be at least 2")
     for short_window, long_window in args.microstructure_recovery_acceleration_specs:
         if short_window <= 1 or long_window <= 1:
             raise ValueError(
@@ -1123,6 +1138,9 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
             list(spec) for spec in args.sell_pressure_exhaustion_persistence_specs
         ],
         "microstructure_recovery_windows": list(args.microstructure_recovery_windows),
+        "microstructure_exhaustion_windows": list(
+            args.microstructure_exhaustion_windows
+        ),
         "microstructure_recovery_acceleration_specs": [
             list(spec) for spec in args.microstructure_recovery_acceleration_specs
         ],

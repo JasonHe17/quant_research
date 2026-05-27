@@ -8707,6 +8707,223 @@
         "standard_admission_2026_05_25",
         "weak_ic"
       ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling microstructure impact strain from accelerating downside price impact under rising sell-pressure absorption.",
+      "display_name": "Intraday microstructure impact strain w48",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "cost_adjusted_top_minus_bottom_label": -0.0018360772837634227,
+        "coverage": 1.0,
+        "dataset": "runs/factor_research/microstructure_exhaustion_2026_05_27/alpha_dataset",
+        "directional_ic_hit_rate": 0.509037616023449,
+        "directional_top_minus_bottom_label": -0.0014526103792960293,
+        "factor_evaluation": "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_evaluation/summary.json",
+        "failed_checks": [
+          "abs_rank_ic_mean",
+          "directional_ic_hit_rate",
+          "cost_adjusted_spread"
+        ],
+        "sample_count": 102771651,
+        "spearman_rank_ic_mean": 0.0009930387452606391,
+        "spearman_rank_ic_t_stat": 2.9419197235373744,
+        "stable_year_count": 2,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": -0.0014526103792960293,
+        "top_n_turnover": 0.29497454189799494,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md",
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": 0.003226017250229767,
+          "2024": -0.0012464900564630665,
+          "2025": 0.0010088175842911755
+        }
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_microstructure_impact_strain_5m_w48",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_microstructure_impact_strain_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "When recent downside turnover creates more price damage than the previous half-window after a high absorption load, liquidity-provider capacity may be close to exhaustion and should be penalized in long-only selection.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "microstructure_exhaustion_alert"
+          ],
+          "microstructure_exhaustion_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "2026-05-27 standard admission rejected. The raw impact-strain transform did not clear IC magnitude, directional hit-rate, or after-cost spread gates, and the admission-selected direction was long despite the intended risk/avoidance hypothesis.",
+      "owner": "research",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md",
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover",
+        "limit_up_open",
+        "limit_down_open"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_ic",
+        "evidence_artifacts": [
+          "runs/factor_research_memory/intraday_microstructure_impact_strain_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/alpha_dataset/summary.json",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_evaluation/summary.json",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_evaluation/feature_correlation.csv",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_admission/factor_admission_report.json",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_admission/factor_admission_table.csv"
+        ],
+        "negative_findings": "2023-2025 standard admission classified this feature as reject in long direction. rank IC=0.000993, t-stat=2.94, hit rate=0.509, coverage=1.000, cost-adjusted spread=-0.001836, top-N turnover=0.295, stable years=2/3. Failed checks: ['abs_rank_ic_mean', 'directional_ic_hit_rate', 'cost_adjusted_spread']. Yearly rank IC means: {'2023': 0.003226017250229767, '2024': -0.0012464900564630665, '2025': 0.0010088175842911755}.",
+        "retry_conditions": "Retry only with a materially different transform, preferably using direct order-book cancellation/depth data or a state-gated filter. Do not portfolio-test this standalone rank factor because it did not pass admission.",
+        "similar_to": [
+          "intraday_microstructure_exhaustion_alert_5m_w48",
+          "intraday_microstructure_recovery_speed_5m_w48",
+          "intraday_microstructure_recovery_acceleration_5m_s12_l48",
+          "intraday_limit_pressure_resilience_5m_w48"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "microstructure_exhaustion_alert",
+        "impact_strain",
+        "batch_2026_05_27_microstructure_exhaustion",
+        "reject",
+        "standard_admission_2026_05_27",
+        "weak_ic"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling imminent microstructure exhaustion alert combining impact strain, rebound decay, and limit-pressure withdrawal proxy.",
+      "display_name": "Intraday microstructure exhaustion alert w48",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "cost_adjusted_top_minus_bottom_label": -0.001962641560091319,
+        "coverage": 1.0,
+        "dataset": "runs/factor_research/microstructure_exhaustion_2026_05_27/alpha_dataset",
+        "directional_ic_hit_rate": 0.506365125434639,
+        "directional_top_minus_bottom_label": -0.001550492608619927,
+        "factor_evaluation": "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_evaluation/summary.json",
+        "failed_checks": [
+          "abs_rank_ic_mean",
+          "abs_rank_ic_t_stat",
+          "directional_ic_hit_rate",
+          "cost_adjusted_spread"
+        ],
+        "sample_count": 102771651,
+        "spearman_rank_ic_mean": 0.0006558949943020309,
+        "spearman_rank_ic_t_stat": 1.8819741379609645,
+        "stable_year_count": 2,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": -0.001550492608619927,
+        "top_n_turnover": 0.3170376549779938,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md",
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": 0.002821858582860216,
+          "2024": -0.001520618662039482,
+          "2025": 0.0006753970037399929
+        }
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_microstructure_exhaustion_alert_5m_w48",
+      "family": "liquidity",
+      "feature_columns": [
+        "intraday_microstructure_exhaustion_alert_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Rising downside price impact after heavy sell-pressure absorption, decaying rebound quality, and worsening limit pressure may warn that liquidity providers are near capacity exhaustion before confirmed relief appears.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "microstructure_exhaustion_alert"
+          ],
+          "microstructure_exhaustion_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "2026-05-27 standard admission rejected. The limit-pressure-amplified alert weakened versus the raw impact-strain leg and did not clear IC magnitude, t-stat, hit-rate, or after-cost spread gates.",
+      "owner": "research",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md",
+        "docs/validation/factor_development_standard.md",
+        "docs/validation/factor_admission.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "turnover",
+        "limit_up_open",
+        "limit_down_open"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_ic",
+        "evidence_artifacts": [
+          "runs/factor_research_memory/intraday_microstructure_exhaustion_alert_5m_w48/factor_research_memory_check.json",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/alpha_dataset/summary.json",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_evaluation/summary.json",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_evaluation/feature_correlation.csv",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_admission/factor_admission_report.json",
+          "runs/factor_research/microstructure_exhaustion_2026_05_27/factor_admission/factor_admission_table.csv"
+        ],
+        "negative_findings": "2023-2025 standard admission classified this feature as reject in long direction. rank IC=0.000656, t-stat=1.88, hit rate=0.506, coverage=1.000, cost-adjusted spread=-0.001963, top-N turnover=0.317, stable years=2/3. Failed checks: ['abs_rank_ic_mean', 'abs_rank_ic_t_stat', 'directional_ic_hit_rate', 'cost_adjusted_spread']. Yearly rank IC means: {'2023': 0.002821858582860216, '2024': -0.001520618662039482, '2025': 0.0006753970037399929}.",
+        "retry_conditions": "Retry only with direct order-book cancellation/depth inputs, or as an explicitly state-conditioned gate rather than a standalone rank factor. Do not continue the current limit-pressure-amplified formula.",
+        "similar_to": [
+          "intraday_microstructure_impact_strain_5m_w48",
+          "intraday_microstructure_recovery_speed_5m_w48",
+          "intraday_microstructure_recovery_acceleration_5m_s12_l48",
+          "intraday_limit_pressure_resilience_5m_w48"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "microstructure_exhaustion_alert",
+        "limit_pressure",
+        "batch_2026_05_27_microstructure_exhaustion",
+        "reject",
+        "standard_admission_2026_05_27",
+        "weak_ic"
+      ]
     }
   ],
   "owner": "quant_research",
@@ -8722,10 +8939,11 @@
     "https://github.com/quantopian/alphalens",
     "https://english.sse.com.cn/start/trading/mechanism/",
     "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
-    "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md"
+    "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
+    "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md"
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-26",
-  "version": 56
+  "updated_at": "2026-05-27",
+  "version": 57
 }
