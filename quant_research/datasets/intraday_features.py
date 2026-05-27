@@ -41,6 +41,7 @@ _VALID_GROUPS = {
     "breadth_resilience",
     "breadth_shock_residual_resilience",
     "limit_pressure_resilience",
+    "regime_conditioned",
     "return_turnover_correlation",
     "negative_return_persistence",
     "sell_pressure_absorption",
@@ -122,6 +123,8 @@ class IntradayFeatureConfig:
     breadth_resilience_windows: tuple[int, ...] = (48,)
     breadth_shock_residual_resilience_windows: tuple[int, ...] = (48,)
     limit_pressure_resilience_windows: tuple[int, ...] = (48,)
+    regime_conditioned_lookback_bars: tuple[int, ...] = (12, 24)
+    regime_conditioned_state_windows: tuple[int, ...] = (48,)
 
     def __post_init__(self) -> None:
         unknown = set(self.factor_groups) - _VALID_GROUPS
@@ -190,6 +193,14 @@ class IntradayFeatureConfig:
             (
                 "limit_pressure_resilience_windows",
                 self.limit_pressure_resilience_windows,
+            ),
+            (
+                "regime_conditioned_lookback_bars",
+                self.regime_conditioned_lookback_bars,
+            ),
+            (
+                "regime_conditioned_state_windows",
+                self.regime_conditioned_state_windows,
             ),
         ):
             if any(value <= 0 for value in values):
@@ -323,6 +334,7 @@ def build_intraday_feature_matrix(
         "limit_pressure_resilience",
         "market_state",
         "event_shock_proxy",
+        "regime_conditioned",
     }:
         required.extend(["limit_up_open", "limit_down_open"])
     _require_columns(bars, tuple(required))
@@ -1054,6 +1066,87 @@ def build_intraday_feature_matrix(
                 rolling_pressure != 0.0
             )
             feature_columns.append(column)
+    if "regime_conditioned" in groups:
+        market_return = one_bar_return.groupby(frame["bar_end_time"]).transform("median")
+        up_rate = one_bar_return.gt(0.0).where(one_bar_return.notna()).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_up_rate = frame["limit_up_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        limit_down_rate = frame["limit_down_open"].astype(bool).groupby(
+            frame["bar_end_time"]
+        ).transform("mean")
+        weak_breadth = (0.5 - up_rate).clip(lower=0.0)
+        downside_momentum = (-market_return).clip(lower=0.0)
+        limit_pressure = (limit_down_rate - limit_up_rate).clip(lower=0.0)
+        regime_probability_by_window: dict[int, pd.Series] = {}
+        for window in config.regime_conditioned_state_windows:
+            weak_breadth_state = _rolling_timestamp_state(
+                frame["bar_end_time"],
+                weak_breadth,
+                window,
+            )
+            downside_state = _rolling_timestamp_state(
+                frame["bar_end_time"],
+                downside_momentum,
+                window,
+            )
+            limit_pressure_state = _rolling_timestamp_state(
+                frame["bar_end_time"],
+                limit_pressure,
+                window,
+            )
+            regime_probability = (
+                (weak_breadth_state / 0.5).clip(lower=0.0, upper=1.0)
+                + np.tanh(200.0 * downside_state.clip(lower=0.0))
+                + (limit_pressure_state / 0.2).clip(lower=0.0, upper=1.0)
+            ) / 3.0
+            regime_probability = regime_probability.where(one_bar_return.notna())
+            regime_probability_by_window[window] = regime_probability
+            probability_column = f"market_regime_stress_probability_5m_w{window}"
+            output[probability_column] = regime_probability
+            feature_columns.append(probability_column)
+        for lookback_bars in config.regime_conditioned_lookback_bars:
+            returns = lookback_return(lookback_bars)
+            market_lookback_return = returns.groupby(frame["bar_end_time"]).transform(
+                "median"
+            )
+            residual_momentum = returns - market_lookback_return
+            residual_reversal = -residual_momentum
+            for window, regime_probability in regime_probability_by_window.items():
+                stress_reversal_column = (
+                    "intraday_regime_stress_reversal_5m_"
+                    f"lb{lookback_bars}_w{window}"
+                )
+                stress_momentum_column = (
+                    "intraday_regime_stress_momentum_5m_"
+                    f"lb{lookback_bars}_w{window}"
+                )
+                calm_reversal_column = (
+                    "intraday_regime_calm_reversal_5m_"
+                    f"lb{lookback_bars}_w{window}"
+                )
+                switch_reversal_column = (
+                    "intraday_regime_switch_reversal_5m_"
+                    f"lb{lookback_bars}_w{window}"
+                )
+                output[stress_reversal_column] = residual_reversal * regime_probability
+                output[stress_momentum_column] = residual_momentum * regime_probability
+                output[calm_reversal_column] = residual_reversal * (
+                    1.0 - regime_probability
+                )
+                output[switch_reversal_column] = residual_reversal * (
+                    1.0 - 2.0 * regime_probability
+                )
+                feature_columns.extend(
+                    [
+                        stress_reversal_column,
+                        stress_momentum_column,
+                        calm_reversal_column,
+                        switch_reversal_column,
+                    ]
+                )
     if "return_skewness" in groups:
         for window in config.return_skewness_windows:
             column = f"intraday_return_skewness_5m_w{window}"

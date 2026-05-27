@@ -252,6 +252,12 @@ def _build_partition_dataset(
             limit_pressure_resilience_windows=tuple(
                 args.limit_pressure_resilience_windows
             ),
+            regime_conditioned_lookback_bars=tuple(
+                args.regime_conditioned_lookback_bars
+            ),
+            regime_conditioned_state_windows=tuple(
+                args.regime_conditioned_state_windows
+            ),
         ),
     )
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
@@ -536,6 +542,8 @@ def _write_summary(
                 args.breadth_shock_residual_resilience_windows
             ),
             "limit_pressure_resilience_windows": args.limit_pressure_resilience_windows,
+            "regime_conditioned_lookback_bars": args.regime_conditioned_lookback_bars,
+            "regime_conditioned_state_windows": args.regime_conditioned_state_windows,
             "label_name": args.label_name,
             "horizon_bars": args.horizon_bars,
             "label_columns": _label_column_names(args),
@@ -609,6 +617,7 @@ def _parse_args() -> argparse.Namespace:
             "breadth_resilience",
             "breadth_shock_residual_resilience",
             "limit_pressure_resilience",
+            "regime_conditioned",
             "return_turnover_correlation",
             "negative_return_persistence",
             "sell_pressure_absorption",
@@ -831,6 +840,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--limit-pressure-resilience-windows", type=int, nargs="+", default=[48]
     )
+    parser.add_argument(
+        "--regime-conditioned-lookback-bars",
+        type=int,
+        nargs="+",
+        default=[12, 24],
+    )
+    parser.add_argument(
+        "--regime-conditioned-state-windows",
+        type=int,
+        nargs="+",
+        default=[48],
+    )
     parser.add_argument("--label-name", default="forward_return")
     parser.add_argument("--horizon-bars", type=int, nargs="+", default=[48])
     parser.add_argument("--entry-lag-bars", type=int, default=1)
@@ -1013,6 +1034,10 @@ def _parse_args() -> argparse.Namespace:
         )
     if any(value <= 0 for value in args.limit_pressure_resilience_windows):
         raise ValueError("--limit-pressure-resilience-windows values must be positive")
+    if any(value <= 0 for value in args.regime_conditioned_lookback_bars):
+        raise ValueError("--regime-conditioned-lookback-bars values must be positive")
+    if any(value <= 0 for value in args.regime_conditioned_state_windows):
+        raise ValueError("--regime-conditioned-state-windows values must be positive")
     if any(value <= 0 for value in args.horizon_bars):
         raise ValueError("--horizon-bars values must be positive")
     if args.padding_days < 0:
@@ -1115,6 +1140,15 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "breadth_shock_residual_resilience_windows": list(
             args.breadth_shock_residual_resilience_windows
         ),
+        "limit_pressure_resilience_windows": list(
+            args.limit_pressure_resilience_windows
+        ),
+        "regime_conditioned_lookback_bars": list(
+            args.regime_conditioned_lookback_bars
+        ),
+        "regime_conditioned_state_windows": list(
+            args.regime_conditioned_state_windows
+        ),
         "label_name": args.label_name,
         "horizon_bars": list(args.horizon_bars),
         "label_columns": _label_column_names(args),
@@ -1205,6 +1239,8 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.breadth_resilience_windows,
                     *args.breadth_shock_residual_resilience_windows,
                     *args.limit_pressure_resilience_windows,
+                    *args.regime_conditioned_lookback_bars,
+                    *args.regime_conditioned_state_windows,
                 ]
             ),
         },

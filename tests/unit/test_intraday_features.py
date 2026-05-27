@@ -60,6 +60,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "breadth_resilience",
             "breadth_shock_residual_resilience",
             "limit_pressure_resilience",
+            "regime_conditioned",
             "return_turnover_correlation",
             "negative_return_persistence",
             "sell_pressure_absorption",
@@ -121,6 +122,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         breadth_resilience_windows=(3,),
         breadth_shock_residual_resilience_windows=(3,),
         limit_pressure_resilience_windows=(3,),
+        regime_conditioned_lookback_bars=(1,),
+        regime_conditioned_state_windows=(3,),
     )
 
     features = build_intraday_feature_matrix(bars, config)
@@ -161,6 +164,8 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_breadth_resilience_5m_w3" in features
     assert "intraday_breadth_shock_residual_resilience_5m_w3" in features
     assert "intraday_limit_pressure_resilience_5m_w3" in features
+    assert "market_regime_stress_probability_5m_w3" in features
+    assert "intraday_regime_switch_reversal_5m_lb1_w3" in features
     assert "intraday_return_turnover_corr_5m_w3" in features
     assert "intraday_negative_return_persistence_5m_w3" in features
     assert "intraday_sell_pressure_absorption_5m_w3" in features
@@ -255,6 +260,8 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_breadth_resilience_5m_w48" in features
     assert "intraday_breadth_shock_residual_resilience_5m_w48" in features
     assert "intraday_limit_pressure_resilience_5m_w48" in features
+    assert "intraday_regime_stress_reversal_5m_lb24_w48" in features
+    assert "intraday_regime_switch_reversal_5m_lb24_w48" in features
     assert "intraday_return_turnover_corr_5m_w48" in features
     assert "intraday_negative_return_persistence_5m_w48" in features
     assert "intraday_sell_pressure_absorption_5m_w48" in features
@@ -324,6 +331,47 @@ def test_cross_sectional_reversal_demeans_market_move() -> None:
     assert values.loc[("a", "t1"), column] == pytest.approx(0.15)
     assert values.loc[("b", "t1"), column] == pytest.approx(-0.05)
     assert values.loc[("c", "t1"), column] == pytest.approx(-0.0)
+
+
+def test_regime_conditioned_features_gate_and_flip_base_signal() -> None:
+    bars = pd.DataFrame(
+        [
+            _regime_bar("a", "t0", 100.0, False),
+            _regime_bar("b", "t0", 100.0, False),
+            _regime_bar("c", "t0", 100.0, False),
+            _regime_bar("a", "t1", 90.0, True),
+            _regime_bar("b", "t1", 100.0, False),
+            _regime_bar("c", "t1", 110.0, False),
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("regime_conditioned",),
+            regime_conditioned_lookback_bars=(1,),
+            regime_conditioned_state_windows=(1,),
+        ),
+    )
+
+    values = features.set_index(["instrument_id", "timestamp"])
+    probability = (1.0 / 3.0 + 0.0 + 1.0) / 3.0
+
+    assert values.loc[("a", "t1"), "market_regime_stress_probability_5m_w1"] == (
+        pytest.approx(probability)
+    )
+    assert values.loc[("a", "t1"), "intraday_regime_stress_reversal_5m_lb1_w1"] == (
+        pytest.approx(0.1 * probability)
+    )
+    assert values.loc[("a", "t1"), "intraday_regime_stress_momentum_5m_lb1_w1"] == (
+        pytest.approx(-0.1 * probability)
+    )
+    assert values.loc[("a", "t1"), "intraday_regime_calm_reversal_5m_lb1_w1"] == (
+        pytest.approx(0.1 * (1.0 - probability))
+    )
+    assert values.loc[("a", "t1"), "intraday_regime_switch_reversal_5m_lb1_w1"] == (
+        pytest.approx(0.1 * (1.0 - 2.0 * probability))
+    )
 
 
 def test_conditional_reversal_only_scores_low_vol_volume_confirmed_losers() -> None:
@@ -1387,3 +1435,18 @@ def test_daily_moving_average_features_use_completed_prior_sessions() -> None:
 def test_intraday_feature_config_rejects_unknown_group() -> None:
     with pytest.raises(ValueError, match="unknown factor groups"):
         IntradayFeatureConfig(factor_groups=("not_a_factor",))
+
+
+def _regime_bar(
+    instrument_id: str,
+    timestamp: str,
+    close_price: float,
+    limit_down_open: bool,
+) -> dict[str, object]:
+    return {
+        "instrument_id": instrument_id,
+        "bar_end_time": timestamp,
+        "close_price": close_price,
+        "limit_up_open": False,
+        "limit_down_open": limit_down_open,
+    }

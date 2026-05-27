@@ -52,6 +52,11 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
         factor_max_contribution_share=0.5,
         factor_health_mode="shrink",
         factor_health_lookback_windows=10,
+        factor_health_stress_lookback_windows=20,
+        factor_health_stress_min_scale=0.3,
+        factor_health_state_regime_mode="select",
+        factor_health_state_regime_schedule="regime.csv",
+        factor_health_state_regime_feature="regime_alpha",
     )
     scenario = _validation_scenarios(args, years=[2023])[0]
 
@@ -73,6 +78,15 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     assert command[command.index("--factor-max-contribution-share") + 1] == "0.5"
     assert command[command.index("--factor-health-mode") + 1] == "shrink"
     assert command[command.index("--factor-health-lookback-windows") + 1] == "10"
+    assert command[command.index("--factor-health-stress-lookback-windows") + 1] == "20"
+    assert command[command.index("--factor-health-stress-min-scale") + 1] == "0.3"
+    assert command[command.index("--factor-health-state-regime-mode") + 1] == "select"
+    assert command[command.index("--factor-health-state-regime-schedule") + 1] == (
+        "regime.csv"
+    )
+    assert command[command.index("--factor-health-state-regime-feature") + 1] == (
+        "regime_alpha"
+    )
     assert command[command.index("--score-diagnostics-top-n") + 1] == "50"
     assert command[command.index("--registry") + 1] == "configs/factors/factor_registry.json"
     assert command[
@@ -118,6 +132,8 @@ def test_candidate_policy_validation_command_supports_single_calibrated_optimize
         forecast_calibration_mode="score_bucket",
         forecast_calibration_lookback_windows=3,
         forecast_calibration_min_periods=1,
+        factor_weight_scale_schedule="factor_leg_schedule.csv",
+        factor_weight_scale_combine_mode="multiply",
         optimizer_candidate_rank=150,
         optimizer_score_to_edge_bps=0.0,
         optimizer_min_net_edge_bps=1.0,
@@ -142,6 +158,10 @@ def test_candidate_policy_validation_command_supports_single_calibrated_optimize
     assert command[command.index("--forecast-calibration-mode") + 1] == "score_bucket"
     assert command[command.index("--forecast-calibration-lookback-windows") + 1] == "3"
     assert command[command.index("--forecast-calibration-min-periods") + 1] == "1"
+    assert command[command.index("--factor-weight-scale-schedule") + 1] == (
+        "factor_leg_schedule.csv"
+    )
+    assert command[command.index("--factor-weight-scale-combine-mode") + 1] == "multiply"
     assert command[command.index("--optimizer-candidate-rank") + 1] == "150"
     assert command[command.index("--optimizer-score-to-edge-bps") + 1] == "0.0"
     assert command[command.index("--optimizer-risk-penalty-multiplier") + 1] == "0.0"
@@ -622,6 +642,14 @@ def _validation_args(**overrides: object) -> object:
         "factor_health_label_lag_windows": 48,
         "factor_health_min_scale": 0.25,
         "factor_health_max_scale": 1.0,
+        "factor_health_stress_lookback_windows": None,
+        "factor_health_stress_min_periods": None,
+        "factor_health_stress_min_scale": None,
+        "factor_health_stress_max_scale": None,
+        "factor_health_state_regime_mode": "off",
+        "factor_health_state_regime_schedule": None,
+        "factor_health_state_regime_feature": "intraday_overnight_gap_5m",
+        "factor_health_state_regime_threshold": 0.999,
         "factor_health_rank_ic_floor": -0.05,
         "factor_health_rank_ic_ceiling": 0.05,
         "factor_health_spread_floor": -0.001,
@@ -682,9 +710,16 @@ def _validation_args(**overrides: object) -> object:
         "factor_risk_gate_reduced_scale": 0.5,
         "factor_risk_gate_blocked_scale": 0.0,
         "factor_risk_gate_warmup_scale": 1.0,
+        "factor_risk_gate_state_confirmation_windows": 1,
+        "factor_risk_gate_max_scale_change_per_window": None,
+        "factor_risk_gate_max_scale_increase_per_window": None,
+        "factor_risk_gate_max_scale_decrease_per_window": None,
+        "factor_risk_gate_scale_change_deadband": 0.0,
         "factor_risk_gate_partition_start": None,
         "factor_risk_gate_partition_end": None,
         "factor_risk_gate_max_partitions": None,
+        "factor_weight_scale_schedule": None,
+        "factor_weight_scale_combine_mode": "min",
         "optimizer_candidate_rank": None,
         "optimizer_score_to_edge_bps": 100.0,
         "optimizer_min_net_edge_bps": 0.0,

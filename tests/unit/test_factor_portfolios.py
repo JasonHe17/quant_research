@@ -16,6 +16,8 @@ from examples.run_candidate_factor_portfolios import (
     _dataset_paths,
     _default_label_lag_windows,
     _effective_backtest_memory_budget_gb,
+    _factor_weight_scale_schedule,
+    _parse_factor_health_ensemble_lookbacks,
     _registry_filter_summary,
     _reused_scores_summary,
     _summary_params,
@@ -25,7 +27,10 @@ from quant_research.portfolio import (
     FactorHealthConfig,
     ScoreForecastCalibrationConfig,
     build_composite_scores,
+    build_factor_health_ensemble_schedule,
     build_factor_health_schedule,
+    build_state_conditioned_factor_health_schedule,
+    build_state_conditioned_factor_health_schedule_from_partitions,
     cap_factor_weights,
     factor_contribution_diagnostics,
     factor_combination_weights,
@@ -379,6 +384,60 @@ def test_build_factor_health_schedule_can_monitor_without_shrinking(
     assert schedule.loc[2, "health_state"] == "impaired"
 
 
+def test_build_factor_health_ensemble_schedule_blends_lookbacks(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": f"t{index}",
+                "instrument_id": instrument,
+                "alpha_a": value,
+                "forward_return": value if index == 0 else -value,
+            }
+            for index in range(4)
+            for instrument, value in (("a", 1.0), ("b", 2.0), ("c", 3.0))
+        ]
+    ).to_parquet(dataset_path, index=False)
+
+    schedule = build_factor_health_ensemble_schedule(
+        [dataset_path],
+        candidates=(CandidateFactor("alpha_a", 1, 0.02),),
+        configs=(
+            FactorHealthConfig(
+                lookback_windows=1,
+                min_periods=1,
+                label_lag_windows=1,
+                min_scale=0.25,
+                max_scale=1.0,
+                rank_ic_floor=-1.0,
+                rank_ic_ceiling=1.0,
+                spread_floor=-1.0,
+                spread_ceiling=1.0,
+            ),
+            FactorHealthConfig(
+                lookback_windows=2,
+                min_periods=1,
+                label_lag_windows=1,
+                min_scale=0.25,
+                max_scale=1.0,
+                rank_ic_floor=-1.0,
+                rank_ic_ceiling=1.0,
+                spread_floor=-1.0,
+                spread_ceiling=1.0,
+            ),
+        ),
+        top_n=1,
+        combine_mode="mean",
+    )
+
+    assert schedule.loc[0, "shrink_reason"] == "warmup"
+    assert schedule.loc[2, "weight_scale"] == pytest.approx(0.4375)
+    assert schedule.loc[2, "shrink_reason"] == "ensemble_lagged_health_shrink"
+    assert schedule.loc[2, "ensemble_lookback_windows"] == "1,2"
+
+
 def test_factor_contribution_diagnostics_reports_top_concentration() -> None:
     frame = pd.DataFrame(
         [
@@ -555,6 +614,262 @@ def test_candidate_factor_builds_factor_health_schedule_when_enabled(tmp_path: P
     assert len(schedule) == 2
 
 
+def test_candidate_factor_builds_ensemble_factor_health_schedule(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": f"t{index}",
+                "instrument_id": instrument,
+                "alpha_a": value,
+                "forward_return": value if index == 0 else -value,
+            }
+            for index in range(4)
+            for instrument, value in (("a", 1.0), ("b", 2.0), ("c", 3.0))
+        ]
+    ).to_parquet(dataset_path, index=False)
+    args = _portfolio_args(
+        dataset_dir=str(tmp_path),
+        factor_health_mode="shrink",
+        factor_health_ensemble_lookbacks="1,2",
+        factor_health_min_periods=1,
+        factor_health_label_lag_windows=1,
+        factor_health_rank_ic_floor=-1.0,
+        factor_health_rank_ic_ceiling=1.0,
+        factor_health_spread_floor=-1.0,
+        factor_health_spread_ceiling=1.0,
+        score_diagnostics_top_n=1,
+    )
+
+    schedule = _build_factor_health_schedule(
+        args,
+        [dataset_path],
+        (CandidateFactor("alpha_a", 1, 0.02),),
+    )
+
+    assert schedule is not None
+    assert schedule.loc[2, "ensemble_combine_mode"] == "mean"
+    assert schedule.loc[2, "ensemble_lookback_windows"] == "1,2"
+
+
+def test_factor_health_ensemble_reads_each_partition_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": f"t{index}",
+                "instrument_id": instrument,
+                "alpha_a": value,
+                "forward_return": value if index == 0 else -value,
+            }
+            for index in range(4)
+            for instrument, value in (("a", 1.0), ("b", 2.0), ("c", 3.0))
+        ]
+    ).to_parquet(dataset_path, index=False)
+    read_calls: list[Path] = []
+    original_read_parquet = pd.read_parquet
+
+    def spy_read_parquet(path: Path, **kwargs: object) -> pd.DataFrame:
+        read_calls.append(Path(path))
+        return original_read_parquet(path, **kwargs)
+
+    monkeypatch.setattr(
+        "quant_research.portfolio.factor_portfolios.pd.read_parquet",
+        spy_read_parquet,
+    )
+
+    schedule = build_factor_health_ensemble_schedule(
+        [dataset_path],
+        candidates=(CandidateFactor("alpha_a", 1, 0.02),),
+        configs=(
+            FactorHealthConfig(
+                lookback_windows=1,
+                min_periods=1,
+                label_lag_windows=1,
+                rank_ic_floor=-1.0,
+                rank_ic_ceiling=1.0,
+                spread_floor=-1.0,
+                spread_ceiling=1.0,
+            ),
+            FactorHealthConfig(
+                lookback_windows=2,
+                min_periods=1,
+                label_lag_windows=1,
+                rank_ic_floor=-1.0,
+                rank_ic_ceiling=1.0,
+                spread_floor=-1.0,
+                spread_ceiling=1.0,
+            ),
+        ),
+        top_n=1,
+    )
+
+    assert not schedule.empty
+    assert read_calls == [dataset_path]
+
+
+def test_build_state_conditioned_factor_health_schedule_selects_stress() -> None:
+    normal = pd.DataFrame(
+        [
+            {"timestamp": "t0", "feature": "alpha_a", "weight_scale": 0.9},
+            {"timestamp": "t1", "feature": "alpha_a", "weight_scale": 0.8},
+        ]
+    )
+    stress = pd.DataFrame(
+        [
+            {"timestamp": "t0", "feature": "alpha_a", "weight_scale": 0.5},
+            {"timestamp": "t1", "feature": "alpha_a", "weight_scale": 0.4},
+        ]
+    )
+    regime = pd.DataFrame(
+        [
+            {"timestamp": "t0", "feature": "regime_alpha", "weight_scale": 1.0},
+            {"timestamp": "t1", "feature": "regime_alpha", "weight_scale": 0.7},
+        ]
+    )
+
+    schedule = build_state_conditioned_factor_health_schedule(
+        normal,
+        stress,
+        regime,
+        regime_feature="regime_alpha",
+        mode="select",
+        threshold=0.9,
+    )
+
+    assert schedule.loc[0, "weight_scale"] == pytest.approx(0.9)
+    assert schedule.loc[1, "weight_scale"] == pytest.approx(0.4)
+    assert schedule.loc[1, "regime_weight"] == pytest.approx(1.0)
+
+
+def test_candidate_factor_builds_state_conditioned_factor_health_schedule(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": f"t{index}",
+                "instrument_id": instrument,
+                "alpha_a": value,
+                "forward_return": value if index in {0, 1} else -value,
+            }
+            for index in range(4)
+            for instrument, value in (("a", 1.0), ("b", 2.0), ("c", 3.0))
+        ]
+    ).to_parquet(dataset_path, index=False)
+    regime_path = tmp_path / "regime.csv"
+    pd.DataFrame(
+        [
+            {"timestamp": "t0", "feature": "regime_alpha", "weight_scale": 1.0},
+            {"timestamp": "t1", "feature": "regime_alpha", "weight_scale": 1.0},
+            {"timestamp": "t2", "feature": "regime_alpha", "weight_scale": 0.5},
+            {"timestamp": "t3", "feature": "regime_alpha", "weight_scale": 0.5},
+        ]
+    ).to_csv(regime_path, index=False)
+    args = _portfolio_args(
+        dataset_dir=str(tmp_path),
+        factor_health_mode="shrink",
+        factor_health_lookback_windows=1,
+        factor_health_stress_lookback_windows=2,
+        factor_health_min_periods=1,
+        factor_health_label_lag_windows=1,
+        factor_health_rank_ic_floor=-1.0,
+        factor_health_rank_ic_ceiling=1.0,
+        factor_health_spread_floor=-1.0,
+        factor_health_spread_ceiling=1.0,
+        factor_health_state_regime_mode="select",
+        factor_health_state_regime_schedule=str(regime_path),
+        factor_health_state_regime_feature="regime_alpha",
+        score_diagnostics_top_n=1,
+    )
+
+    schedule = _build_factor_health_schedule(
+        args,
+        [dataset_path],
+        (CandidateFactor("alpha_a", 1, 0.02),),
+    )
+
+    assert schedule is not None
+    assert schedule.loc[2, "state_conditioned_mode"] == "select"
+    assert schedule.loc[2, "regime_weight"] == pytest.approx(1.0)
+    assert "normal_weight_scale" in schedule.columns
+    assert "stress_weight_scale" in schedule.columns
+
+
+def test_state_conditioned_factor_health_reads_each_partition_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": f"t{index}",
+                "instrument_id": instrument,
+                "alpha_a": value,
+                "forward_return": value if index in {0, 1} else -value,
+            }
+            for index in range(4)
+            for instrument, value in (("a", 1.0), ("b", 2.0), ("c", 3.0))
+        ]
+    ).to_parquet(dataset_path, index=False)
+    regime = pd.DataFrame(
+        [
+            {"timestamp": "t0", "feature": "regime_alpha", "weight_scale": 1.0},
+            {"timestamp": "t1", "feature": "regime_alpha", "weight_scale": 1.0},
+            {"timestamp": "t2", "feature": "regime_alpha", "weight_scale": 0.5},
+            {"timestamp": "t3", "feature": "regime_alpha", "weight_scale": 0.5},
+        ]
+    )
+    read_calls: list[Path] = []
+    original_read_parquet = pd.read_parquet
+
+    def spy_read_parquet(path: Path, **kwargs: object) -> pd.DataFrame:
+        read_calls.append(Path(path))
+        return original_read_parquet(path, **kwargs)
+
+    monkeypatch.setattr(
+        "quant_research.portfolio.factor_portfolios.pd.read_parquet",
+        spy_read_parquet,
+    )
+
+    schedule = build_state_conditioned_factor_health_schedule_from_partitions(
+        [dataset_path],
+        candidates=(CandidateFactor("alpha_a", 1, 0.02),),
+        normal_config=FactorHealthConfig(
+            lookback_windows=1,
+            min_periods=1,
+            label_lag_windows=1,
+            rank_ic_floor=-1.0,
+            rank_ic_ceiling=1.0,
+            spread_floor=-1.0,
+            spread_ceiling=1.0,
+        ),
+        stress_config=FactorHealthConfig(
+            lookback_windows=2,
+            min_periods=1,
+            label_lag_windows=1,
+            rank_ic_floor=-1.0,
+            rank_ic_ceiling=1.0,
+            spread_floor=-1.0,
+            spread_ceiling=1.0,
+        ),
+        regime=regime,
+        regime_feature="regime_alpha",
+        top_n=1,
+    )
+
+    assert not schedule.empty
+    assert schedule.loc[2, "regime_weight"] == pytest.approx(1.0)
+    assert read_calls == [dataset_path]
+
+
 def test_candidate_factor_monitor_mode_does_not_apply_health_scales(
     tmp_path: Path,
 ) -> None:
@@ -589,6 +904,36 @@ def test_candidate_factor_monitor_mode_does_not_apply_health_scales(
     assert schedule is not None
     assert schedule["weight_scale"].max() == pytest.approx(1.0)
     assert schedule["recommended_weight_scale"].min() < 1.0
+
+
+def test_candidate_factor_combines_external_weight_scale_schedule(
+    tmp_path: Path,
+) -> None:
+    schedule_path = tmp_path / "weight_scale.csv"
+    pd.DataFrame(
+        [
+            {"timestamp": "t0", "feature": "alpha_a", "weight_scale": 0.4},
+            {"timestamp": "t0", "feature": "alpha_b", "weight_scale": 0.8},
+        ]
+    ).to_csv(schedule_path, index=False)
+    health = pd.DataFrame(
+        [
+            {"timestamp": "t0", "feature": "alpha_a", "weight_scale": 0.5},
+            {"timestamp": "t0", "feature": "alpha_b", "weight_scale": 1.0},
+        ]
+    )
+    args = _portfolio_args(
+        factor_weight_scale_schedule=str(schedule_path),
+        factor_weight_scale_combine_mode="multiply",
+    )
+
+    schedule = _factor_weight_scale_schedule(args, health)
+
+    assert schedule is not None
+    by_feature = schedule.set_index("feature")["weight_scale"]
+    assert by_feature["alpha_a"] == pytest.approx(0.2)
+    assert by_feature["alpha_b"] == pytest.approx(0.8)
+    assert "external_weight_scale" in schedule.columns
 
 
 def test_candidate_factor_script_filters_dataset_partitions(tmp_path: Path) -> None:
@@ -935,6 +1280,13 @@ def test_candidate_factor_default_label_lag_follows_horizon_suffix() -> None:
     assert _default_label_lag_windows("forward_return_240b") == 240
 
 
+def test_parse_factor_health_ensemble_lookbacks() -> None:
+    assert _parse_factor_health_ensemble_lookbacks(None) == ()
+    assert _parse_factor_health_ensemble_lookbacks("16, 20") == (16, 20)
+    with pytest.raises(ValueError, match="duplicates"):
+        _parse_factor_health_ensemble_lookbacks("16,16")
+
+
 def _portfolio_args(**overrides: object) -> object:
     defaults = {
         "dataset_dir": "dataset",
@@ -956,14 +1308,26 @@ def _portfolio_args(**overrides: object) -> object:
         "factor_max_contribution_share": None,
         "factor_health_mode": "off",
         "factor_health_lookback_windows": 20,
+        "factor_health_ensemble_lookbacks": None,
+        "factor_health_ensemble_combine_mode": "mean",
         "factor_health_min_periods": 5,
         "factor_health_label_lag_windows": 48,
         "factor_health_min_scale": 0.25,
         "factor_health_max_scale": 1.0,
+        "factor_health_stress_lookback_windows": None,
+        "factor_health_stress_min_periods": None,
+        "factor_health_stress_min_scale": None,
+        "factor_health_stress_max_scale": None,
+        "factor_health_state_regime_mode": "off",
+        "factor_health_state_regime_schedule": None,
+        "factor_health_state_regime_feature": "intraday_overnight_gap_5m",
+        "factor_health_state_regime_threshold": 0.999,
         "factor_health_rank_ic_floor": -0.05,
         "factor_health_rank_ic_ceiling": 0.05,
         "factor_health_spread_floor": -0.001,
         "factor_health_spread_ceiling": 0.001,
+        "factor_weight_scale_schedule": None,
+        "factor_weight_scale_combine_mode": "min",
         "forecast_calibration_mode": "off",
         "forecast_calibration_lookback_windows": 20,
         "forecast_calibration_min_periods": 5,

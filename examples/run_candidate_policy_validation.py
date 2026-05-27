@@ -153,6 +153,15 @@ def _prepare_factor_risk_gate(
         "reduced_scale": args.factor_risk_gate_reduced_scale,
         "blocked_scale": args.factor_risk_gate_blocked_scale,
         "warmup_scale": args.factor_risk_gate_warmup_scale,
+        "state_confirmation_windows": args.factor_risk_gate_state_confirmation_windows,
+        "max_scale_change_per_window": args.factor_risk_gate_max_scale_change_per_window,
+        "max_scale_increase_per_window": (
+            args.factor_risk_gate_max_scale_increase_per_window
+        ),
+        "max_scale_decrease_per_window": (
+            args.factor_risk_gate_max_scale_decrease_per_window
+        ),
+        "scale_change_deadband": args.factor_risk_gate_scale_change_deadband,
         "base_schedule": base_schedule,
         "combine_mode": "min",
         "partition_start": args.factor_risk_gate_partition_start,
@@ -432,6 +441,8 @@ def _scenario_command(
                 str(args.factor_health_min_scale),
                 "--factor-health-max-scale",
                 str(args.factor_health_max_scale),
+                "--factor-health-state-regime-mode",
+                args.factor_health_state_regime_mode,
                 "--factor-health-rank-ic-floor",
                 str(args.factor_health_rank_ic_floor),
                 "--factor-health-rank-ic-ceiling",
@@ -440,6 +451,35 @@ def _scenario_command(
                 str(args.factor_health_spread_floor),
                 "--factor-health-spread-ceiling",
                 str(args.factor_health_spread_ceiling),
+            ]
+        )
+        optional_health_values = {
+            "--factor-health-stress-lookback-windows": (
+                args.factor_health_stress_lookback_windows
+            ),
+            "--factor-health-stress-min-periods": args.factor_health_stress_min_periods,
+            "--factor-health-stress-min-scale": args.factor_health_stress_min_scale,
+            "--factor-health-stress-max-scale": args.factor_health_stress_max_scale,
+            "--factor-health-state-regime-schedule": (
+                args.factor_health_state_regime_schedule
+            ),
+            "--factor-health-state-regime-feature": (
+                args.factor_health_state_regime_feature
+            ),
+            "--factor-health-state-regime-threshold": (
+                args.factor_health_state_regime_threshold
+            ),
+        }
+        for option, value in optional_health_values.items():
+            if value is not None:
+                command.extend([option, str(value)])
+    if args.factor_weight_scale_schedule:
+        command.extend(
+            [
+                "--factor-weight-scale-schedule",
+                args.factor_weight_scale_schedule,
+                "--factor-weight-scale-combine-mode",
+                args.factor_weight_scale_combine_mode,
             ]
         )
     if args.optimizer_candidate_rank is not None:
@@ -1312,11 +1352,28 @@ def _validation_summary(
             "factor_risk_gate_reduced_scale": args.factor_risk_gate_reduced_scale,
             "factor_risk_gate_blocked_scale": args.factor_risk_gate_blocked_scale,
             "factor_risk_gate_warmup_scale": args.factor_risk_gate_warmup_scale,
+            "factor_risk_gate_state_confirmation_windows": (
+                args.factor_risk_gate_state_confirmation_windows
+            ),
+            "factor_risk_gate_max_scale_change_per_window": (
+                args.factor_risk_gate_max_scale_change_per_window
+            ),
+            "factor_risk_gate_max_scale_increase_per_window": (
+                args.factor_risk_gate_max_scale_increase_per_window
+            ),
+            "factor_risk_gate_max_scale_decrease_per_window": (
+                args.factor_risk_gate_max_scale_decrease_per_window
+            ),
+            "factor_risk_gate_scale_change_deadband": (
+                args.factor_risk_gate_scale_change_deadband
+            ),
             "factor_risk_gate_partition_start": (
                 args.factor_risk_gate_partition_start
             ),
             "factor_risk_gate_partition_end": args.factor_risk_gate_partition_end,
             "factor_risk_gate_max_partitions": args.factor_risk_gate_max_partitions,
+            "factor_weight_scale_schedule": args.factor_weight_scale_schedule,
+            "factor_weight_scale_combine_mode": args.factor_weight_scale_combine_mode,
             "forecast_calibration_mode": args.forecast_calibration_mode,
             "forecast_calibration_lookback_windows": (
                 args.forecast_calibration_lookback_windows
@@ -1349,6 +1406,20 @@ def _validation_summary(
             "factor_health_label_lag_windows": args.factor_health_label_lag_windows,
             "factor_health_min_scale": args.factor_health_min_scale,
             "factor_health_max_scale": args.factor_health_max_scale,
+            "factor_health_stress_lookback_windows": (
+                args.factor_health_stress_lookback_windows
+            ),
+            "factor_health_stress_min_periods": args.factor_health_stress_min_periods,
+            "factor_health_stress_min_scale": args.factor_health_stress_min_scale,
+            "factor_health_stress_max_scale": args.factor_health_stress_max_scale,
+            "factor_health_state_regime_mode": args.factor_health_state_regime_mode,
+            "factor_health_state_regime_schedule": (
+                args.factor_health_state_regime_schedule
+            ),
+            "factor_health_state_regime_feature": args.factor_health_state_regime_feature,
+            "factor_health_state_regime_threshold": (
+                args.factor_health_state_regime_threshold
+            ),
             "factor_health_rank_ic_floor": args.factor_health_rank_ic_floor,
             "factor_health_rank_ic_ceiling": args.factor_health_rank_ic_ceiling,
             "factor_health_spread_floor": args.factor_health_spread_floor,
@@ -1756,10 +1827,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--factor-health-label-lag-windows", type=int)
     parser.add_argument("--factor-health-min-scale", type=float, default=0.25)
     parser.add_argument("--factor-health-max-scale", type=float, default=1.0)
+    parser.add_argument("--factor-health-stress-lookback-windows", type=int)
+    parser.add_argument("--factor-health-stress-min-periods", type=int)
+    parser.add_argument("--factor-health-stress-min-scale", type=float)
+    parser.add_argument("--factor-health-stress-max-scale", type=float)
+    parser.add_argument(
+        "--factor-health-state-regime-mode",
+        choices=("off", "select", "blend"),
+        default="off",
+    )
+    parser.add_argument("--factor-health-state-regime-schedule")
+    parser.add_argument(
+        "--factor-health-state-regime-feature",
+        default="intraday_overnight_gap_5m",
+    )
+    parser.add_argument(
+        "--factor-health-state-regime-threshold",
+        type=float,
+        default=0.999,
+    )
     parser.add_argument("--factor-health-rank-ic-floor", type=float, default=-0.05)
     parser.add_argument("--factor-health-rank-ic-ceiling", type=float, default=0.05)
     parser.add_argument("--factor-health-spread-floor", type=float, default=-0.001)
     parser.add_argument("--factor-health-spread-ceiling", type=float, default=0.001)
+    parser.add_argument("--factor-weight-scale-schedule")
+    parser.add_argument(
+        "--factor-weight-scale-combine-mode",
+        choices=("min", "multiply", "override"),
+        default="min",
+    )
     parser.add_argument(
         "--forecast-calibration-mode",
         choices=("off", "score_bucket"),
@@ -1864,6 +1960,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--factor-risk-gate-reduced-scale", type=float, default=0.5)
     parser.add_argument("--factor-risk-gate-blocked-scale", type=float, default=0.0)
     parser.add_argument("--factor-risk-gate-warmup-scale", type=float, default=1.0)
+    parser.add_argument("--factor-risk-gate-state-confirmation-windows", type=int, default=1)
+    parser.add_argument("--factor-risk-gate-max-scale-change-per-window", type=float)
+    parser.add_argument("--factor-risk-gate-max-scale-increase-per-window", type=float)
+    parser.add_argument("--factor-risk-gate-max-scale-decrease-per-window", type=float)
+    parser.add_argument("--factor-risk-gate-scale-change-deadband", type=float, default=0.0)
     parser.add_argument("--factor-risk-gate-partition-start")
     parser.add_argument("--factor-risk-gate-partition-end")
     parser.add_argument("--factor-risk-gate-max-partitions", type=int)
@@ -1952,6 +2053,52 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         raise ValueError(
             "--factor-health scales must satisfy 0 <= min_scale <= max_scale <= 1"
         )
+    if args.factor_health_stress_lookback_windows is not None:
+        if args.factor_health_stress_lookback_windows <= 0:
+            raise ValueError("--factor-health-stress-lookback-windows must be positive")
+    if args.factor_health_stress_min_periods is not None:
+        if args.factor_health_stress_min_periods <= 0:
+            raise ValueError("--factor-health-stress-min-periods must be positive")
+        stress_lookback = (
+            args.factor_health_stress_lookback_windows
+            or args.factor_health_lookback_windows
+        )
+        if args.factor_health_stress_min_periods > stress_lookback:
+            raise ValueError(
+                "--factor-health-stress-min-periods must be <= the stress lookback"
+            )
+    stress_min_scale = (
+        args.factor_health_stress_min_scale
+        if args.factor_health_stress_min_scale is not None
+        else args.factor_health_min_scale
+    )
+    stress_max_scale = (
+        args.factor_health_stress_max_scale
+        if args.factor_health_stress_max_scale is not None
+        else args.factor_health_max_scale
+    )
+    if not 0 <= stress_min_scale <= stress_max_scale <= 1:
+        raise ValueError(
+            "--factor-health-stress scales must satisfy 0 <= min_scale <= "
+            "max_scale <= 1"
+        )
+    if args.factor_health_state_regime_mode != "off":
+        if args.factor_health_mode == "off":
+            raise ValueError(
+                "--factor-health-mode must not be off when state-conditioned "
+                "factor health is enabled"
+            )
+        if not (
+            args.factor_health_state_regime_schedule
+            or args.factor_weight_scale_schedule
+        ):
+            raise ValueError(
+                "--factor-health-state-regime-schedule or "
+                "--factor-weight-scale-schedule is required when "
+                "--factor-health-state-regime-mode is enabled"
+            )
+        if not 0 <= args.factor_health_state_regime_threshold <= 1:
+            raise ValueError("--factor-health-state-regime-threshold must be in [0, 1]")
     if args.factor_health_rank_ic_floor >= args.factor_health_rank_ic_ceiling:
         raise ValueError(
             "--factor-health-rank-ic-floor must be below --factor-health-rank-ic-ceiling"
@@ -2072,6 +2219,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         value = getattr(args, name)
         if not 0 <= value <= 1:
             raise ValueError(f"--{name.replace('_', '-')} must be in [0, 1]")
+    if args.factor_risk_gate_state_confirmation_windows <= 0:
+        raise ValueError("--factor-risk-gate-state-confirmation-windows must be positive")
+    for name in (
+        "factor_risk_gate_max_scale_change_per_window",
+        "factor_risk_gate_max_scale_increase_per_window",
+        "factor_risk_gate_max_scale_decrease_per_window",
+    ):
+        value = getattr(args, name)
+        if value is not None and not 0 < value <= 1:
+            raise ValueError(f"--{name.replace('_', '-')} must be in (0, 1]")
+    if not 0 <= args.factor_risk_gate_scale_change_deadband <= 1:
+        raise ValueError("--factor-risk-gate-scale-change-deadband must be in [0, 1]")
     if (
         args.factor_risk_gate_partition_start
         and args.factor_risk_gate_partition_end

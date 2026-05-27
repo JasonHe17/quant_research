@@ -184,6 +184,26 @@ def build_factor_health_schedule(
 ) -> pd.DataFrame:
     """Build lagged rolling per-factor health diagnostics from matured labels."""
 
+    observations = _factor_health_observation_frame(
+        dataset_paths,
+        candidates=candidates,
+        top_n=top_n,
+        label_column=label_column,
+    )
+    return _factor_health_schedule_from_observations(
+        observations,
+        config=config,
+        apply_shrink=apply_shrink,
+    )
+
+
+def _factor_health_observation_frame(
+    dataset_paths: list[Path],
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    top_n: int,
+    label_column: str,
+) -> pd.DataFrame:
     if not label_column:
         raise ValueError("label_column must be non-empty")
     if top_n <= 0:
@@ -205,29 +225,51 @@ def build_factor_health_schedule(
         )
         del frame
     if not rows:
-        return pd.DataFrame(
-            columns=[
-                "timestamp",
-                "feature",
-                "label_column",
-                "factor_valid_count",
-                "factor_top_count",
-                "factor_rank_ic",
-                "factor_top_label",
-                "factor_bottom_label",
-                "factor_top_minus_bottom_label",
-                "rolling_rank_ic",
-                "rolling_top_label",
-                "rolling_bottom_label",
-                "rolling_top_minus_bottom_label",
-                "health_score",
-                "health_state",
-                "recommended_weight_scale",
-                "weight_scale",
-                "shrink_reason",
-            ]
-        )
-    observations = pd.DataFrame(rows).sort_values(["feature", "timestamp"])
+        return _empty_factor_health_observations()
+    return pd.DataFrame(rows).sort_values(["feature", "timestamp"])
+
+
+def _empty_factor_health_observations() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "timestamp",
+            "feature",
+            "label_column",
+            "factor_valid_count",
+            "factor_top_count",
+            "factor_rank_ic",
+            "factor_top_label",
+            "factor_bottom_label",
+            "factor_top_minus_bottom_label",
+        ]
+    )
+
+
+def _empty_factor_health_schedule() -> pd.DataFrame:
+    output = _empty_factor_health_observations()
+    for column in [
+        "rolling_rank_ic",
+        "rolling_top_label",
+        "rolling_bottom_label",
+        "rolling_top_minus_bottom_label",
+        "health_score",
+        "health_state",
+        "recommended_weight_scale",
+        "weight_scale",
+        "shrink_reason",
+    ]:
+        output[column] = pd.Series(dtype=object)
+    return output
+
+
+def _factor_health_schedule_from_observations(
+    observations: pd.DataFrame,
+    *,
+    config: FactorHealthConfig,
+    apply_shrink: bool,
+) -> pd.DataFrame:
+    if observations.empty:
+        return _empty_factor_health_schedule()
     schedules: list[pd.DataFrame] = []
     for feature, group in observations.groupby("feature", sort=True):
         current = group.sort_values("timestamp").reset_index(drop=True).copy()
@@ -301,6 +343,224 @@ def build_factor_health_schedule(
         pd.concat(schedules, ignore_index=True)
         .sort_values(["timestamp", "feature"])
         .reset_index(drop=True)
+    )
+
+
+def build_factor_health_ensemble_schedule(
+    dataset_paths: list[Path],
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    configs: tuple[FactorHealthConfig, ...],
+    top_n: int,
+    label_column: str = "forward_return",
+    apply_shrink: bool = True,
+    combine_mode: str = "mean",
+) -> pd.DataFrame:
+    """Blend multiple lagged health memories into one per-factor scale schedule."""
+
+    if not configs:
+        raise ValueError("configs must be non-empty")
+    if combine_mode not in {"mean", "min", "max"}:
+        raise ValueError("combine_mode must be mean, min, or max")
+    reference = configs[0]
+    for config in configs[1:]:
+        if config.label_lag_windows != reference.label_lag_windows:
+            raise ValueError("ensemble configs must use the same label_lag_windows")
+        if config.min_scale != reference.min_scale or config.max_scale != reference.max_scale:
+            raise ValueError("ensemble configs must use the same min/max scale")
+        if (
+            config.rank_ic_floor != reference.rank_ic_floor
+            or config.rank_ic_ceiling != reference.rank_ic_ceiling
+            or config.spread_floor != reference.spread_floor
+            or config.spread_ceiling != reference.spread_ceiling
+        ):
+            raise ValueError("ensemble configs must use the same health score thresholds")
+    observations = _factor_health_observation_frame(
+        dataset_paths,
+        candidates=candidates,
+        top_n=top_n,
+        label_column=label_column,
+    )
+    schedules: list[pd.DataFrame] = []
+    for config in configs:
+        schedule = _factor_health_schedule_from_observations(
+            observations,
+            config=config,
+            apply_shrink=apply_shrink,
+        )
+        if schedule.empty:
+            continue
+        current = schedule.copy()
+        current["ensemble_member_lookback_windows"] = config.lookback_windows
+        current["ensemble_member_min_periods"] = config.min_periods
+        schedules.append(current)
+    if not schedules:
+        return _factor_health_schedule_from_observations(
+            observations,
+            config=reference,
+            apply_shrink=apply_shrink,
+        )
+    stacked = pd.concat(schedules, ignore_index=True)
+    output_rows: list[dict[str, Any]] = []
+    numeric_columns = [
+        "factor_valid_count",
+        "factor_top_count",
+        "factor_rank_ic",
+        "factor_top_label",
+        "factor_bottom_label",
+        "factor_top_minus_bottom_label",
+        "rolling_rank_ic",
+        "rolling_top_label",
+        "rolling_bottom_label",
+        "rolling_top_minus_bottom_label",
+    ]
+    for (timestamp, feature), group in stacked.groupby(["timestamp", "feature"], sort=True):
+        row: dict[str, Any] = {
+            "timestamp": timestamp,
+            "feature": feature,
+            "label_column": group["label_column"].iloc[0],
+        }
+        for column in numeric_columns:
+            row[column] = _mean(group[column]) if column in group.columns else None
+        health_values = pd.to_numeric(group["health_score"], errors="coerce")
+        filled_scores = health_values.fillna(1.0)
+        if combine_mode == "mean":
+            health_score = float(filled_scores.mean())
+        elif combine_mode == "min":
+            health_score = float(filled_scores.min())
+        else:
+            health_score = float(filled_scores.max())
+        row["health_score"] = None if bool(health_values.isna().all()) else health_score
+        row["recommended_weight_scale"] = (
+            reference.min_scale
+            + (reference.max_scale - reference.min_scale) * health_score
+        )
+        if row["health_score"] is None:
+            row["health_state"] = "warmup"
+        elif health_score >= 0.75:
+            row["health_state"] = "healthy"
+        elif health_score >= 0.25:
+            row["health_state"] = "watch"
+        else:
+            row["health_state"] = "impaired"
+        row["weight_scale"] = row["recommended_weight_scale"] if apply_shrink else 1.0
+        if row["health_score"] is None:
+            row["shrink_reason"] = "warmup"
+        elif not apply_shrink:
+            row["shrink_reason"] = "monitor_only"
+        elif row["weight_scale"] >= 0.999:
+            row["shrink_reason"] = "healthy"
+        else:
+            row["shrink_reason"] = "ensemble_lagged_health_shrink"
+        row["ensemble_combine_mode"] = combine_mode
+        row["ensemble_lookback_windows"] = ",".join(
+            str(config.lookback_windows) for config in configs
+        )
+        row["ensemble_min_periods"] = ",".join(str(config.min_periods) for config in configs)
+        output_rows.append(row)
+    return pd.DataFrame(output_rows).sort_values(["timestamp", "feature"]).reset_index(drop=True)
+
+
+def build_state_conditioned_factor_health_schedule(
+    normal: pd.DataFrame,
+    stress: pd.DataFrame,
+    regime: pd.DataFrame,
+    *,
+    regime_feature: str,
+    mode: str = "select",
+    threshold: float = 0.999,
+) -> pd.DataFrame:
+    """Select or blend factor health memories using an observable regime schedule."""
+
+    if mode not in {"select", "blend"}:
+        raise ValueError("mode must be select or blend")
+    if not 0 <= threshold <= 1:
+        raise ValueError("threshold must be in [0, 1]")
+    if not regime_feature:
+        raise ValueError("regime_feature must be non-empty")
+    normal_scales = _factor_health_component_scales(normal, label="normal")
+    stress_scales = _factor_health_component_scales(stress, label="stress")
+    regime_weight = _state_conditioned_regime_weight(
+        regime,
+        feature=regime_feature,
+        mode=mode,
+        threshold=threshold,
+    )
+    keys = ["timestamp", "feature"]
+    joined = normal_scales.merge(stress_scales, on=keys, how="outer", sort=False)
+    joined = joined.merge(regime_weight, on="timestamp", how="left", sort=False)
+    joined["normal_weight_scale"] = joined["normal_weight_scale"].fillna(1.0)
+    joined["stress_weight_scale"] = joined["stress_weight_scale"].fillna(1.0)
+    joined["regime_weight"] = joined["regime_weight"].fillna(0.0).clip(0.0, 1.0)
+    joined["weight_scale"] = (
+        joined["normal_weight_scale"] * (1.0 - joined["regime_weight"])
+        + joined["stress_weight_scale"] * joined["regime_weight"]
+    ).clip(0.0, 1.0)
+    joined["shrink_reason"] = "state_conditioned_health_memory"
+    active = joined["regime_weight"] > 0.0
+    joined.loc[active, "shrink_reason"] = (
+        "state_conditioned_health_memory,stress_health_memory"
+    )
+    joined["state_conditioned_mode"] = mode
+    return (
+        joined.loc[
+            :,
+            [
+                "timestamp",
+                "feature",
+                "weight_scale",
+                "shrink_reason",
+                "normal_weight_scale",
+                "stress_weight_scale",
+                "regime_weight",
+                "regime_selector_scale",
+                "state_conditioned_mode",
+            ],
+        ]
+        .sort_values(keys)
+        .reset_index(drop=True)
+    )
+
+
+def build_state_conditioned_factor_health_schedule_from_partitions(
+    dataset_paths: list[Path],
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    normal_config: FactorHealthConfig,
+    stress_config: FactorHealthConfig,
+    regime: pd.DataFrame,
+    regime_feature: str,
+    top_n: int,
+    label_column: str = "forward_return",
+    apply_shrink: bool = True,
+    mode: str = "select",
+    threshold: float = 0.999,
+) -> pd.DataFrame:
+    """Build state-conditioned factor health with one dataset read pass."""
+
+    observations = _factor_health_observation_frame(
+        dataset_paths,
+        candidates=candidates,
+        top_n=top_n,
+        label_column=label_column,
+    )
+    normal = _factor_health_schedule_from_observations(
+        observations,
+        config=normal_config,
+        apply_shrink=apply_shrink,
+    )
+    stress = _factor_health_schedule_from_observations(
+        observations,
+        config=stress_config,
+        apply_shrink=apply_shrink,
+    )
+    return build_state_conditioned_factor_health_schedule(
+        normal,
+        stress,
+        regime,
+        regime_feature=regime_feature,
+        mode=mode,
+        threshold=threshold,
     )
 
 
@@ -624,6 +884,52 @@ def _factor_health_scale_lookup(
         ]
         lookup[str(feature)] = series.astype(float)
     return lookup
+
+
+def _factor_health_component_scales(frame: pd.DataFrame, *, label: str) -> pd.DataFrame:
+    _require_columns(frame, ("timestamp", "feature", "weight_scale"))
+    output = frame.loc[:, ["timestamp", "feature", "weight_scale"]].copy()
+    output["timestamp"] = output["timestamp"].astype(str)
+    output["feature"] = output["feature"].astype(str)
+    output["weight_scale"] = pd.to_numeric(output["weight_scale"], errors="coerce")
+    if output["weight_scale"].isna().any():
+        raise ValueError(f"{label} factor health schedule contains invalid weight_scale")
+    if not output["weight_scale"].between(0.0, 1.0).all():
+        raise ValueError(f"{label} factor health schedule scales must be in [0, 1]")
+    duplicates = output.duplicated(["timestamp", "feature"], keep=False)
+    if bool(duplicates.any()):
+        raise ValueError(f"{label} factor health schedule has duplicate rows")
+    return output.rename(columns={"weight_scale": f"{label}_weight_scale"})
+
+
+def _state_conditioned_regime_weight(
+    frame: pd.DataFrame,
+    *,
+    feature: str,
+    mode: str,
+    threshold: float,
+) -> pd.DataFrame:
+    _require_columns(frame, ("timestamp", "feature", "weight_scale"))
+    selected = frame.loc[frame["feature"].astype(str) == feature].copy()
+    if selected.empty:
+        raise ValueError(f"regime schedule has no rows for feature: {feature}")
+    selected["timestamp"] = selected["timestamp"].astype(str)
+    selected["regime_selector_scale"] = pd.to_numeric(
+        selected["weight_scale"],
+        errors="coerce",
+    )
+    if selected["regime_selector_scale"].isna().any():
+        raise ValueError("regime schedule contains invalid weight_scale")
+    if mode == "select":
+        selected["regime_weight"] = (
+            selected["regime_selector_scale"] < threshold
+        ).astype(float)
+    else:
+        selected["regime_weight"] = (1.0 - selected["regime_selector_scale"]).clip(
+            0.0,
+            1.0,
+        )
+    return selected.loc[:, ["timestamp", "regime_selector_scale", "regime_weight"]]
 
 
 def _effective_factor_weight(

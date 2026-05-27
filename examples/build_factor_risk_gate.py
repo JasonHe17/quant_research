@@ -46,6 +46,11 @@ def build_factor_risk_gate(args: argparse.Namespace) -> dict[str, Any]:
             "reduced_scale": args.reduced_scale,
             "blocked_scale": args.blocked_scale,
             "warmup_scale": args.warmup_scale,
+            "state_confirmation_windows": args.state_confirmation_windows,
+            "max_scale_change_per_window": args.max_scale_change_per_window,
+            "max_scale_increase_per_window": args.max_scale_increase_per_window,
+            "max_scale_decrease_per_window": args.max_scale_decrease_per_window,
+            "scale_change_deadband": args.scale_change_deadband,
             "base_schedule": args.base_schedule,
             "combine_mode": args.combine_mode,
             "partition_start": args.partition_start,
@@ -131,19 +136,114 @@ def _factor_risk_schedule(
     output["rolling_high_threshold"] = high_threshold
     output["rolling_extreme_threshold"] = extreme_threshold
     output["rolling_observation_count"] = observation_count
-    output["risk_state"] = "warmup"
-    output["gross_exposure_scale"] = args.warmup_scale
+    output["raw_risk_state"] = "warmup"
+    output["raw_gross_exposure_scale"] = args.warmup_scale
     ready = observation_count >= args.min_periods
     full = ready & (risk <= high_threshold)
     reduced = ready & (risk > high_threshold) & (risk <= extreme_threshold)
     blocked = ready & (risk > extreme_threshold)
-    output.loc[full, "risk_state"] = "full"
-    output.loc[full, "gross_exposure_scale"] = args.full_scale
-    output.loc[reduced, "risk_state"] = "reduced"
-    output.loc[reduced, "gross_exposure_scale"] = args.reduced_scale
-    output.loc[blocked, "risk_state"] = "blocked"
-    output.loc[blocked, "gross_exposure_scale"] = args.blocked_scale
+    output.loc[full, "raw_risk_state"] = "full"
+    output.loc[full, "raw_gross_exposure_scale"] = args.full_scale
+    output.loc[reduced, "raw_risk_state"] = "reduced"
+    output.loc[reduced, "raw_gross_exposure_scale"] = args.reduced_scale
+    output.loc[blocked, "raw_risk_state"] = "blocked"
+    output.loc[blocked, "raw_gross_exposure_scale"] = args.blocked_scale
+    return _apply_schedule_hysteresis(output, args)
+
+
+def _apply_schedule_hysteresis(
+    output: pd.DataFrame,
+    args: argparse.Namespace,
+) -> pd.DataFrame:
+    target_states: list[str] = []
+    target_scales: list[float] = []
+    final_states: list[str] = []
+    final_scales: list[float] = []
+    step_limited: list[bool] = []
+    deadband_held: list[bool] = []
+    active_state = "warmup"
+    active_scale = float(args.warmup_scale)
+    pending_state: str | None = None
+    pending_scale: float | None = None
+    pending_count = 0
+    previous_scale = float(args.warmup_scale)
+    for row in output.itertuples(index=False):
+        raw_state = str(row.raw_risk_state)
+        raw_scale = float(row.raw_gross_exposure_scale)
+        if raw_state == "warmup":
+            active_state = "warmup"
+            active_scale = float(args.warmup_scale)
+            pending_state = None
+            pending_scale = None
+            pending_count = 0
+        elif raw_state == active_state and abs(raw_scale - active_scale) <= 1e-12:
+            pending_state = None
+            pending_scale = None
+            pending_count = 0
+        elif raw_state == pending_state and pending_scale is not None and (
+            abs(raw_scale - pending_scale) <= 1e-12
+        ):
+            pending_count += 1
+        else:
+            pending_state = raw_state
+            pending_scale = raw_scale
+            pending_count = 1
+        if pending_count >= args.state_confirmation_windows:
+            active_state = str(pending_state)
+            active_scale = float(pending_scale)
+            pending_state = None
+            pending_scale = None
+            pending_count = 0
+        target_states.append(active_state)
+        target_scales.append(active_scale)
+        scale, limited, held = _limit_scale_step(
+            previous_scale=previous_scale,
+            target_scale=active_scale,
+            max_step=args.max_scale_change_per_window,
+            max_increase=args.max_scale_increase_per_window,
+            max_decrease=args.max_scale_decrease_per_window,
+            deadband=args.scale_change_deadband,
+        )
+        final_scales.append(scale)
+        step_limited.append(limited)
+        deadband_held.append(held)
+        if abs(scale - active_scale) <= 1e-12:
+            final_states.append(active_state)
+        elif scale < active_scale:
+            final_states.append("step_limited_up")
+        else:
+            final_states.append("step_limited_down")
+        previous_scale = scale
+    output = output.copy()
+    output["target_risk_state"] = target_states
+    output["target_gross_exposure_scale"] = target_scales
+    output["gross_exposure_scale"] = final_scales
+    output["risk_state"] = final_states
+    output["scale_step_limited"] = step_limited
+    output["scale_deadband_held"] = deadband_held
     return output
+
+
+def _limit_scale_step(
+    *,
+    previous_scale: float,
+    target_scale: float,
+    max_step: float | None,
+    max_increase: float | None,
+    max_decrease: float | None,
+    deadband: float,
+) -> tuple[float, bool, bool]:
+    if abs(target_scale - previous_scale) <= deadband:
+        return previous_scale, False, True
+    if max_step is not None:
+        max_increase = max_step if max_increase is None else min(max_increase, max_step)
+        max_decrease = max_step if max_decrease is None else min(max_decrease, max_step)
+    delta = target_scale - previous_scale
+    if delta > 0 and max_increase is not None and delta > max_increase:
+        return previous_scale + max_increase, True, False
+    if delta < 0 and max_decrease is not None and -delta > max_decrease:
+        return previous_scale - max_decrease, True, False
+    return target_scale, False, False
 
 
 def _combine_with_base_schedule(schedule: pd.DataFrame, base_path: Path) -> pd.DataFrame:
@@ -228,6 +328,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--reduced-scale", type=float, default=0.5)
     parser.add_argument("--blocked-scale", type=float, default=0.0)
     parser.add_argument("--warmup-scale", type=float, default=1.0)
+    parser.add_argument("--state-confirmation-windows", type=int, default=1)
+    parser.add_argument("--max-scale-change-per-window", type=float)
+    parser.add_argument("--max-scale-increase-per-window", type=float)
+    parser.add_argument("--max-scale-decrease-per-window", type=float)
+    parser.add_argument("--scale-change-deadband", type=float, default=0.0)
     parser.add_argument("--base-schedule")
     parser.add_argument(
         "--combine-mode",
@@ -257,6 +362,18 @@ def _parse_args() -> argparse.Namespace:
         value = getattr(args, name)
         if not 0 <= value <= 1:
             raise ValueError(f"--{name.replace('_', '-')} must be in [0, 1]")
+    if args.state_confirmation_windows <= 0:
+        raise ValueError("--state-confirmation-windows must be positive")
+    for name in (
+        "max_scale_change_per_window",
+        "max_scale_increase_per_window",
+        "max_scale_decrease_per_window",
+    ):
+        value = getattr(args, name)
+        if value is not None and not 0 < value <= 1:
+            raise ValueError(f"--{name.replace('_', '-')} must be in (0, 1]")
+    if not 0 <= args.scale_change_deadband <= 1:
+        raise ValueError("--scale-change-deadband must be in [0, 1]")
     return args
 
 

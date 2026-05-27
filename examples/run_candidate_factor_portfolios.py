@@ -21,7 +21,9 @@ from quant_research.portfolio import (  # noqa: E402
     CandidateFactor,
     FactorHealthConfig,
     ScoreForecastCalibrationConfig,
+    build_factor_health_ensemble_schedule,
     build_factor_health_schedule,
+    build_state_conditioned_factor_health_schedule_from_partitions,
     factor_combination_weights,
     load_candidate_factors,
     write_score_partitions,
@@ -115,12 +117,16 @@ def main() -> None:
             for method in args.methods
         }
         factor_health_schedule = _build_factor_health_schedule(args, dataset_paths, candidates)
+        factor_weight_scale_schedule = _factor_weight_scale_schedule(
+            args,
+            factor_health_schedule,
+        )
         factor_health_path: Path | None = None
-        if factor_health_schedule is not None:
+        if factor_weight_scale_schedule is not None:
             health_dir = output_dir / "factor_health"
             health_dir.mkdir(parents=True, exist_ok=True)
             factor_health_path = health_dir / "factor_health_schedule.csv"
-            factor_health_schedule.to_csv(factor_health_path, index=False)
+            factor_weight_scale_schedule.to_csv(factor_health_path, index=False)
         scores_summary = write_score_partitions(
             dataset_paths,
             output_dir=output_dir / "scores",
@@ -128,7 +134,7 @@ def main() -> None:
             weights_by_method=weights_by_method,
             max_factor_weight=args.factor_max_weight,
             max_factor_contribution_share=args.factor_max_contribution_share,
-            factor_health_schedule=factor_health_schedule,
+            factor_health_schedule=factor_weight_scale_schedule,
             diagnostics_top_n=args.score_diagnostics_top_n,
             diagnostics_label_column=args.label_column,
             forecast_calibration_config=_forecast_calibration_config(args),
@@ -247,14 +253,28 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
         "factor_max_contribution_share": args.factor_max_contribution_share,
         "factor_health_mode": args.factor_health_mode,
         "factor_health_lookback_windows": args.factor_health_lookback_windows,
+        "factor_health_ensemble_lookbacks": args.factor_health_ensemble_lookbacks,
+        "factor_health_ensemble_combine_mode": args.factor_health_ensemble_combine_mode,
         "factor_health_min_periods": args.factor_health_min_periods,
         "factor_health_label_lag_windows": args.factor_health_label_lag_windows,
         "factor_health_min_scale": args.factor_health_min_scale,
         "factor_health_max_scale": args.factor_health_max_scale,
+        "factor_health_stress_lookback_windows": (
+            args.factor_health_stress_lookback_windows
+        ),
+        "factor_health_stress_min_periods": args.factor_health_stress_min_periods,
+        "factor_health_stress_min_scale": args.factor_health_stress_min_scale,
+        "factor_health_stress_max_scale": args.factor_health_stress_max_scale,
+        "factor_health_state_regime_mode": args.factor_health_state_regime_mode,
+        "factor_health_state_regime_schedule": args.factor_health_state_regime_schedule,
+        "factor_health_state_regime_feature": args.factor_health_state_regime_feature,
+        "factor_health_state_regime_threshold": args.factor_health_state_regime_threshold,
         "factor_health_rank_ic_floor": args.factor_health_rank_ic_floor,
         "factor_health_rank_ic_ceiling": args.factor_health_rank_ic_ceiling,
         "factor_health_spread_floor": args.factor_health_spread_floor,
         "factor_health_spread_ceiling": args.factor_health_spread_ceiling,
+        "factor_weight_scale_schedule": args.factor_weight_scale_schedule,
+        "factor_weight_scale_combine_mode": args.factor_weight_scale_combine_mode,
         "forecast_calibration_mode": args.forecast_calibration_mode,
         "forecast_calibration_lookback_windows": (
             args.forecast_calibration_lookback_windows
@@ -399,24 +419,221 @@ def _build_factor_health_schedule(
         return None
     if args.factor_health_mode not in {"monitor", "shrink"}:
         raise ValueError(f"unsupported factor health mode: {args.factor_health_mode}")
-    return build_factor_health_schedule(
-        dataset_paths,
-        candidates=candidates,
-        config=FactorHealthConfig(
-            lookback_windows=args.factor_health_lookback_windows,
-            min_periods=args.factor_health_min_periods,
+    config = FactorHealthConfig(
+        lookback_windows=args.factor_health_lookback_windows,
+        min_periods=args.factor_health_min_periods,
+        label_lag_windows=args.factor_health_label_lag_windows,
+        min_scale=args.factor_health_min_scale,
+        max_scale=args.factor_health_max_scale,
+        rank_ic_floor=args.factor_health_rank_ic_floor,
+        rank_ic_ceiling=args.factor_health_rank_ic_ceiling,
+        spread_floor=args.factor_health_spread_floor,
+        spread_ceiling=args.factor_health_spread_ceiling,
+    )
+    if args.factor_health_state_regime_mode != "off":
+        stress_config = FactorHealthConfig(
+            lookback_windows=(
+                args.factor_health_stress_lookback_windows
+                or args.factor_health_lookback_windows
+            ),
+            min_periods=(
+                args.factor_health_stress_min_periods
+                if args.factor_health_stress_min_periods is not None
+                else min(
+                    args.factor_health_min_periods,
+                    args.factor_health_stress_lookback_windows
+                    or args.factor_health_lookback_windows,
+                )
+            ),
             label_lag_windows=args.factor_health_label_lag_windows,
-            min_scale=args.factor_health_min_scale,
-            max_scale=args.factor_health_max_scale,
+            min_scale=(
+                args.factor_health_stress_min_scale
+                if args.factor_health_stress_min_scale is not None
+                else args.factor_health_min_scale
+            ),
+            max_scale=(
+                args.factor_health_stress_max_scale
+                if args.factor_health_stress_max_scale is not None
+                else args.factor_health_max_scale
+            ),
             rank_ic_floor=args.factor_health_rank_ic_floor,
             rank_ic_ceiling=args.factor_health_rank_ic_ceiling,
             spread_floor=args.factor_health_spread_floor,
             spread_ceiling=args.factor_health_spread_ceiling,
-        ),
+        )
+        regime_path = (
+            args.factor_health_state_regime_schedule
+            or args.factor_weight_scale_schedule
+        )
+        regime = _load_factor_weight_scale_schedule(regime_path)
+        if regime is None:
+            raise ValueError(
+                "--factor-health-state-regime-schedule or "
+                "--factor-weight-scale-schedule is required for state-conditioned "
+                "factor health"
+            )
+        return build_state_conditioned_factor_health_schedule_from_partitions(
+            dataset_paths,
+            candidates=candidates,
+            normal_config=config,
+            stress_config=stress_config,
+            regime=regime,
+            regime_feature=args.factor_health_state_regime_feature,
+            top_n=args.score_diagnostics_top_n or args.top_n,
+            label_column=args.label_column,
+            apply_shrink=args.factor_health_mode == "shrink",
+            mode=args.factor_health_state_regime_mode,
+            threshold=args.factor_health_state_regime_threshold,
+        )
+    ensemble_lookbacks = _parse_factor_health_ensemble_lookbacks(
+        args.factor_health_ensemble_lookbacks
+    )
+    if ensemble_lookbacks:
+        configs = tuple(
+            FactorHealthConfig(
+                lookback_windows=lookback,
+                min_periods=min(args.factor_health_min_periods, lookback),
+                label_lag_windows=args.factor_health_label_lag_windows,
+                min_scale=args.factor_health_min_scale,
+                max_scale=args.factor_health_max_scale,
+                rank_ic_floor=args.factor_health_rank_ic_floor,
+                rank_ic_ceiling=args.factor_health_rank_ic_ceiling,
+                spread_floor=args.factor_health_spread_floor,
+                spread_ceiling=args.factor_health_spread_ceiling,
+            )
+            for lookback in ensemble_lookbacks
+        )
+        return build_factor_health_ensemble_schedule(
+            dataset_paths,
+            candidates=candidates,
+            configs=configs,
+            top_n=args.score_diagnostics_top_n or args.top_n,
+            label_column=args.label_column,
+            apply_shrink=args.factor_health_mode == "shrink",
+            combine_mode=args.factor_health_ensemble_combine_mode,
+        )
+    return build_factor_health_schedule(
+        dataset_paths,
+        candidates=candidates,
+        config=config,
         top_n=args.score_diagnostics_top_n or args.top_n,
         label_column=args.label_column,
         apply_shrink=args.factor_health_mode == "shrink",
     )
+
+
+def _parse_factor_health_ensemble_lookbacks(value: str | None) -> tuple[int, ...]:
+    if value is None or not value.strip():
+        return ()
+    lookbacks: list[int] = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        lookback = int(item)
+        if lookback <= 0:
+            raise ValueError("--factor-health-ensemble-lookbacks must be positive")
+        lookbacks.append(lookback)
+    if len(set(lookbacks)) != len(lookbacks):
+        raise ValueError("--factor-health-ensemble-lookbacks must not contain duplicates")
+    return tuple(lookbacks)
+
+
+def _factor_weight_scale_schedule(
+    args: argparse.Namespace,
+    factor_health_schedule: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    external = _load_factor_weight_scale_schedule(args.factor_weight_scale_schedule)
+    if factor_health_schedule is None or factor_health_schedule.empty:
+        return external
+    if external is None or external.empty:
+        return factor_health_schedule
+    return _combine_factor_weight_scale_schedules(
+        factor_health_schedule,
+        external,
+        mode=args.factor_weight_scale_combine_mode,
+    )
+
+
+def _load_factor_weight_scale_schedule(path: str | None) -> pd.DataFrame | None:
+    if not path:
+        return None
+    schedule_path = Path(path)
+    if not schedule_path.exists():
+        raise FileNotFoundError(f"factor weight scale schedule not found: {path}")
+    if schedule_path.suffix == ".parquet":
+        frame = pd.read_parquet(schedule_path)
+    else:
+        frame = pd.read_csv(schedule_path)
+    missing = {"timestamp", "feature", "weight_scale"} - set(frame.columns)
+    if missing:
+        raise ValueError(f"factor weight scale schedule missing columns: {sorted(missing)}")
+    output = frame.copy()
+    output["feature"] = output["feature"].astype(str)
+    output["weight_scale"] = pd.to_numeric(output["weight_scale"], errors="coerce")
+    if output["weight_scale"].isna().any():
+        raise ValueError("factor weight scale schedule contains non-numeric weight_scale")
+    if not output["weight_scale"].between(0.0, 1.0).all():
+        raise ValueError("factor weight scale schedule weight_scale values must be in [0, 1]")
+    duplicates = output.duplicated(["timestamp", "feature"], keep=False)
+    if bool(duplicates.any()):
+        raise ValueError("factor weight scale schedule has duplicate timestamp/feature rows")
+    if "shrink_reason" not in output.columns:
+        output["shrink_reason"] = "external_weight_scale"
+    return output
+
+
+def _combine_factor_weight_scale_schedules(
+    health: pd.DataFrame,
+    external: pd.DataFrame,
+    *,
+    mode: str,
+) -> pd.DataFrame:
+    if mode not in {"min", "multiply", "override"}:
+        raise ValueError("factor weight scale combine mode must be min, multiply, or override")
+    health_frame = health.copy()
+    external_frame = external.loc[:, ["timestamp", "feature", "weight_scale"]].rename(
+        columns={"weight_scale": "external_weight_scale"}
+    )
+    joined = health_frame.merge(
+        external_frame,
+        on=["timestamp", "feature"],
+        how="outer",
+        sort=False,
+    )
+    if "weight_scale" not in joined.columns:
+        joined["weight_scale"] = 1.0
+    base_scale = pd.to_numeric(joined["weight_scale"], errors="coerce").fillna(1.0)
+    external_scale = pd.to_numeric(
+        joined["external_weight_scale"],
+        errors="coerce",
+    )
+    if mode == "min":
+        combined = pd.concat(
+            [base_scale, external_scale.fillna(1.0)],
+            axis=1,
+        ).min(axis=1)
+    elif mode == "multiply":
+        combined = base_scale * external_scale.fillna(1.0)
+    else:
+        combined = external_scale.fillna(base_scale)
+    joined["weight_scale"] = combined.clip(lower=0.0, upper=1.0)
+    reason = joined.get("shrink_reason", pd.Series(index=joined.index, dtype=object))
+    joined["shrink_reason"] = reason.fillna("external_weight_scale")
+    active_external = external_scale.notna()
+    joined.loc[active_external, "shrink_reason"] = joined.loc[
+        active_external,
+        "shrink_reason",
+    ].map(lambda value: _append_reason(value, "external_weight_scale"))
+    joined["factor_weight_scale_combine_mode"] = mode
+    return joined.sort_values(["timestamp", "feature"]).reset_index(drop=True)
+
+
+def _append_reason(value: object, reason: str) -> str:
+    parts = set(str(value or "").split(","))
+    parts.discard("")
+    parts.add(reason)
+    return ",".join(sorted(parts))
 
 
 def _forecast_calibration_config(
@@ -1103,14 +1320,69 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--factor-health-lookback-windows", type=int, default=20)
+    parser.add_argument(
+        "--factor-health-ensemble-lookbacks",
+        help=(
+            "optional comma-separated lookback windows; when set, factor health "
+            "scales are blended across these windows instead of using the single "
+            "--factor-health-lookback-windows value"
+        ),
+    )
+    parser.add_argument(
+        "--factor-health-ensemble-combine-mode",
+        choices=("mean", "min", "max"),
+        default="mean",
+    )
     parser.add_argument("--factor-health-min-periods", type=int, default=5)
     parser.add_argument("--factor-health-label-lag-windows", type=int)
     parser.add_argument("--factor-health-min-scale", type=float, default=0.25)
     parser.add_argument("--factor-health-max-scale", type=float, default=1.0)
+    parser.add_argument("--factor-health-stress-lookback-windows", type=int)
+    parser.add_argument("--factor-health-stress-min-periods", type=int)
+    parser.add_argument("--factor-health-stress-min-scale", type=float)
+    parser.add_argument("--factor-health-stress-max-scale", type=float)
+    parser.add_argument(
+        "--factor-health-state-regime-mode",
+        choices=("off", "select", "blend"),
+        default="off",
+        help=(
+            "optional state-conditioned health memory; normal health uses the "
+            "standard factor-health parameters and stress health uses the "
+            "--factor-health-stress-* overrides"
+        ),
+    )
+    parser.add_argument(
+        "--factor-health-state-regime-schedule",
+        help=(
+            "timestamp/feature/weight_scale schedule used as the observable "
+            "regime selector; defaults to --factor-weight-scale-schedule"
+        ),
+    )
+    parser.add_argument(
+        "--factor-health-state-regime-feature",
+        default="intraday_overnight_gap_5m",
+    )
+    parser.add_argument(
+        "--factor-health-state-regime-threshold",
+        type=float,
+        default=0.999,
+    )
     parser.add_argument("--factor-health-rank-ic-floor", type=float, default=-0.05)
     parser.add_argument("--factor-health-rank-ic-ceiling", type=float, default=0.05)
     parser.add_argument("--factor-health-spread-floor", type=float, default=-0.001)
     parser.add_argument("--factor-health-spread-ceiling", type=float, default=0.001)
+    parser.add_argument(
+        "--factor-weight-scale-schedule",
+        help=(
+            "optional external timestamp/feature/weight_scale schedule applied "
+            "during score construction"
+        ),
+    )
+    parser.add_argument(
+        "--factor-weight-scale-combine-mode",
+        choices=("min", "multiply", "override"),
+        default="min",
+    )
     parser.add_argument(
         "--forecast-calibration-mode",
         choices=("off", "score_bucket"),
@@ -1282,6 +1554,14 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError(
             "--factor-health-min-periods must be <= --factor-health-lookback-windows"
         )
+    ensemble_lookbacks = _parse_factor_health_ensemble_lookbacks(
+        args.factor_health_ensemble_lookbacks
+    )
+    if ensemble_lookbacks and args.factor_health_min_periods > min(ensemble_lookbacks):
+        raise ValueError(
+            "--factor-health-min-periods must be <= the smallest "
+            "--factor-health-ensemble-lookbacks value"
+        )
     if args.factor_health_label_lag_windows is None:
         args.factor_health_label_lag_windows = _default_label_lag_windows(
             args.label_column
@@ -1292,6 +1572,52 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError(
             "--factor-health scales must satisfy 0 <= min_scale <= max_scale <= 1"
         )
+    if args.factor_health_stress_lookback_windows is not None:
+        if args.factor_health_stress_lookback_windows <= 0:
+            raise ValueError("--factor-health-stress-lookback-windows must be positive")
+    if args.factor_health_stress_min_periods is not None:
+        if args.factor_health_stress_min_periods <= 0:
+            raise ValueError("--factor-health-stress-min-periods must be positive")
+        stress_lookback = (
+            args.factor_health_stress_lookback_windows
+            or args.factor_health_lookback_windows
+        )
+        if args.factor_health_stress_min_periods > stress_lookback:
+            raise ValueError(
+                "--factor-health-stress-min-periods must be <= the stress lookback"
+            )
+    stress_min_scale = (
+        args.factor_health_stress_min_scale
+        if args.factor_health_stress_min_scale is not None
+        else args.factor_health_min_scale
+    )
+    stress_max_scale = (
+        args.factor_health_stress_max_scale
+        if args.factor_health_stress_max_scale is not None
+        else args.factor_health_max_scale
+    )
+    if not 0 <= stress_min_scale <= stress_max_scale <= 1:
+        raise ValueError(
+            "--factor-health-stress scales must satisfy 0 <= min_scale <= "
+            "max_scale <= 1"
+        )
+    if args.factor_health_state_regime_mode != "off":
+        if args.factor_health_mode == "off":
+            raise ValueError(
+                "--factor-health-mode must not be off when state-conditioned "
+                "factor health is enabled"
+            )
+        if not (
+            args.factor_health_state_regime_schedule
+            or args.factor_weight_scale_schedule
+        ):
+            raise ValueError(
+                "--factor-health-state-regime-schedule or "
+                "--factor-weight-scale-schedule is required when "
+                "--factor-health-state-regime-mode is enabled"
+            )
+        if not 0 <= args.factor_health_state_regime_threshold <= 1:
+            raise ValueError("--factor-health-state-regime-threshold must be in [0, 1]")
     if args.factor_health_rank_ic_floor >= args.factor_health_rank_ic_ceiling:
         raise ValueError(
             "--factor-health-rank-ic-floor must be below --factor-health-rank-ic-ceiling"
