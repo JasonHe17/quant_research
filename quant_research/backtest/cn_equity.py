@@ -907,7 +907,9 @@ def _execution_arrays(
 ) -> dict[str, Any]:
     return {
         "instrument_id": executions["instrument_id"].to_numpy(copy=False),
+        "instrument_key": executions["instrument_id"].astype(str).to_numpy(copy=False),
         "target_weight": executions["target_weight"].to_numpy(copy=False),
+        "target_notna": executions["target_weight"].notna().to_numpy(copy=False),
         "execution_price": executions[config.price_field].to_numpy(copy=False),
         "sizing_price": executions[config.sizing_price_field].to_numpy(copy=False),
         "mark_price": executions[config.mark_price_field].to_numpy(copy=False),
@@ -940,13 +942,12 @@ def _target_weights_by_instrument(
     arrays: dict[str, Any],
 ) -> dict[str, float]:
     targets: dict[str, float] = {}
-    instrument_values = arrays["instrument_id"]
+    instrument_keys = arrays["instrument_key"]
     target_values = arrays["target_weight"]
+    target_notna = arrays["target_notna"]
     for index in row_indices:
-        instrument_id = instrument_values[index]
-        target_weight = target_values[index]
-        if pd.notna(target_weight):
-            targets[str(instrument_id)] = float(target_weight)
+        if target_notna[index]:
+            targets[instrument_keys[index]] = float(target_values[index])
     return targets
 
 
@@ -981,7 +982,7 @@ def _execution_maps_for_group(
             capacity_by_instrument,
         )
 
-    instrument_values = arrays["instrument_id"]
+    instrument_keys = arrays["instrument_key"]
     execution_prices = arrays["execution_price"]
     sizing_prices = arrays["sizing_price"]
     mark_prices = arrays["mark_price"]
@@ -990,8 +991,7 @@ def _execution_maps_for_group(
     limit_down_values = arrays["limit_down"]
     capacity_values = arrays["capacity"]
     for index in row_indices:
-        instrument_value = instrument_values[index]
-        instrument_id = str(instrument_value)
+        instrument_id = instrument_keys[index]
         if instrument_id not in relevant_instruments:
             continue
         execution_price_by_instrument[instrument_id] = float(
