@@ -53,6 +53,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "lottery_max",
             "money_flow",
             "signed_turnover_imbalance",
+            "order_flow_toxicity",
             "risk_adjusted_momentum",
             "volume_confirmed_momentum",
             "intraday_gap",
@@ -103,6 +104,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         lottery_max_windows=(3,),
         money_flow_windows=(3,),
         signed_turnover_imbalance_windows=(3,),
+        order_flow_toxicity_windows=(3,),
         risk_adjusted_momentum_windows=(3,),
         volume_confirmed_momentum_windows=(3,),
         return_turnover_correlation_windows=(3,),
@@ -161,6 +163,9 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_lottery_max_5m_w3" in features
     assert "intraday_money_flow_5m_w3" in features
     assert "intraday_signed_turnover_imbalance_5m_w3" in features
+    assert "intraday_order_flow_imbalance_5m_w3" in features
+    assert "intraday_vpin_5m_w3" in features
+    assert "intraday_adverse_selection_5m_w3" in features
     assert "intraday_risk_adjusted_momentum_5m_w3" in features
     assert "intraday_volume_confirmed_momentum_5m_w3" in features
     assert "intraday_gap_5m" in features
@@ -260,6 +265,9 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_lottery_max_5m_w24" in features
     assert "intraday_money_flow_5m_w48" in features
     assert "intraday_signed_turnover_imbalance_5m_w48" in features
+    assert "intraday_order_flow_imbalance_5m_w48" in features
+    assert "intraday_vpin_5m_w48" in features
+    assert "intraday_adverse_selection_5m_w48" in features
     assert "intraday_risk_adjusted_momentum_5m_w48" in features
     assert "intraday_volume_confirmed_momentum_5m_w48" in features
     assert "intraday_gap_5m" in features
@@ -375,6 +383,45 @@ def test_lottery_max_inverts_cross_sectional_rolling_max_return() -> None:
     assert values.loc[("quiet", "t2"), column] == pytest.approx(1.0)
     assert values.loc[("middle", "t2"), column] == pytest.approx(0.5)
     assert values.loc[("lottery", "t2"), column] == pytest.approx(0.0)
+
+
+def test_order_flow_toxicity_decomposes_direction_magnitude_and_selection() -> None:
+    closes = [10.0, 11.0, 10.0, 12.0, 11.0]
+    volumes = [100.0, 200.0, 300.0, 400.0, 500.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "close_price": close,
+                "volume": volume,
+            }
+            for i, (close, volume) in enumerate(zip(closes, volumes))
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("order_flow_toxicity",),
+            order_flow_toxicity_windows=(3,),
+        ),
+    )
+
+    returns = pd.Series(closes).pct_change()
+    signed_volume = pd.Series([math.nan, 200.0, -300.0, 400.0, -500.0])
+    expected_ofi = (-300.0 + 400.0 - 500.0) / (300.0 + 400.0 + 500.0)
+    expected_adverse_selection = returns.iloc[2:5].corr(
+        signed_volume.shift(1).iloc[2:5]
+    )
+
+    values = features.iloc[-1]
+
+    assert values["intraday_order_flow_imbalance_5m_w3"] == pytest.approx(expected_ofi)
+    assert values["intraday_vpin_5m_w3"] == pytest.approx(abs(expected_ofi))
+    assert values["intraday_adverse_selection_5m_w3"] == pytest.approx(
+        expected_adverse_selection
+    )
 
 
 def test_regime_conditioned_features_gate_and_flip_base_signal() -> None:

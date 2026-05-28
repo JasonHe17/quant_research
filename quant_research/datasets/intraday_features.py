@@ -34,6 +34,7 @@ _VALID_GROUPS = {
     "lottery_max",
     "money_flow",
     "signed_turnover_imbalance",
+    "order_flow_toxicity",
     "risk_adjusted_momentum",
     "volume_confirmed_momentum",
     "intraday_gap",
@@ -99,6 +100,7 @@ class IntradayFeatureConfig:
     lottery_max_windows: tuple[int, ...] = (24, 48, 96)
     money_flow_windows: tuple[int, ...] = (12, 48)
     signed_turnover_imbalance_windows: tuple[int, ...] = (12, 48)
+    order_flow_toxicity_windows: tuple[int, ...] = (6, 12, 48)
     risk_adjusted_momentum_windows: tuple[int, ...] = (12, 48)
     volume_confirmed_momentum_windows: tuple[int, ...] = (12, 48)
     return_turnover_correlation_windows: tuple[int, ...] = (12, 48)
@@ -168,6 +170,7 @@ class IntradayFeatureConfig:
                 "signed_turnover_imbalance_windows",
                 self.signed_turnover_imbalance_windows,
             ),
+            ("order_flow_toxicity_windows", self.order_flow_toxicity_windows),
             ("risk_adjusted_momentum_windows", self.risk_adjusted_momentum_windows),
             ("volume_confirmed_momentum_windows", self.volume_confirmed_momentum_windows),
             (
@@ -228,6 +231,8 @@ class IntradayFeatureConfig:
             raise ValueError("eod_reversal_weight must be positive")
         if any(value <= 1 for value in self.volume_distribution_windows):
             raise ValueError("volume_distribution_windows values must be at least 2")
+        if any(value <= 1 for value in self.order_flow_toxicity_windows):
+            raise ValueError("order_flow_toxicity_windows values must be at least 2")
         if any(short <= 0 or long <= 0 for short, long in self.daily_moving_average_pairs):
             raise ValueError("daily_moving_average_pairs values must be positive")
         if any(short >= long for short, long in self.daily_moving_average_pairs):
@@ -312,7 +317,12 @@ def build_intraday_feature_matrix(
         required.append("open_price")
     if groups & {"price_position", "range_volatility"}:
         required.extend(["high_price", "low_price"])
-    if groups & {"volume", "volume_confirmed_momentum", "conditional_reversal"}:
+    if groups & {
+        "volume",
+        "volume_confirmed_momentum",
+        "conditional_reversal",
+        "order_flow_toxicity",
+    }:
         required.append("volume")
     if "volume_distribution_shape" in groups:
         required.append("volume")
@@ -1704,6 +1714,49 @@ def build_intraday_feature_matrix(
                 rolling_turnover != 0.0
             )
             feature_columns.append(column)
+    if "order_flow_toxicity" in groups:
+        frame["volume"] = frame["volume"].astype(float)
+        volume = frame["volume"].where(one_bar_return.notna())
+        signed_volume = np.sign(one_bar_return) * volume
+        lagged_signed_volume = signed_volume.groupby(frame["instrument_id"]).shift(1)
+        volume_grouped = volume.groupby(frame["instrument_id"])
+        for window in config.order_flow_toxicity_windows:
+            rolling_signed_volume = signed_volume.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).sum()
+            )
+            rolling_volume = volume_grouped.transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).sum()
+            )
+            ofi_column = f"intraday_order_flow_imbalance_5m_w{window}"
+            vpin_column = f"intraday_vpin_5m_w{window}"
+            adverse_selection_column = (
+                f"intraday_adverse_selection_5m_w{window}"
+            )
+            output[ofi_column] = rolling_signed_volume / rolling_volume.where(
+                rolling_volume != 0.0
+            )
+            output[vpin_column] = rolling_signed_volume.abs() / rolling_volume.where(
+                rolling_volume != 0.0
+            )
+            output[adverse_selection_column] = one_bar_return.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).corr(lagged_signed_volume.loc[values.index])
+            )
+            feature_columns.extend(
+                [ofi_column, vpin_column, adverse_selection_column]
+            )
     if "return_turnover_correlation" in groups:
         frame["turnover"] = frame["turnover"].astype(float)
         for window in config.return_turnover_correlation_windows:

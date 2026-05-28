@@ -202,11 +202,13 @@ def _infer_feature_columns_from_path(
     frame = pd.read_parquet(path)
     try:
         exclude_columns: list[str] = []
-        for column in horizon_label_columns:
+        for column in (label_column, *horizon_label_columns):
             exclude_columns.extend(
                 [
                     column,
                     f"{column}_rank",
+                    f"{column}_entry_timestamp",
+                    f"{column}_entry_price",
                     f"{column}_exit_timestamp",
                     f"{column}_exit_price",
                 ]

@@ -7,6 +7,555 @@
         "st_aware": true,
         "t_plus_one_safe": true
       },
+      "description": "Rolling 6-bar normalized order-flow imbalance from signed 5-minute volume.",
+      "display_name": "Intraday order-flow imbalance, 6-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.0004921935000855556,
+        "coverage": 0.999984634723752,
+        "dataset": "runs/factor_research/order_flow_toxicity_2026_05_28/alpha_dataset",
+        "directional_ic_hit_rate": 0.6013030624838552,
+        "directional_top_minus_bottom_label": 0.00023674774398857158,
+        "factor_evaluation": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "failed_checks": [
+          "cost_adjusted_spread"
+        ],
+        "registry_decision_status": "watchlist",
+        "sample_count": 103478489,
+        "spearman_rank_ic_mean": -0.015693691335918386,
+        "spearman_rank_ic_t_stat": -35.56759361618559,
+        "stable_year_count": 3,
+        "timestamp_count": 34841,
+        "top_n_turnover": 0.5607240339031748,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": -0.0201262066779834,
+          "2024": -0.01083118305318347,
+          "2025": -0.016126011016579078
+        }
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_order_flow_imbalance_5m_w6",
+      "family": "volume",
+      "feature_columns": [
+        "intraday_order_flow_imbalance_5m_w6"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Signed volume imbalance should capture directional pressure from informed or inventory-motivated flow that is not visible in absolute impact, volatility, or sell-pressure absorption features.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "order_flow_toxicity"
+          ],
+          "order_flow_toxicity_windows": [
+            6
+          ]
+        }
+      },
+      "label_lag_bars": 6,
+      "live_available": true,
+      "lookback_bars": 6,
+      "notes": "2026-05-28 admission found statistically strong inverted IC, but short-window turnover made the cost-adjusted spread negative.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+          "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+          "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json"
+        ],
+        "negative_findings": "The 6-bar order-flow imbalance variant had strong inverted rank IC but failed the standard cost-adjusted spread gate after 13 bps costs; do not use it as a standalone alpha without lower-turnover integration.",
+        "retry_conditions": "Retry only with wider windows, rank buffers, or explicit turnover/cost controls that preserve positive net spread.",
+        "similar_to": [
+          "intraday_order_flow_imbalance_5m_w12",
+          "intraday_order_flow_imbalance_5m_w48"
+        ]
+      },
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "volume"
+      ],
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "order_flow",
+        "vpin",
+        "toxicity",
+        "batch_2026_05_28_order_flow_toxicity",
+        "standard_admission_2026_05_28",
+        "cost_fragile",
+        "watchlist"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar VPIN proxy, measured as the absolute aggregate signed-volume imbalance divided by total volume.",
+      "display_name": "Intraday VPIN proxy, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_policy_validation": "runs/factor_research/order_flow_toxicity_2026_05_28/candidate_policy_validation_6b_single/validation_summary.json",
+        "candidate_policy_validation_status": "warn",
+        "compact_core_incremental_blend_best_full_base_method": "toxicity_blend_w05",
+        "compact_core_incremental_blend_best_full_base_return": 0.4199770733950836,
+        "compact_core_incremental_blend_best_high_cost_return": 0.3638684995034194,
+        "compact_core_incremental_blend_best_2024_method": "toxicity_blend_w025",
+        "compact_core_incremental_blend_best_2024_return": -0.012045823177783133,
+        "compact_core_incremental_blend_control_full_base_return": 0.4292401077056083,
+        "compact_core_incremental_blend_control_high_cost_return": 0.36389323138444296,
+        "compact_core_incremental_blend_control_2024_return": -0.059617891324111216,
+        "compact_core_incremental_blend_decision": "not_added_to_core",
+        "compact_core_incremental_blend_validation": "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_incremental_blend_standard/validation_summary.json",
+        "cost_adjusted_top_minus_bottom_label": 0.000255115976156183,
+        "coverage": 0.9987587176078596,
+        "dataset": "runs/factor_research/order_flow_toxicity_2026_05_28/alpha_dataset",
+        "directional_ic_hit_rate": 0.6019713210149717,
+        "directional_top_minus_bottom_label": 0.0005028605321496242,
+        "factor_evaluation": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "failed_checks": [],
+        "portfolio_full_base_decorrelated_return": 0.1187771335681113,
+        "portfolio_full_high_cost_decorrelated_return": 0.071014849100119,
+        "portfolio_primary_method": "decorrelated",
+        "portfolio_primary_policy": "single_rank_buffer_drop_48b",
+        "portfolio_validation_warning": "year_2023_base_decorrelated_return_negative",
+        "registry_decision_status": "candidate",
+        "sample_count": 103351631,
+        "spearman_rank_ic_mean": -0.010559099041149149,
+        "spearman_rank_ic_t_stat": -31.128840843118414,
+        "stable_year_count": 3,
+        "timestamp_count": 34799,
+        "top_n_turnover": 0.19057273537957017,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": -0.008011633120002528,
+          "2024": -0.010108415598732967,
+          "2025": -0.01354697890709237
+        },
+        "compact_core_entry_exclusion_validation": "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_toxicity_entry_exclusion_standard/validation_summary.json",
+        "compact_core_entry_exclusion_decision": "not_added_to_core",
+        "compact_core_entry_exclusion_control_full_base_return": 0.4292401077056083,
+        "compact_core_entry_exclusion_control_high_cost_return": 0.36389323138444296,
+        "compact_core_entry_exclusion_control_2024_return": -0.059617891324111216,
+        "compact_core_entry_exclusion_best_overlay_method": "toxicity_exclude_w20",
+        "compact_core_entry_exclusion_best_overlay_full_base_return": 0.4223474610014073,
+        "compact_core_entry_exclusion_best_overlay_high_cost_return": 0.36019698873285244,
+        "compact_core_entry_exclusion_best_overlay_2024_return": -0.06930542369027248,
+        "compact_core_downside_penalty_validation": "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_toxicity_downside_penalty_standard/validation_summary.json",
+        "compact_core_downside_penalty_decision": "not_added_to_core",
+        "compact_core_downside_penalty_control_full_base_return": 0.4292401077056083,
+        "compact_core_downside_penalty_control_high_cost_return": 0.36389323138444296,
+        "compact_core_downside_penalty_control_2024_return": -0.059617891324111216,
+        "compact_core_downside_penalty_best_overlay_method": "toxicity_penalty_w25",
+        "compact_core_downside_penalty_best_overlay_full_base_return": 0.4223430829592303,
+        "compact_core_downside_penalty_best_overlay_high_cost_return": 0.3620785583233197,
+        "compact_core_downside_penalty_best_overlay_2024_return": -0.06281950654187685
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_vpin_5m_w48",
+      "family": "risk",
+      "feature_columns": [
+        "intraday_vpin_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "High rolling order-flow toxicity should forecast adverse short-horizon price correction and act as a long-only avoidance signal after execution lag.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "order_flow_toxicity"
+          ],
+          "order_flow_toxicity_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 6,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "2026-05-28 6-bar label admission selected the 48-bar VPIN proxy in inverted direction. Single-policy candidate validation completed with positive full-base and high-cost returns, but 2023 was negative, so use as a monitored candidate rather than a core promotion. A compact-core fixed-weight blend incremental test did not justify adding toxicity to the core: the best full-base blend at 5% returned 41.9977% versus the 42.9240% control, high-cost was essentially flat but slightly lower, and all positive weights reduced 2023. The 2.5% blend improved 2024 from -5.96% to -1.20%, so the next retry should be a targeted avoidance overlay rather than linear score blending. Follow-up compact-core avoidance overlays also failed to justify core inclusion: entry-exclusion best overlay (20% tail) returned 42.2347% full-base / 36.0197% high-cost and worsened 2024 to -6.93%, while downside-penalty best overlay (0.25 penalty on worst 20%) returned 42.2343% full-base / 36.2079% high-cost with 2024 at -6.28%. Keep as monitored standalone diagnostic/candidate signal, not a compact-core overlay.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/candidate_policy_validation_6b_single/validation_summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_incremental_blend_standard/validation_summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_toxicity_entry_exclusion_standard/validation_summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_toxicity_downside_penalty_standard/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "volume"
+      ],
+      "status": "candidate",
+      "tags": [
+        "intraday",
+        "order_flow",
+        "vpin",
+        "toxicity",
+        "batch_2026_05_28_order_flow_toxicity",
+        "standard_admission_2026_05_28",
+        "portfolio_validation_warn",
+        "compact_core_incremental_tested",
+        "not_core_incremental",
+        "candidate",
+        "avoidance_overlay_tested",
+        "not_core_overlay"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 48-bar correlation between one-bar-lagged signed volume and current 5-minute return.",
+      "display_name": "Intraday adverse selection, 48-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_policy_validation": "runs/factor_research/order_flow_toxicity_2026_05_28/candidate_policy_validation_6b_single/validation_summary.json",
+        "candidate_policy_validation_status": "warn",
+        "compact_core_incremental_blend_best_full_base_method": "toxicity_blend_w05",
+        "compact_core_incremental_blend_best_full_base_return": 0.4199770733950836,
+        "compact_core_incremental_blend_best_high_cost_return": 0.3638684995034194,
+        "compact_core_incremental_blend_best_2024_method": "toxicity_blend_w025",
+        "compact_core_incremental_blend_best_2024_return": -0.012045823177783133,
+        "compact_core_incremental_blend_control_full_base_return": 0.4292401077056083,
+        "compact_core_incremental_blend_control_high_cost_return": 0.36389323138444296,
+        "compact_core_incremental_blend_control_2024_return": -0.059617891324111216,
+        "compact_core_incremental_blend_decision": "not_added_to_core",
+        "compact_core_incremental_blend_validation": "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_incremental_blend_standard/validation_summary.json",
+        "cost_adjusted_top_minus_bottom_label": 1.6963690720969455e-05,
+        "coverage": 0.9987269240488307,
+        "dataset": "runs/factor_research/order_flow_toxicity_2026_05_28/alpha_dataset",
+        "directional_ic_hit_rate": 0.5903787573998506,
+        "directional_top_minus_bottom_label": 0.00020875651046666876,
+        "factor_evaluation": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "failed_checks": [],
+        "portfolio_full_base_decorrelated_return": 0.1187771335681113,
+        "portfolio_full_high_cost_decorrelated_return": 0.071014849100119,
+        "portfolio_primary_method": "decorrelated",
+        "portfolio_primary_policy": "single_rank_buffer_drop_48b",
+        "portfolio_validation_warning": "year_2023_base_decorrelated_return_negative",
+        "registry_decision_status": "candidate",
+        "sample_count": 103348341,
+        "spearman_rank_ic_mean": -0.010383686393827161,
+        "spearman_rank_ic_t_stat": -32.15382404330321,
+        "stable_year_count": 3,
+        "timestamp_count": 34798,
+        "top_n_turnover": 0.14753293826592254,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": -0.011702294148484602,
+          "2024": -0.008613066598295548,
+          "2025": -0.010841300138706423
+        },
+        "compact_core_entry_exclusion_validation": "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_toxicity_entry_exclusion_standard/validation_summary.json",
+        "compact_core_entry_exclusion_decision": "not_added_to_core",
+        "compact_core_entry_exclusion_control_full_base_return": 0.4292401077056083,
+        "compact_core_entry_exclusion_control_high_cost_return": 0.36389323138444296,
+        "compact_core_entry_exclusion_control_2024_return": -0.059617891324111216,
+        "compact_core_entry_exclusion_best_overlay_method": "toxicity_exclude_w20",
+        "compact_core_entry_exclusion_best_overlay_full_base_return": 0.4223474610014073,
+        "compact_core_entry_exclusion_best_overlay_high_cost_return": 0.36019698873285244,
+        "compact_core_entry_exclusion_best_overlay_2024_return": -0.06930542369027248,
+        "compact_core_downside_penalty_validation": "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_toxicity_downside_penalty_standard/validation_summary.json",
+        "compact_core_downside_penalty_decision": "not_added_to_core",
+        "compact_core_downside_penalty_control_full_base_return": 0.4292401077056083,
+        "compact_core_downside_penalty_control_high_cost_return": 0.36389323138444296,
+        "compact_core_downside_penalty_control_2024_return": -0.059617891324111216,
+        "compact_core_downside_penalty_best_overlay_method": "toxicity_penalty_w25",
+        "compact_core_downside_penalty_best_overlay_full_base_return": 0.4223430829592303,
+        "compact_core_downside_penalty_best_overlay_high_cost_return": 0.3620785583233197,
+        "compact_core_downside_penalty_best_overlay_2024_return": -0.06281950654187685
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_adverse_selection_5m_w48",
+      "family": "risk",
+      "feature_columns": [
+        "intraday_adverse_selection_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Persistent lagged order-flow to return coupling should proxy adverse selection and identify names where recent toxicity predicts short-horizon reversal or avoidance.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "order_flow_toxicity"
+          ],
+          "order_flow_toxicity_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 6,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "2026-05-28 6-bar label admission selected the 48-bar adverse-selection proxy in inverted direction. It is weaker than VPIN on cost-adjusted spread but contributed to the two-factor policy validation, which was positive in full-base and high-cost scenarios with a negative 2023 warning. A compact-core fixed-weight blend incremental test did not justify adding the toxicity basket to the core: the best full-base blend at 5% returned 41.9977% versus the 42.9240% control, high-cost was essentially flat but slightly lower, and all positive weights reduced 2023. The 2.5% blend improved 2024 from -5.96% to -1.20%, so the next retry should be a targeted avoidance overlay rather than linear score blending. Follow-up compact-core avoidance overlays also failed to justify core inclusion: entry-exclusion best overlay (20% tail) returned 42.2347% full-base / 36.0197% high-cost and worsened 2024 to -6.93%, while downside-penalty best overlay (0.25 penalty on worst 20%) returned 42.2343% full-base / 36.2079% high-cost with 2024 at -6.28%. Keep as monitored standalone diagnostic/candidate signal, not a compact-core overlay.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/candidate_policy_validation_6b_single/validation_summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_incremental_blend_standard/validation_summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_toxicity_entry_exclusion_standard/validation_summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/compact_core_toxicity_downside_penalty_standard/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "volume"
+      ],
+      "status": "candidate",
+      "tags": [
+        "intraday",
+        "order_flow",
+        "adverse_selection",
+        "toxicity",
+        "batch_2026_05_28_order_flow_toxicity",
+        "standard_admission_2026_05_28",
+        "portfolio_validation_warn",
+        "compact_core_incremental_tested",
+        "not_core_incremental",
+        "candidate",
+        "avoidance_overlay_tested",
+        "not_core_overlay"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 6-bar VPIN proxy, measured as the absolute aggregate signed-volume imbalance divided by total volume.",
+      "display_name": "Intraday VPIN proxy, 6-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.0010093687262649877,
+        "coverage": 0.999984634723752,
+        "dataset": "runs/factor_research/order_flow_toxicity_2026_05_28/alpha_dataset",
+        "directional_ic_hit_rate": 0.5909130047932034,
+        "directional_top_minus_bottom_label": -0.00021193404733954601,
+        "factor_evaluation": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "failed_checks": [
+          "cost_adjusted_spread"
+        ],
+        "registry_decision_status": "watchlist",
+        "sample_count": 103478489,
+        "spearman_rank_ic_mean": -0.00723488607581008,
+        "spearman_rank_ic_t_stat": -24.251031974554973,
+        "stable_year_count": 3,
+        "timestamp_count": 34841,
+        "top_n_turnover": 0.613411291481109,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": -0.005058237471210646,
+          "2024": -0.0061099920341228285,
+          "2025": -0.010535588571517228
+        }
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_vpin_5m_w6",
+      "family": "risk",
+      "feature_columns": [
+        "intraday_vpin_5m_w6"
+      ],
+      "frequency": "5m",
+      "hypothesis": "High short-window order-flow toxicity should forecast adverse short-horizon price correction or mean reversion and therefore act as a long-only avoidance signal.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "order_flow_toxicity"
+          ],
+          "order_flow_toxicity_windows": [
+            6
+          ]
+        }
+      },
+      "label_lag_bars": 6,
+      "live_available": true,
+      "lookback_bars": 6,
+      "notes": "2026-05-28 admission found the expected inverted toxicity signal, but the 6-bar window failed after transaction costs because of high top-N turnover.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+          "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+          "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json"
+        ],
+        "negative_findings": "The 6-bar VPIN proxy had stable inverted IC but failed the standard cost-adjusted spread gate after 13 bps costs; the 48-bar VPIN variant is the preferred candidate from this batch.",
+        "retry_conditions": "Retry only through lower-turnover smoothing, wider holding periods, or as an intraday risk overlay with explicit cost control.",
+        "similar_to": [
+          "intraday_vpin_5m_w12",
+          "intraday_vpin_5m_w48"
+        ]
+      },
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "volume"
+      ],
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "order_flow",
+        "vpin",
+        "toxicity",
+        "batch_2026_05_28_order_flow_toxicity",
+        "standard_admission_2026_05_28",
+        "cost_fragile",
+        "watchlist"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling 6-bar correlation between one-bar-lagged signed volume and current 5-minute return.",
+      "display_name": "Intraday adverse selection, 6-bar window",
+      "evaluation": {
+        "admission_direction": "invert",
+        "admission_report": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.0008176040438898205,
+        "coverage": 0.9919416180577133,
+        "dataset": "runs/factor_research/order_flow_toxicity_2026_05_28/alpha_dataset",
+        "directional_ic_hit_rate": 0.5602755453501722,
+        "directional_top_minus_bottom_label": 9.992911321855782e-05,
+        "factor_evaluation": "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "failed_checks": [
+          "cost_adjusted_spread"
+        ],
+        "registry_decision_status": "watchlist",
+        "sample_count": 102646197,
+        "spearman_rank_ic_mean": -0.00452513391575263,
+        "spearman_rank_ic_t_stat": -19.201611011741996,
+        "stable_year_count": 3,
+        "timestamp_count": 34840,
+        "top_n_turnover": 0.7057947362372141,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": -0.005649718461500819,
+          "2024": -0.002450681536485019,
+          "2025": -0.005475761280882359
+        }
+      },
+      "expected_direction": "invert",
+      "factor_id": "intraday_adverse_selection_5m_w6",
+      "family": "risk",
+      "feature_columns": [
+        "intraday_adverse_selection_5m_w6"
+      ],
+      "frequency": "5m",
+      "hypothesis": "A positive lagged order-flow to return correlation should proxy informed-flow adverse selection, while sign and horizon tests determine whether it behaves as continuation or post-toxicity reversal.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "order_flow_toxicity"
+          ],
+          "order_flow_toxicity_windows": [
+            6
+          ]
+        }
+      },
+      "label_lag_bars": 6,
+      "live_available": true,
+      "lookback_bars": 6,
+      "notes": "2026-05-28 admission found an inverted signal, but the 6-bar adverse-selection proxy failed the cost-adjusted spread gate and had the highest turnover in the batch.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+        "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+          "runs/factor_research/order_flow_toxicity_2026_05_28/factor_evaluation_6b/summary.json",
+          "runs/factor_research/order_flow_toxicity_2026_05_28/factor_admission_6b/factor_admission_report.json"
+        ],
+        "negative_findings": "The 6-bar adverse-selection proxy had stable inverted IC but failed the standard cost-adjusted spread gate after 13 bps costs and was too turnover-heavy for standalone use.",
+        "retry_conditions": "Retry only with longer windows or a slower portfolio policy that materially reduces turnover while keeping positive net spread.",
+        "similar_to": [
+          "intraday_adverse_selection_5m_w12",
+          "intraday_adverse_selection_5m_w48"
+        ]
+      },
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price",
+        "volume"
+      ],
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "order_flow",
+        "adverse_selection",
+        "toxicity",
+        "batch_2026_05_28_order_flow_toxicity",
+        "standard_admission_2026_05_28",
+        "cost_fragile",
+        "watchlist"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
       "description": "Inverted cross-sectional rank of the maximum 5-minute close-to-close return over the last 24 bars.",
       "display_name": "Intraday lottery MAX, 24-bar window",
       "evaluation": {
@@ -9127,10 +9676,11 @@
     "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
     "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
     "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md",
-    "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md"
+    "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md",
+    "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md"
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-27",
-  "version": 58
+  "updated_at": "2026-05-28",
+  "version": 61
 }
