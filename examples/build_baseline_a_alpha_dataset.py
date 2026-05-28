@@ -194,6 +194,7 @@ def _build_partition_dataset(
             vwap_deviation_windows=tuple(args.vwap_deviation_windows),
             downside_volatility_windows=tuple(args.downside_volatility_windows),
             return_skewness_windows=tuple(args.return_skewness_windows),
+            lottery_max_windows=tuple(args.lottery_max_windows),
             money_flow_windows=tuple(args.money_flow_windows),
             signed_turnover_imbalance_windows=tuple(
                 args.signed_turnover_imbalance_windows
@@ -511,6 +512,7 @@ def _write_summary(
             "vwap_deviation_windows": args.vwap_deviation_windows,
             "downside_volatility_windows": args.downside_volatility_windows,
             "return_skewness_windows": args.return_skewness_windows,
+            "lottery_max_windows": args.lottery_max_windows,
             "money_flow_windows": args.money_flow_windows,
             "signed_turnover_imbalance_windows": args.signed_turnover_imbalance_windows,
             "risk_adjusted_momentum_windows": args.risk_adjusted_momentum_windows,
@@ -613,6 +615,7 @@ def _parse_args() -> argparse.Namespace:
             "vwap_deviation",
             "downside_volatility",
             "return_skewness",
+            "lottery_max",
             "money_flow",
             "signed_turnover_imbalance",
             "risk_adjusted_momentum",
@@ -730,6 +733,7 @@ def _parse_args() -> argparse.Namespace:
         default=[12, 48],
     )
     parser.add_argument("--return-skewness-windows", type=int, nargs="+", default=[12, 48])
+    parser.add_argument("--lottery-max-windows", type=int, nargs="+", default=[24, 48, 96])
     parser.add_argument("--money-flow-windows", type=int, nargs="+", default=[12, 48])
     parser.add_argument(
         "--signed-turnover-imbalance-windows",
@@ -978,6 +982,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--downside-volatility-windows values must be positive")
     if any(value <= 0 for value in args.return_skewness_windows):
         raise ValueError("--return-skewness-windows values must be positive")
+    if any(value <= 0 for value in args.lottery_max_windows):
+        raise ValueError("--lottery-max-windows values must be positive")
     if any(value <= 0 for value in args.money_flow_windows):
         raise ValueError("--money-flow-windows values must be positive")
     if any(value <= 0 for value in args.signed_turnover_imbalance_windows):
@@ -1116,6 +1122,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "vwap_deviation_windows": list(args.vwap_deviation_windows),
         "downside_volatility_windows": list(args.downside_volatility_windows),
         "return_skewness_windows": list(args.return_skewness_windows),
+        "lottery_max_windows": list(args.lottery_max_windows),
         "money_flow_windows": list(args.money_flow_windows),
         "signed_turnover_imbalance_windows": list(
             args.signed_turnover_imbalance_windows
@@ -1226,6 +1233,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.vwap_deviation_windows,
                     *args.downside_volatility_windows,
                     *args.return_skewness_windows,
+                    *args.lottery_max_windows,
                     *args.money_flow_windows,
                     *args.signed_turnover_imbalance_windows,
                     *args.risk_adjusted_momentum_windows,

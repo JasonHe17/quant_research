@@ -7,6 +7,8 @@ import pytest
 
 from examples.run_score_overlay_validation import (
     Scenario,
+    _apply_optimizer_risk_penalty_postprocessor,
+    _apply_target_weight_cap_postprocessor,
     _backtest_job,
     _combine_overlay_components,
     _daily_first_plus_condition_decisions,
@@ -282,6 +284,84 @@ def test_optimizer_risk_penalty_mode_keeps_primary_score() -> None:
     assert score.iloc[0] == pytest.approx(0.25)
 
 
+def test_optimizer_risk_penalty_postprocessor_joins_penalty_partition(
+    tmp_path,
+) -> None:
+    scores = pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "a",
+                "score": 0.3,
+            },
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "b",
+                "score": 0.2,
+            },
+        ]
+    )
+    penalty_path = tmp_path / "score_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "a",
+                "liq_penalty_bps": 2.0,
+            },
+        ]
+    ).to_parquet(penalty_path, index=False)
+
+    output = _apply_optimizer_risk_penalty_postprocessor(
+        scores,
+        optimizer_risk_penalty_path=penalty_path,
+        optimizer_risk_penalty_column="liq_penalty_bps",
+        fill_value=0.5,
+    )
+
+    penalties = output.set_index("instrument_id")["optimizer_risk_penalty_bps"]
+    assert penalties["a"] == pytest.approx(2.0)
+    assert penalties["b"] == pytest.approx(0.5)
+
+
+def test_target_weight_cap_postprocessor_joins_cap_partition(tmp_path) -> None:
+    scores = pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "a",
+                "score": 0.3,
+            },
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "b",
+                "score": 0.2,
+            },
+        ]
+    )
+    cap_path = tmp_path / "score_2024_01.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "instrument_id": "a",
+                "liq_cap": 0.03,
+            },
+        ]
+    ).to_parquet(cap_path, index=False)
+
+    output = _apply_target_weight_cap_postprocessor(
+        scores,
+        target_weight_cap_path=cap_path,
+        target_weight_cap_column="liq_cap",
+        fill_value=None,
+    )
+
+    caps = output.set_index("instrument_id")["max_target_weight"]
+    assert caps["a"] == pytest.approx(0.03)
+    assert pd.isna(caps["b"])
+
+
 def test_backtest_job_forwards_turnover_budget_controls(tmp_path) -> None:
     args = argparse.Namespace(
         catalog_path="catalog.duckdb",
@@ -317,6 +397,7 @@ def test_backtest_job_forwards_turnover_budget_controls(tmp_path) -> None:
         optimizer_score_to_edge_bps=100.0,
         optimizer_min_net_edge_bps=0.0,
         optimizer_risk_penalty_multiplier=1.0,
+        optimizer_target_cap_mode="clip",
         optimizer_weighting="utility",
         exclude_st=True,
         policy="cost_aware_optimizer_budget155_daily",

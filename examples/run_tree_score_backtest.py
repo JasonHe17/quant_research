@@ -88,6 +88,7 @@ class TreeScoreBacktestParams:
     optimizer_score_to_edge_bps: float
     optimizer_min_net_edge_bps: float
     optimizer_risk_penalty_multiplier: float
+    optimizer_target_cap_mode: str
     optimizer_weighting: str
     optimizer_max_name_weight: float | None
     optimizer_max_gross_exposure_increase_per_rebalance: float | None
@@ -260,9 +261,10 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             ),
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
-            "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
-            "optimizer_risk_penalty_multiplier": params.optimizer_risk_penalty_multiplier,
-            "optimizer_weighting": params.optimizer_weighting,
+        "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
+        "optimizer_risk_penalty_multiplier": params.optimizer_risk_penalty_multiplier,
+        "optimizer_target_cap_mode": params.optimizer_target_cap_mode,
+        "optimizer_weighting": params.optimizer_weighting,
             "optimizer_max_name_weight": params.optimizer_max_name_weight,
             "optimizer_max_gross_exposure_increase_per_rebalance": (
                 params.optimizer_max_gross_exposure_increase_per_rebalance
@@ -636,6 +638,9 @@ def _load_ranked_score_signals(
                 "risk_penalty_bps",
                 "health_risk_bps",
                 "optimizer_risk_penalty_bps",
+                "max_target_weight",
+                "target_weight_cap",
+                "optimizer_max_target_weight",
                 "entry_eligible",
             )
             if column in available_columns
@@ -837,6 +842,9 @@ def _build_target_weights(
                 "risk_penalty_bps",
                 "health_risk_bps",
                 "optimizer_risk_penalty_bps",
+                "max_target_weight",
+                "target_weight_cap",
+                "optimizer_max_target_weight",
                 "entry_eligible",
             )
             if column in group.columns
@@ -1112,6 +1120,7 @@ def _cost_aware_optimizer_config(
         min_net_edge_bps=params.optimizer_min_net_edge_bps,
         estimated_cost_bps=params.policy_estimated_cost_bps,
         risk_penalty_multiplier=params.optimizer_risk_penalty_multiplier,
+        target_cap_mode=params.optimizer_target_cap_mode,  # type: ignore[arg-type]
         no_trade_weight_band=params.policy_no_trade_weight_band,
         partial_rebalance_rate=params.policy_partial_rebalance_rate,
         max_gross_turnover_per_rebalance=effective_turnover_cap,
@@ -1593,6 +1602,7 @@ def _summary_payload(
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
             "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
             "optimizer_risk_penalty_multiplier": params.optimizer_risk_penalty_multiplier,
+            "optimizer_target_cap_mode": params.optimizer_target_cap_mode,
             "optimizer_weighting": params.optimizer_weighting,
             "optimizer_max_name_weight": params.optimizer_max_name_weight,
             "optimizer_max_gross_exposure_increase_per_rebalance": (
@@ -1956,6 +1966,11 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
     parser.add_argument("--optimizer-risk-penalty-multiplier", type=float, default=1.0)
     parser.add_argument(
+        "--optimizer-target-cap-mode",
+        choices=("clip", "redistribute", "replace"),
+        default="clip",
+    )
+    parser.add_argument(
         "--optimizer-weighting",
         choices=("equal", "utility"),
         default="utility",
@@ -2144,6 +2159,7 @@ def _parse_args() -> TreeScoreBacktestParams:
         optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,
         optimizer_min_net_edge_bps=args.optimizer_min_net_edge_bps,
         optimizer_risk_penalty_multiplier=args.optimizer_risk_penalty_multiplier,
+        optimizer_target_cap_mode=args.optimizer_target_cap_mode,
         optimizer_weighting=args.optimizer_weighting,
         optimizer_max_name_weight=args.optimizer_max_name_weight,
         optimizer_max_gross_exposure_increase_per_rebalance=(

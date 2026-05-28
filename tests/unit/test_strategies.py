@@ -399,6 +399,116 @@ def test_cost_aware_optimizer_uses_net_edge_after_cost_and_risk_penalty() -> Non
     assert decisions.loc["inst-risky", "decision_reason"] == "below_edge"
 
 
+def test_cost_aware_optimizer_respects_dynamic_target_weight_cap() -> None:
+    forecasts = pd.DataFrame(
+        [
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-liquid", 0.9, 1),
+                "max_target_weight": 0.5,
+            },
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-thin", 0.8, 2),
+                "max_target_weight": 0.1,
+            },
+        ]
+    )
+
+    result = CostAwareOptimizerPolicy(
+        CostAwareOptimizerConfig(
+            target_count=2,
+            candidate_rank=2,
+            weighting="equal",
+        )
+    ).decide(forecasts)
+
+    decisions = result.trade_decisions.set_index("instrument_id")
+    assert decisions.loc["inst-liquid", "aim_weight"] == pytest.approx(0.5)
+    assert decisions.loc["inst-thin", "aim_weight"] == pytest.approx(0.1)
+    assert decisions["target_weight"].sum() == pytest.approx(0.6)
+    assert result.diagnostics.loc[0, "target_gross_exposure"] == pytest.approx(0.6)
+
+
+def test_cost_aware_optimizer_accepts_target_weight_cap_alias() -> None:
+    forecasts = pd.DataFrame(
+        [
+            _forecast("2024-01-02T09:35:00+08:00", "inst-a", 0.9, 1),
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-b", 0.8, 2),
+                "target_weight_cap": 0.2,
+            },
+        ]
+    )
+
+    result = CostAwareOptimizerPolicy(
+        CostAwareOptimizerConfig(
+            target_count=2,
+            candidate_rank=2,
+            weighting="equal",
+            gross_exposure_scale=0.8,
+        )
+    ).decide(forecasts)
+
+    decisions = result.trade_decisions.set_index("instrument_id")
+    assert decisions.loc["inst-a", "target_weight"] == pytest.approx(0.4)
+    assert decisions.loc["inst-b", "target_weight"] == pytest.approx(0.2)
+
+
+def test_cost_aware_optimizer_redistributes_dynamic_target_weight_cap_residual() -> None:
+    forecasts = pd.DataFrame(
+        [
+            _forecast("2024-01-02T09:35:00+08:00", "inst-a", 0.9, 1),
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-b", 0.8, 2),
+                "max_target_weight": 0.1,
+            },
+            _forecast("2024-01-02T09:35:00+08:00", "inst-c", 0.7, 3),
+        ]
+    )
+
+    result = CostAwareOptimizerPolicy(
+        CostAwareOptimizerConfig(
+            target_count=3,
+            candidate_rank=3,
+            weighting="equal",
+            target_cap_mode="redistribute",
+        )
+    ).decide(forecasts)
+
+    decisions = result.trade_decisions.set_index("instrument_id")
+    assert decisions.loc["inst-a", "target_weight"] == pytest.approx(0.45)
+    assert decisions.loc["inst-b", "target_weight"] == pytest.approx(0.1)
+    assert decisions.loc["inst-c", "target_weight"] == pytest.approx(0.45)
+    assert decisions["target_weight"].sum() == pytest.approx(1.0)
+
+
+def test_cost_aware_optimizer_replaces_cap_bound_names() -> None:
+    forecasts = pd.DataFrame(
+        [
+            {
+                **_forecast("2024-01-02T09:35:00+08:00", "inst-a", 0.9, 1),
+                "max_target_weight": 0.1,
+            },
+            _forecast("2024-01-02T09:35:00+08:00", "inst-b", 0.8, 2),
+            _forecast("2024-01-02T09:35:00+08:00", "inst-c", 0.7, 3),
+        ]
+    )
+
+    result = CostAwareOptimizerPolicy(
+        CostAwareOptimizerConfig(
+            target_count=2,
+            candidate_rank=3,
+            weighting="equal",
+            target_cap_mode="replace",
+        )
+    ).decide(forecasts)
+
+    decisions = result.trade_decisions.set_index("instrument_id")
+    assert decisions.loc["inst-a", "target_weight"] == pytest.approx(0.1)
+    assert decisions.loc["inst-b", "target_weight"] == pytest.approx(0.45)
+    assert decisions.loc["inst-c", "target_weight"] == pytest.approx(0.45)
+    assert decisions["target_weight"].sum() == pytest.approx(1.0)
+
+
 def test_cost_aware_optimizer_applies_turnover_and_t1_constraints() -> None:
     forecasts = pd.DataFrame(
         [
@@ -779,6 +889,111 @@ def test_tree_score_target_builder_supports_rank_buffer_drop_policy(tmp_path) ->
     assert by_time == {"t0": ["inst-a"], "t1": ["inst-a"]}
     assert result.diagnostics["hold_count"].sum() == 1
     assert result.diagnostics["planned_gross_turnover"].sum() == pytest.approx(1.0)
+
+
+def test_tree_score_target_builder_forwards_dynamic_target_weight_cap(
+    tmp_path,
+) -> None:
+    ranked = pd.DataFrame(
+        [
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-a",
+                "score": 0.9,
+                "rank": 1,
+            },
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-b",
+                "score": 0.8,
+                "rank": 2,
+                "max_target_weight": 0.1,
+            },
+        ]
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        trade_policy="cost_aware_optimizer",
+        top_n=2,
+        policy_exit_rank=2,
+        optimizer_candidate_rank=2,
+        optimizer_weighting="equal",
+    )
+
+    result = _build_target_weights(ranked, params)
+
+    targets = result.target_weights.set_index("instrument_id")["target_weight"]
+    assert targets["inst-a"] == pytest.approx(0.5)
+    assert targets["inst-b"] == pytest.approx(0.1)
+    assert targets.sum() == pytest.approx(0.6)
+
+
+def test_tree_score_target_builder_redistributes_dynamic_target_weight_cap(
+    tmp_path,
+) -> None:
+    ranked = pd.DataFrame(
+        [
+            {"signal_time": "t0", "instrument_id": "inst-a", "score": 0.9, "rank": 1},
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-b",
+                "score": 0.8,
+                "rank": 2,
+                "max_target_weight": 0.1,
+            },
+            {"signal_time": "t0", "instrument_id": "inst-c", "score": 0.7, "rank": 3},
+        ]
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        trade_policy="cost_aware_optimizer",
+        top_n=3,
+        policy_exit_rank=3,
+        optimizer_candidate_rank=3,
+        optimizer_target_cap_mode="redistribute",
+        optimizer_weighting="equal",
+    )
+
+    result = _build_target_weights(ranked, params)
+
+    targets = result.target_weights.set_index("instrument_id")["target_weight"]
+    assert targets["inst-a"] == pytest.approx(0.45)
+    assert targets["inst-b"] == pytest.approx(0.1)
+    assert targets["inst-c"] == pytest.approx(0.45)
+
+
+def test_tree_score_target_builder_replaces_cap_bound_names(
+    tmp_path,
+) -> None:
+    ranked = pd.DataFrame(
+        [
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-a",
+                "score": 0.9,
+                "rank": 1,
+                "max_target_weight": 0.1,
+            },
+            {"signal_time": "t0", "instrument_id": "inst-b", "score": 0.8, "rank": 2},
+            {"signal_time": "t0", "instrument_id": "inst-c", "score": 0.7, "rank": 3},
+        ]
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        trade_policy="cost_aware_optimizer",
+        top_n=2,
+        policy_exit_rank=3,
+        optimizer_candidate_rank=3,
+        optimizer_target_cap_mode="replace",
+        optimizer_weighting="equal",
+    )
+
+    result = _build_target_weights(ranked, params)
+
+    targets = result.target_weights.set_index("instrument_id")["target_weight"]
+    assert targets["inst-a"] == pytest.approx(0.1)
+    assert targets["inst-b"] == pytest.approx(0.45)
+    assert targets["inst-c"] == pytest.approx(0.45)
 
 
 def test_tree_score_target_builder_single_timestamp_path_matches_batch(
@@ -1360,6 +1575,7 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         optimizer_score_to_edge_bps=100.0,
         optimizer_min_net_edge_bps=0.0,
         optimizer_risk_penalty_multiplier=1.0,
+        optimizer_target_cap_mode="clip",
         optimizer_weighting="utility",
         optimizer_max_name_weight=None,
         optimizer_max_gross_exposure_increase_per_rebalance=None,

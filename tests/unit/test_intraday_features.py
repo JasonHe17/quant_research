@@ -50,6 +50,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "vwap_deviation",
             "downside_volatility",
             "return_skewness",
+            "lottery_max",
             "money_flow",
             "signed_turnover_imbalance",
             "risk_adjusted_momentum",
@@ -99,6 +100,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         vwap_deviation_windows=(3,),
         downside_volatility_windows=(3,),
         return_skewness_windows=(3,),
+        lottery_max_windows=(3,),
         money_flow_windows=(3,),
         signed_turnover_imbalance_windows=(3,),
         risk_adjusted_momentum_windows=(3,),
@@ -156,6 +158,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_vwap_deviation_5m_w3" in features
     assert "intraday_downside_volatility_5m_w3" in features
     assert "intraday_return_skewness_5m_w3" in features
+    assert "intraday_lottery_max_5m_w3" in features
     assert "intraday_money_flow_5m_w3" in features
     assert "intraday_signed_turnover_imbalance_5m_w3" in features
     assert "intraday_risk_adjusted_momentum_5m_w3" in features
@@ -254,6 +257,7 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_vwap_deviation_5m_w48" in features
     assert "intraday_downside_volatility_5m_w48" in features
     assert "intraday_return_skewness_5m_w48" in features
+    assert "intraday_lottery_max_5m_w24" in features
     assert "intraday_money_flow_5m_w48" in features
     assert "intraday_signed_turnover_imbalance_5m_w48" in features
     assert "intraday_risk_adjusted_momentum_5m_w48" in features
@@ -337,6 +341,40 @@ def test_cross_sectional_reversal_demeans_market_move() -> None:
     assert values.loc[("a", "t1"), column] == pytest.approx(0.15)
     assert values.loc[("b", "t1"), column] == pytest.approx(-0.05)
     assert values.loc[("c", "t1"), column] == pytest.approx(-0.0)
+
+
+def test_lottery_max_inverts_cross_sectional_rolling_max_return() -> None:
+    rows = []
+    closes = {
+        "quiet": [100.0, 101.0, 102.0, 103.0],
+        "middle": [100.0, 105.0, 104.0, 104.0],
+        "lottery": [100.0, 110.0, 109.0, 109.0],
+    }
+    for instrument_id, prices in closes.items():
+        for index, close in enumerate(prices):
+            rows.append(
+                {
+                    "instrument_id": instrument_id,
+                    "bar_end_time": f"t{index}",
+                    "close_price": close,
+                }
+            )
+    bars = pd.DataFrame(rows)
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("lottery_max",),
+            lottery_max_windows=(2,),
+        ),
+    )
+
+    values = features.set_index(["instrument_id", "timestamp"])
+    column = "intraday_lottery_max_5m_w2"
+
+    assert values.loc[("quiet", "t2"), column] == pytest.approx(1.0)
+    assert values.loc[("middle", "t2"), column] == pytest.approx(0.5)
+    assert values.loc[("lottery", "t2"), column] == pytest.approx(0.0)
 
 
 def test_regime_conditioned_features_gate_and_flip_base_signal() -> None:

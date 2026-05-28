@@ -14,7 +14,6 @@ from typing import Any
 
 import pandas as pd
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -43,11 +42,47 @@ class BacktestJob:
 
 def main() -> None:
     args = _parse_args()
+    summary = run_score_overlay_validation(args)
+    if args.print_summary:
+        print(json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True))
+
+
+def run_score_overlay_validation(args: argparse.Namespace) -> dict[str, Any]:
+    """Run or prepare validation for a controlled score overlay."""
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    if args.dry_run:
+        methods = _dry_run_overlay_methods(args, output_dir=output_dir)
+        scenarios = _scenarios(args)
+        commands = _backtest_commands(
+            args,
+            output_dir=output_dir,
+            methods=methods,
+            scenarios=scenarios,
+        )
+        summary = {
+            "params": _summary_params(args),
+            "methods": methods,
+            "scenarios": {scenario.name: asdict(scenario) for scenario in scenarios},
+            "commands": commands,
+            "results": [],
+            "policy_leaderboard": [],
+            "validation": {
+                "overall_status": "dry_run",
+                "checks": [],
+                "failed_count": 0,
+                "warning_count": 0,
+            },
+            "status": "dry_run",
+        }
+        _write_summary(output_dir, summary)
+        return summary
     methods = _build_overlay_scores(args, output_dir=output_dir)
     scenarios = _scenarios(args)
-    commands = _run_backtests(args, output_dir=output_dir, methods=methods, scenarios=scenarios)
+    commands = _run_backtests(
+        args, output_dir=output_dir, methods=methods, scenarios=scenarios
+    )
     rows = _collect_rows(
         methods=methods,
         scenarios=scenarios,
@@ -61,23 +96,42 @@ def main() -> None:
         "commands": commands,
         "results": rows,
         "policy_leaderboard": _leaderboard(rows, policy=args.policy),
-        "validation": _validation(rows, policy=args.policy, max_full_turnover=args.max_full_turnover),
+        "validation": _validation(
+            rows,
+            policy=args.policy,
+            max_full_turnover=args.max_full_turnover,
+        ),
         "status": "completed",
     }
+    _write_summary(output_dir, summary)
+    return summary
+
+
+def _write_summary(output_dir: Path, summary: dict[str, Any]) -> None:
     summary_path = output_dir / "validation_summary.json"
     summary_path.write_text(
         json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    if args.print_summary:
-        print(json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True))
 
 
-def _build_overlay_scores(args: argparse.Namespace, *, output_dir: Path) -> dict[str, Any]:
+def _build_overlay_scores(
+    args: argparse.Namespace, *, output_dir: Path
+) -> dict[str, Any]:
     score_root = output_dir / "scores"
     score_root.mkdir(parents=True, exist_ok=True)
     primary_paths = _score_paths(Path(args.primary_score_dir))
     satellite_paths = _score_paths(Path(args.satellite_score_dir))
+    optimizer_risk_penalty_paths = (
+        _score_paths(Path(args.optimizer_risk_penalty_dir))
+        if args.optimizer_risk_penalty_dir
+        else None
+    )
+    target_weight_cap_paths = (
+        _score_paths(Path(args.target_weight_cap_dir))
+        if args.target_weight_cap_dir
+        else None
+    )
     condition = _condition_lookup(args)
     methods: dict[str, Any] = {}
     for weight in args.overlay_weights:
@@ -103,7 +157,30 @@ def _build_overlay_scores(args: argparse.Namespace, *, output_dir: Path) -> dict
                 continue
             satellite_path = satellite_paths.get(partition)
             if satellite_path is None:
-                raise FileNotFoundError(f"missing satellite score partition: {partition}")
+                raise FileNotFoundError(
+                    f"missing satellite score partition: {partition}"
+                )
+            optimizer_risk_penalty_path = (
+                optimizer_risk_penalty_paths.get(partition)
+                if optimizer_risk_penalty_paths is not None
+                else None
+            )
+            if (
+                optimizer_risk_penalty_paths is not None
+                and optimizer_risk_penalty_path is None
+            ):
+                raise FileNotFoundError(
+                    f"missing optimizer risk penalty partition: {partition}"
+                )
+            target_weight_cap_path = (
+                target_weight_cap_paths.get(partition)
+                if target_weight_cap_paths is not None
+                else None
+            )
+            if target_weight_cap_paths is not None and target_weight_cap_path is None:
+                raise FileNotFoundError(
+                    f"missing target weight cap partition: {partition}"
+                )
             scores = _overlay_partition(
                 primary_path,
                 satellite_path,
@@ -114,6 +191,12 @@ def _build_overlay_scores(args: argparse.Namespace, *, output_dir: Path) -> dict
                 condition_primary_mode=args.condition_primary_mode,
                 overlay_mode=args.overlay_mode,
                 downside_penalty_quantile=args.downside_penalty_quantile,
+                optimizer_risk_penalty_path=optimizer_risk_penalty_path,
+                optimizer_risk_penalty_column=args.optimizer_risk_penalty_column,
+                optimizer_risk_penalty_fill_value=args.optimizer_risk_penalty_fill_value,
+                target_weight_cap_path=target_weight_cap_path,
+                target_weight_cap_column=args.target_weight_cap_column,
+                target_weight_cap_fill_value=args.target_weight_cap_fill_value,
             )
             scores.to_parquet(output_path, index=False)
             row_count += int(len(scores))
@@ -124,19 +207,68 @@ def _build_overlay_scores(args: argparse.Namespace, *, output_dir: Path) -> dict
             "partition_count": partition_count,
             "row_count": row_count,
             "overlay_weight": weight,
-            "primary_weight": 1.0
-            if args.overlay_mode in {"entry_exclusion", "optimizer_risk_penalty"}
-            else 1.0 - weight,
+            "primary_weight": (
+                1.0
+                if args.overlay_mode in {"entry_exclusion", "optimizer_risk_penalty"}
+                else 1.0 - weight
+            ),
             "overlay_mode": args.overlay_mode,
-            "entry_exclusion_quantile": weight
-            if args.overlay_mode == "entry_exclusion" and weight > 0
-            else None,
-            "risk_penalty_bps_scale": weight
-            if args.overlay_mode == "optimizer_risk_penalty"
-            else None,
-            "risk_penalty_quantile": args.downside_penalty_quantile
-            if args.overlay_mode == "optimizer_risk_penalty"
-            else None,
+            "entry_exclusion_quantile": (
+                weight
+                if args.overlay_mode == "entry_exclusion" and weight > 0
+                else None
+            ),
+            "risk_penalty_bps_scale": (
+                weight if args.overlay_mode == "optimizer_risk_penalty" else None
+            ),
+            "risk_penalty_quantile": (
+                args.downside_penalty_quantile
+                if args.overlay_mode == "optimizer_risk_penalty"
+                else None
+            ),
+            "postprocessors": _postprocessor_summary(args),
+            "condition": _condition_summary(args),
+        }
+    return methods
+
+
+def _dry_run_overlay_methods(
+    args: argparse.Namespace,
+    *,
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Return method metadata without materializing score partitions."""
+
+    score_root = output_dir / "scores"
+    methods: dict[str, Any] = {}
+    for weight in args.overlay_weights:
+        method = f"{args.method_prefix}_{_weight_label(weight)}"
+        method_dir = score_root / method
+        methods[method] = {
+            "path": str(method_dir / "*.parquet"),
+            "partition_count": 0,
+            "row_count": 0,
+            "overlay_weight": weight,
+            "primary_weight": (
+                1.0
+                if args.overlay_mode in {"entry_exclusion", "optimizer_risk_penalty"}
+                else 1.0 - weight
+            ),
+            "overlay_mode": args.overlay_mode,
+            "entry_exclusion_quantile": (
+                weight
+                if args.overlay_mode == "entry_exclusion" and weight > 0
+                else None
+            ),
+            "risk_penalty_bps_scale": (
+                weight if args.overlay_mode == "optimizer_risk_penalty" else None
+            ),
+            "risk_penalty_quantile": (
+                args.downside_penalty_quantile
+                if args.overlay_mode == "optimizer_risk_penalty"
+                else None
+            ),
+            "postprocessors": _postprocessor_summary(args),
             "condition": _condition_summary(args),
         }
     return methods
@@ -153,7 +285,9 @@ def _condition_lookup(args: argparse.Namespace) -> dict[str, bool] | None:
     if not args.condition_schedule:
         return None
     frame = pd.read_csv(args.condition_schedule)
-    missing = [column for column in ("timestamp", args.condition_column) if column not in frame]
+    missing = [
+        column for column in ("timestamp", args.condition_column) if column not in frame
+    ]
     if missing:
         raise ValueError(f"condition schedule missing columns: {missing}")
     active_values = set(args.condition_values)
@@ -172,6 +306,31 @@ def _condition_summary(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _postprocessor_summary(args: argparse.Namespace) -> list[dict[str, Any]]:
+    postprocessors: list[dict[str, Any]] = []
+    if args.optimizer_risk_penalty_dir:
+        postprocessors.append(
+            {
+            "type": "optimizer_risk_penalty_join",
+            "penalty_dir": args.optimizer_risk_penalty_dir,
+            "penalty_column": args.optimizer_risk_penalty_column,
+            "fill_value": args.optimizer_risk_penalty_fill_value,
+            "output_column": "optimizer_risk_penalty_bps",
+            }
+        )
+    if args.target_weight_cap_dir:
+        postprocessors.append(
+            {
+                "type": "target_weight_cap_join",
+                "cap_dir": args.target_weight_cap_dir,
+                "cap_column": args.target_weight_cap_column,
+                "fill_value": args.target_weight_cap_fill_value,
+                "output_column": "max_target_weight",
+            }
+        )
+    return postprocessors
+
+
 def _overlay_partition(
     primary_path: Path,
     satellite_path: Path,
@@ -183,8 +342,16 @@ def _overlay_partition(
     condition_primary_mode: str = "current",
     overlay_mode: str = "blend",
     downside_penalty_quantile: float = 0.2,
+    optimizer_risk_penalty_path: Path | None = None,
+    optimizer_risk_penalty_column: str = "optimizer_risk_penalty_bps",
+    optimizer_risk_penalty_fill_value: float = 0.0,
+    target_weight_cap_path: Path | None = None,
+    target_weight_cap_column: str = "max_target_weight",
+    target_weight_cap_fill_value: float | None = None,
 ) -> pd.DataFrame:
-    primary = pd.read_parquet(primary_path, columns=["timestamp", "instrument_id", "score"])
+    primary = pd.read_parquet(
+        primary_path, columns=["timestamp", "instrument_id", "score"]
+    )
     satellite = pd.read_parquet(
         satellite_path,
         columns=["timestamp", "instrument_id", "score"],
@@ -221,11 +388,15 @@ def _overlay_partition(
             condition=condition,
         )
     elif condition_primary_mode != "current":
-        raise ValueError(f"unsupported condition primary mode: {condition_primary_mode}")
+        raise ValueError(
+            f"unsupported condition primary mode: {condition_primary_mode}"
+        )
     if condition is None:
         effective_weight = pd.Series(float(overlay_weight), index=frame.index)
     else:
-        active = frame["timestamp"].astype(str).map(condition).fillna(False).astype(bool)
+        active = (
+            frame["timestamp"].astype(str).map(condition).fillna(False).astype(bool)
+        )
         effective_weight = pd.Series(0.0, index=frame.index)
         effective_weight.loc[active] = float(overlay_weight)
     frame["score"] = _combine_overlay_components(
@@ -254,10 +425,91 @@ def _overlay_partition(
         output = _daily_first_plus_condition_decisions(output, condition=condition)
     elif decision_timing != "all":
         raise ValueError(f"unsupported decision timing: {decision_timing}")
+    if optimizer_risk_penalty_path is not None:
+        output = _apply_optimizer_risk_penalty_postprocessor(
+            output,
+            optimizer_risk_penalty_path=optimizer_risk_penalty_path,
+            optimizer_risk_penalty_column=optimizer_risk_penalty_column,
+            fill_value=optimizer_risk_penalty_fill_value,
+        )
+    if target_weight_cap_path is not None:
+        output = _apply_target_weight_cap_postprocessor(
+            output,
+            target_weight_cap_path=target_weight_cap_path,
+            target_weight_cap_column=target_weight_cap_column,
+            fill_value=target_weight_cap_fill_value,
+        )
     return output.sort_values(
         ["timestamp", "score", "instrument_id"],
         ascending=[True, False, True],
     ).reset_index(drop=True)
+
+
+def _apply_optimizer_risk_penalty_postprocessor(
+    scores: pd.DataFrame,
+    *,
+    optimizer_risk_penalty_path: Path,
+    optimizer_risk_penalty_column: str,
+    fill_value: float,
+) -> pd.DataFrame:
+    if not optimizer_risk_penalty_column:
+        raise ValueError("optimizer risk penalty column is required")
+    penalty = pd.read_parquet(
+        optimizer_risk_penalty_path,
+        columns=["timestamp", "instrument_id", optimizer_risk_penalty_column],
+    )
+    if penalty.duplicated(["timestamp", "instrument_id"]).any():
+        raise ValueError(
+            f"optimizer risk penalty partition has duplicate keys: {optimizer_risk_penalty_path}"
+        )
+    penalty = penalty.rename(
+        columns={optimizer_risk_penalty_column: "optimizer_risk_penalty_bps"}
+    )
+    penalty["optimizer_risk_penalty_bps"] = pd.to_numeric(
+        penalty["optimizer_risk_penalty_bps"],
+        errors="coerce",
+    )
+    output = scores.drop(columns=["optimizer_risk_penalty_bps"], errors="ignore").merge(
+        penalty,
+        on=["timestamp", "instrument_id"],
+        how="left",
+    )
+    output["optimizer_risk_penalty_bps"] = (
+        output["optimizer_risk_penalty_bps"].fillna(float(fill_value)).clip(lower=0.0)
+    )
+    return output
+
+
+def _apply_target_weight_cap_postprocessor(
+    scores: pd.DataFrame,
+    *,
+    target_weight_cap_path: Path,
+    target_weight_cap_column: str,
+    fill_value: float | None,
+) -> pd.DataFrame:
+    if not target_weight_cap_column:
+        raise ValueError("target weight cap column is required")
+    cap = pd.read_parquet(
+        target_weight_cap_path,
+        columns=["timestamp", "instrument_id", target_weight_cap_column],
+    )
+    if cap.duplicated(["timestamp", "instrument_id"]).any():
+        raise ValueError(
+            f"target weight cap partition has duplicate keys: {target_weight_cap_path}"
+        )
+    cap = cap.rename(columns={target_weight_cap_column: "max_target_weight"})
+    cap["max_target_weight"] = pd.to_numeric(cap["max_target_weight"], errors="coerce")
+    output = scores.drop(columns=["max_target_weight"], errors="ignore").merge(
+        cap,
+        on=["timestamp", "instrument_id"],
+        how="left",
+    )
+    if fill_value is not None:
+        output["max_target_weight"] = output["max_target_weight"].fillna(
+            float(fill_value)
+        )
+    output["max_target_weight"] = output["max_target_weight"].clip(lower=0.0, upper=1.0)
+    return output
 
 
 def _combine_overlay_components(
@@ -268,10 +520,9 @@ def _combine_overlay_components(
     downside_penalty_quantile: float,
 ) -> pd.Series:
     if overlay_mode == "blend":
-        return (
-            (1.0 - effective_weight) * frame["primary_component"]
-            + effective_weight * frame["satellite_component"]
-        )
+        return (1.0 - effective_weight) * frame[
+            "primary_component"
+        ] + effective_weight * frame["satellite_component"]
     if overlay_mode == "entry_exclusion":
         return frame["primary_component"]
     if overlay_mode == "optimizer_risk_penalty":
@@ -323,10 +574,14 @@ def _use_daily_first_primary_component_for_condition(
     condition: dict[str, bool] | None,
 ) -> pd.DataFrame:
     if condition is None:
-        raise ValueError("daily_first condition primary mode requires --condition-schedule")
+        raise ValueError(
+            "daily_first condition primary mode requires --condition-schedule"
+        )
     parsed = pd.to_datetime(frame["timestamp"], errors="coerce", format="ISO8601")
     if parsed.isna().any():
-        raise ValueError("daily_first condition primary mode requires parseable timestamps")
+        raise ValueError(
+            "daily_first condition primary mode requires parseable timestamps"
+        )
     output = frame.copy()
     output["_parsed_timestamp"] = parsed
     output["_session_date"] = parsed.dt.strftime("%Y-%m-%d")
@@ -355,7 +610,11 @@ def _use_daily_first_primary_component_for_condition(
         "_daily_first_primary_component",
     ]
     return output.drop(
-        columns=["_parsed_timestamp", "_session_date", "_daily_first_primary_component"],
+        columns=[
+            "_parsed_timestamp",
+            "_session_date",
+            "_daily_first_primary_component",
+        ],
     )
 
 
@@ -426,7 +685,8 @@ def _scenarios(args: argparse.Namespace) -> list[Scenario]:
                 partition_glob="score_*.parquet",
                 commission_bps=args.commission_bps * args.cost_stress_multiplier,
                 slippage_bps=args.slippage_bps * args.cost_stress_multiplier,
-                sell_stamp_tax_bps=args.sell_stamp_tax_bps * args.cost_stress_multiplier,
+                sell_stamp_tax_bps=args.sell_stamp_tax_bps
+                * args.cost_stress_multiplier,
                 estimated_cost_bps=args.policy_estimated_cost_bps
                 * args.cost_stress_multiplier,
                 description="Full-window transaction-cost stress.",
@@ -468,21 +728,12 @@ def _run_backtests(
     methods: dict[str, Any],
     scenarios: list[Scenario],
 ) -> dict[str, list[str]]:
-    jobs = [
-        _backtest_job(args, output_dir=output_dir, method=method, scenario=scenario)
-        for method in methods
-        for scenario in scenarios
-    ]
-    commands = {f"{job.method}:{job.scenario.name}": job.command for job in jobs}
-    command_path = output_dir / "commands.json"
-    command_path.write_text(
-        json.dumps(commands, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    jobs = _backtest_jobs(
+        args, output_dir=output_dir, methods=methods, scenarios=scenarios
     )
+    commands = _write_backtest_commands(output_dir, jobs)
     pending_jobs = [
-        job
-        for job in jobs
-        if not (args.resume_existing and job.summary_path.exists())
+        job for job in jobs if not (args.resume_existing and job.summary_path.exists())
     ]
     if not pending_jobs:
         return commands
@@ -501,6 +752,46 @@ def _run_backtests(
                         f"backtest failed for {job.method} {job.scenario.name}; "
                         f"log={job.log_path}"
                     ) from exc
+    return commands
+
+
+def _backtest_commands(
+    args: argparse.Namespace,
+    *,
+    output_dir: Path,
+    methods: dict[str, Any],
+    scenarios: list[Scenario],
+) -> dict[str, list[str]]:
+    jobs = _backtest_jobs(
+        args, output_dir=output_dir, methods=methods, scenarios=scenarios
+    )
+    return _write_backtest_commands(output_dir, jobs)
+
+
+def _backtest_jobs(
+    args: argparse.Namespace,
+    *,
+    output_dir: Path,
+    methods: dict[str, Any],
+    scenarios: list[Scenario],
+) -> list[BacktestJob]:
+    return [
+        _backtest_job(args, output_dir=output_dir, method=method, scenario=scenario)
+        for method in methods
+        for scenario in scenarios
+    ]
+
+
+def _write_backtest_commands(
+    output_dir: Path,
+    jobs: list[BacktestJob],
+) -> dict[str, list[str]]:
+    commands = {f"{job.method}:{job.scenario.name}": job.command for job in jobs}
+    command_path = output_dir / "commands.json"
+    command_path.write_text(
+        json.dumps(commands, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return commands
 
 
@@ -591,6 +882,8 @@ def _backtest_job(
         str(args.optimizer_min_net_edge_bps),
         "--optimizer-risk-penalty-multiplier",
         str(args.optimizer_risk_penalty_multiplier),
+        "--optimizer-target-cap-mode",
+        args.optimizer_target_cap_mode,
         "--optimizer-weighting",
         args.optimizer_weighting,
     ]
@@ -631,7 +924,10 @@ def _backtest_job(
         )
     if args.policy_gross_exposure_scale_path:
         command.extend(
-            ["--policy-gross-exposure-scale-path", args.policy_gross_exposure_scale_path]
+            [
+                "--policy-gross-exposure-scale-path",
+                args.policy_gross_exposure_scale_path,
+            ]
         )
     if args.exclude_st:
         command.append("--exclude-st")
@@ -707,10 +1003,16 @@ def _collect_rows(
 
 
 def _leaderboard(rows: list[dict[str, Any]], *, policy: str) -> list[dict[str, Any]]:
-    methods = sorted({str(row["method"]) for row in rows if row.get("policy") == policy})
+    methods = sorted(
+        {str(row["method"]) for row in rows if row.get("policy") == policy}
+    )
     output: list[dict[str, Any]] = []
     for method in methods:
-        current = [row for row in rows if row.get("method") == method and row.get("policy") == policy]
+        current = [
+            row
+            for row in rows
+            if row.get("method") == method and row.get("policy") == policy
+        ]
         by_scenario = {str(row["scenario"]): row for row in current}
         returns = [_number(row.get("total_return")) for row in current]
         turnovers = [_number(row.get("gross_turnover")) for row in current]
@@ -734,7 +1036,9 @@ def _leaderboard(rows: list[dict[str, Any]], *, policy: str) -> list[dict[str, A
                 "total_transaction_cost": _sum(costs),
             }
         )
-    return sorted(output, key=lambda row: _number(row["full_base_return"]), reverse=True)
+    return sorted(
+        output, key=lambda row: _number(row["full_base_return"]), reverse=True
+    )
 
 
 def _validation(
@@ -744,7 +1048,9 @@ def _validation(
     max_full_turnover: float,
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
-    for method in sorted({str(row["method"]) for row in rows if row.get("policy") == policy}):
+    for method in sorted(
+        {str(row["method"]) for row in rows if row.get("policy") == policy}
+    ):
         by_scenario = {
             str(row["scenario"]): row
             for row in rows
@@ -755,7 +1061,9 @@ def _validation(
         checks.append(
             {
                 "name": f"{method}_full_base_positive_return",
-                "status": "pass" if _number(full_base.get("total_return")) > 0 else "fail",
+                "status": (
+                    "pass" if _number(full_base.get("total_return")) > 0 else "fail"
+                ),
                 "details": {"total_return": full_base.get("total_return")},
             }
         )
@@ -834,6 +1142,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, Any]:
         "overlay_weights": args.overlay_weights,
         "overlay_mode": args.overlay_mode,
         "downside_penalty_quantile": args.downside_penalty_quantile,
+        "postprocessors": _postprocessor_summary(args),
         "rank_normalize": args.rank_normalize,
         "condition_primary_mode": args.condition_primary_mode,
         "policy_gross_exposure_scale_path": args.policy_gross_exposure_scale_path,
@@ -843,12 +1152,9 @@ def _summary_params(args: argparse.Namespace) -> dict[str, Any]:
         "policy_total_gross_turnover_budget": args.policy_total_gross_turnover_budget,
         "policy_turnover_budget_period": args.policy_turnover_budget_period,
         "policy_turnover_budget_pacing": args.policy_turnover_budget_pacing,
-        "policy_cost_pressure_threshold_bps": (
-            args.policy_cost_pressure_threshold_bps
-        ),
-        "policy_cost_pressure_reduced_scale": (
-            args.policy_cost_pressure_reduced_scale
-        ),
+        "optimizer_target_cap_mode": args.optimizer_target_cap_mode,
+        "policy_cost_pressure_threshold_bps": (args.policy_cost_pressure_threshold_bps),
+        "policy_cost_pressure_reduced_scale": (args.policy_cost_pressure_reduced_scale),
         "policy_cost_pressure_max_gross_turnover_per_rebalance": (
             args.policy_cost_pressure_max_gross_turnover_per_rebalance
         ),
@@ -857,6 +1163,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, Any]:
         "profile": args.profile,
         "years": args.years,
         "job_workers": args.job_workers,
+        "dry_run": args.dry_run,
     }
 
 
@@ -894,7 +1201,7 @@ def _sum(values: list[float]) -> float | None:
     return float(sum(finite)) if finite else None
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--primary-score-dir", required=True)
     parser.add_argument("--satellite-score-dir", required=True)
@@ -937,6 +1244,46 @@ def _parse_args() -> argparse.Namespace:
         help="satellite rank quantile below which downside_penalty subtracts score",
     )
     parser.add_argument(
+        "--optimizer-risk-penalty-dir",
+        help=(
+            "optional score_*.parquet directory joined after overlay construction; "
+            "partitions must contain timestamp, instrument_id, and an optimizer "
+            "risk penalty column"
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-risk-penalty-column",
+        default="optimizer_risk_penalty_bps",
+        help="column to read from --optimizer-risk-penalty-dir",
+    )
+    parser.add_argument(
+        "--optimizer-risk-penalty-fill-value",
+        type=float,
+        default=0.0,
+        help="non-negative penalty used when a score row has no joined penalty value",
+    )
+    parser.add_argument(
+        "--target-weight-cap-dir",
+        help=(
+            "optional score_*.parquet directory joined after overlay construction; "
+            "partitions must contain timestamp, instrument_id, and a target weight "
+            "cap column"
+        ),
+    )
+    parser.add_argument(
+        "--target-weight-cap-column",
+        default="max_target_weight",
+        help="column to read from --target-weight-cap-dir",
+    )
+    parser.add_argument(
+        "--target-weight-cap-fill-value",
+        type=float,
+        help=(
+            "optional cap used when a score row has no joined cap value; omit to "
+            "leave missing caps unconstrained"
+        ),
+    )
+    parser.add_argument(
         "--decision-timing",
         choices=("all", "daily_first_plus_condition"),
         default="all",
@@ -958,8 +1305,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--condition-schedule")
     parser.add_argument("--condition-column", default="risk_state")
     parser.add_argument("--condition-values", nargs="+", default=["reduced", "blocked"])
-    parser.add_argument("--catalog-path", default="../quant_dataset/canonical_store/catalog/quant_research.duckdb")
-    parser.add_argument("--profile", choices=("quick", "standard", "robust"), default="standard")
+    parser.add_argument(
+        "--catalog-path",
+        default="../quant_dataset/canonical_store/catalog/quant_research.duckdb",
+    )
+    parser.add_argument(
+        "--profile", choices=("quick", "standard", "robust"), default="standard"
+    )
     parser.add_argument("--years", nargs="+", type=int)
     parser.add_argument("--policy", default="partial_rebalance_daily")
     parser.add_argument("--top-n", type=int, default=50)
@@ -986,7 +1338,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-total-gross-turnover-budget", type=float)
     parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-turnover-budget-period", default="path")
-    parser.add_argument("--policy-drawdown-brake-reduced-scale", type=float, default=0.5)
+    parser.add_argument(
+        "--policy-drawdown-brake-reduced-scale", type=float, default=0.5
+    )
     parser.add_argument("--policy-cost-pressure-threshold-bps", type=float)
     parser.add_argument("--policy-cost-pressure-reduced-scale", type=float, default=0.7)
     parser.add_argument(
@@ -1002,18 +1356,28 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
     parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
     parser.add_argument("--optimizer-risk-penalty-multiplier", type=float, default=1.0)
+    parser.add_argument(
+        "--optimizer-target-cap-mode",
+        choices=("clip", "redistribute", "replace"),
+        default="clip",
+    )
     parser.add_argument("--optimizer-weighting", default="utility")
-    parser.add_argument("--exclude-st", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--exclude-st", action=argparse.BooleanOptionalAction, default=True
+    )
     parser.add_argument("--max-full-turnover", type=float, default=160.0)
     parser.add_argument("--job-workers", type=int, default=2)
     parser.add_argument("--resume-existing", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--print-summary", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not 0.0 < args.downside_penalty_quantile < 1.0:
         raise ValueError("--downside-penalty-quantile must be in (0, 1)")
     if args.overlay_mode == "entry_exclusion":
         invalid_weights = [
-            weight for weight in args.overlay_weights if weight != 0 and not 0.0 < weight < 1.0
+            weight
+            for weight in args.overlay_weights
+            if weight != 0 and not 0.0 < weight < 1.0
         ]
         if invalid_weights:
             raise ValueError(
@@ -1023,11 +1387,20 @@ def _parse_args() -> argparse.Namespace:
         invalid_weights = [weight for weight in args.overlay_weights if weight < 0]
         if invalid_weights:
             raise ValueError("optimizer_risk_penalty weights must be non-negative")
+    if args.optimizer_risk_penalty_fill_value < 0:
+        raise ValueError("--optimizer-risk-penalty-fill-value must be non-negative")
+    if (
+        args.target_weight_cap_fill_value is not None
+        and not 0.0 <= args.target_weight_cap_fill_value <= 1.0
+    ):
+        raise ValueError("--target-weight-cap-fill-value must be in [0, 1]")
     if (
         args.policy_max_gross_turnover_per_rebalance is not None
         and args.policy_max_gross_turnover_per_rebalance < 0
     ):
-        raise ValueError("--policy-max-gross-turnover-per-rebalance must be non-negative")
+        raise ValueError(
+            "--policy-max-gross-turnover-per-rebalance must be non-negative"
+        )
     if (
         args.policy_total_gross_turnover_budget is not None
         and args.policy_total_gross_turnover_budget < 0

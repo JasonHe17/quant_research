@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Literal, Protocol
 
 import pandas as pd
@@ -11,6 +12,7 @@ import pandas as pd
 DecisionAction = Literal["entry", "exit", "hold", "resize_up", "resize_down", "no_trade"]
 WeightingMethod = Literal["equal", "score"]
 OptimizerWeightingMethod = Literal["equal", "utility"]
+OptimizerTargetCapMode = Literal["clip", "redistribute", "replace"]
 
 PORTFOLIO_STATE_COLUMNS = (
     "instrument_id",
@@ -166,6 +168,7 @@ class CostAwareOptimizerConfig:
     min_net_edge_bps: float = 0.0
     estimated_cost_bps: float = 0.0
     risk_penalty_multiplier: float = 1.0
+    target_cap_mode: OptimizerTargetCapMode = "clip"
     no_trade_weight_band: float = 0.0
     partial_rebalance_rate: float = 1.0
     max_gross_turnover_per_rebalance: float | None = None
@@ -200,6 +203,8 @@ class CostAwareOptimizerConfig:
             raise ValueError("estimated_cost_bps must be non-negative")
         if self.risk_penalty_multiplier < 0:
             raise ValueError("risk_penalty_multiplier must be non-negative")
+        if self.target_cap_mode not in {"clip", "redistribute", "replace"}:
+            raise ValueError("target_cap_mode must be clip, redistribute, or replace")
         if self.no_trade_weight_band < 0:
             raise ValueError("no_trade_weight_band must be non-negative")
         if not 0 < self.partial_rebalance_rate <= 1:
@@ -473,7 +478,7 @@ class CostAwareOptimizerPolicy:
                 eligible_ids.append(instrument_id)
         selected = list(dict.fromkeys(forced_hold_ids))[: cfg.target_count]
         entry_count = 0
-        for instrument_id in _ordered_optimizer_candidates(
+        ordered_entry_candidates = _ordered_optimizer_candidates(
             [
                 instrument_id
                 for instrument_id in eligible_ids
@@ -482,7 +487,8 @@ class CostAwareOptimizerPolicy:
             forecast_by_id=forecast_by_id,
             state_by_id=state_by_id,
             config=cfg,
-        ):
+        )
+        for instrument_id in ordered_entry_candidates:
             if len(selected) >= cfg.target_count:
                 break
             current_weight = float(
@@ -496,6 +502,14 @@ class CostAwareOptimizerPolicy:
                     continue
                 entry_count += 1
             selected.append(instrument_id)
+        selected, entry_count = _expand_optimizer_selection_for_cap_replacement(
+            selected,
+            ordered_candidates=ordered_entry_candidates,
+            forecast_by_id=forecast_by_id,
+            state_by_id=state_by_id,
+            config=cfg,
+            entry_count=entry_count,
+        )
         if cfg.max_exits_per_rebalance is not None:
             exit_candidates = [
                 instrument_id
@@ -654,6 +668,7 @@ def _optimizer_forecast_mapping(
     score_values = ranked["score"].to_numpy(copy=False)
     edge_values = _expected_edge_values(ranked)
     risk_penalty_values = _risk_penalty_value_arrays(ranked)
+    weight_cap_values = _target_weight_cap_value_arrays(ranked)
     for index, instrument_id in enumerate(instrument_values):
         score = float(score_values[index])
         expected_edge = (
@@ -673,6 +688,9 @@ def _optimizer_forecast_mapping(
             "risk_penalty_bps": risk_penalty,
             "net_edge_bps": net_edge,
         }
+        target_weight_cap = _target_weight_cap_value_at(weight_cap_values, index)
+        if target_weight_cap is not None:
+            mapping[str(instrument_id)]["max_target_weight"] = target_weight_cap
         if "entry_eligible" in ranked.columns:
             mapping[str(instrument_id)]["entry_eligible"] = _entry_eligible_value(
                 ranked["entry_eligible"].iloc[index]
@@ -747,6 +765,30 @@ def _risk_penalty_value_at(values: list[object], index: int) -> float:
         if value is not None and not pd.isna(value):
             return float(value)
     return 0.0
+
+
+def _target_weight_cap_value_arrays(frame: pd.DataFrame) -> list[object]:
+    return [
+        frame[name].to_numpy(copy=False)
+        for name in (
+            "max_target_weight",
+            "target_weight_cap",
+            "optimizer_max_target_weight",
+        )
+        if name in frame.columns
+    ]
+
+
+def _target_weight_cap_value_at(values: list[object], index: int) -> float | None:
+    for column_values in values:
+        value = column_values[index]  # type: ignore[index]
+        if value is None or pd.isna(value):
+            continue
+        cap = float(value)
+        if not math.isfinite(cap):
+            continue
+        return min(max(cap, 0.0), 1.0)
+    return None
 
 
 def _coerce_optional_float(value: object) -> float:
@@ -911,6 +953,24 @@ def _optimizer_aim_weights(
     forecast_by_id: dict[str, dict[str, object]],
     config: CostAwareOptimizerConfig,
 ) -> dict[str, float]:
+    weights = _optimizer_base_aim_weights(
+        selected,
+        forecast_by_id=forecast_by_id,
+        config=config,
+    )
+    return _apply_dynamic_target_weight_caps(
+        weights,
+        forecast_by_id=forecast_by_id,
+        mode=config.target_cap_mode,
+    )
+
+
+def _optimizer_base_aim_weights(
+    selected: list[str],
+    *,
+    forecast_by_id: dict[str, dict[str, object]],
+    config: CostAwareOptimizerConfig,
+) -> dict[str, float]:
     if not selected or config.gross_exposure_scale <= 0:
         return {}
     if config.weighting == "equal":
@@ -929,7 +989,158 @@ def _optimizer_aim_weights(
             instrument_id: min(weight, config.max_name_weight)
             for instrument_id, weight in weights.items()
         }
-    return _scale_aim_weights(weights, config.gross_exposure_scale)
+    weights = _scale_aim_weights(weights, config.gross_exposure_scale)
+    return weights
+
+
+def _expand_optimizer_selection_for_cap_replacement(
+    selected: list[str],
+    *,
+    ordered_candidates: list[str],
+    forecast_by_id: dict[str, dict[str, object]],
+    state_by_id: dict[str, dict[str, object]],
+    config: CostAwareOptimizerConfig,
+    entry_count: int,
+) -> tuple[list[str], int]:
+    if config.target_cap_mode != "replace":
+        return selected, entry_count
+    expanded = list(dict.fromkeys(selected))
+    next_candidates = [
+        instrument_id
+        for instrument_id in ordered_candidates
+        if instrument_id not in set(expanded)
+    ]
+    next_index = 0
+    while next_index < len(next_candidates):
+        base_weights = _optimizer_base_aim_weights(
+            expanded,
+            forecast_by_id=forecast_by_id,
+            config=config,
+        )
+        binding_count = _dynamic_target_weight_cap_binding_count(
+            base_weights,
+            forecast_by_id=forecast_by_id,
+        )
+        if binding_count <= 0:
+            break
+        added_count = 0
+        while added_count < binding_count and next_index < len(next_candidates):
+            instrument_id = next_candidates[next_index]
+            next_index += 1
+            current_weight = float(
+                state_by_id.get(instrument_id, {}).get("current_weight") or 0.0
+            )
+            if current_weight <= 0:
+                if (
+                    config.max_entries_per_rebalance is not None
+                    and entry_count >= config.max_entries_per_rebalance
+                ):
+                    continue
+                entry_count += 1
+            expanded.append(instrument_id)
+            added_count += 1
+        if added_count <= 0:
+            break
+    return expanded, entry_count
+
+
+def _dynamic_target_weight_cap_binding_count(
+    weights: dict[str, float],
+    *,
+    forecast_by_id: dict[str, dict[str, object]],
+) -> int:
+    return sum(
+        1
+        for instrument_id, weight in weights.items()
+        if weight
+        > _dynamic_target_weight_cap_for_id(
+            instrument_id,
+            forecast_by_id=forecast_by_id,
+        )
+        + 1e-12
+    )
+
+
+def _apply_dynamic_target_weight_caps(
+    weights: dict[str, float],
+    *,
+    forecast_by_id: dict[str, dict[str, object]],
+    mode: OptimizerTargetCapMode = "clip",
+) -> dict[str, float]:
+    if mode in {"redistribute", "replace"}:
+        return _redistribute_dynamic_target_weight_caps(
+            weights,
+            forecast_by_id=forecast_by_id,
+        )
+    capped: dict[str, float] = {}
+    for instrument_id, weight in weights.items():
+        cap_value = forecast_by_id.get(instrument_id, {}).get("max_target_weight")
+        if cap_value is None:
+            capped[instrument_id] = weight
+            continue
+        capped[instrument_id] = min(weight, max(float(cap_value), 0.0))
+    return capped
+
+
+def _redistribute_dynamic_target_weight_caps(
+    weights: dict[str, float],
+    *,
+    forecast_by_id: dict[str, dict[str, object]],
+) -> dict[str, float]:
+    if not weights:
+        return {}
+    caps = {
+        instrument_id: _dynamic_target_weight_cap_for_id(
+            instrument_id,
+            forecast_by_id=forecast_by_id,
+        )
+        for instrument_id in weights
+    }
+    target_total = min(sum(max(weight, 0.0) for weight in weights.values()), sum(caps.values()))
+    if target_total <= 1e-12:
+        return {instrument_id: 0.0 for instrument_id in weights}
+    output = {instrument_id: 0.0 for instrument_id in weights}
+    remaining = set(weights)
+    remaining_total = target_total
+    while remaining and remaining_total > 1e-12:
+        basis_total = sum(max(weights[instrument_id], 0.0) for instrument_id in remaining)
+        if basis_total <= 1e-12:
+            tentative = {
+                instrument_id: remaining_total / len(remaining)
+                for instrument_id in remaining
+            }
+        else:
+            tentative = {
+                instrument_id: remaining_total
+                * max(weights[instrument_id], 0.0)
+                / basis_total
+                for instrument_id in remaining
+            }
+        capped_now = [
+            instrument_id
+            for instrument_id, target in tentative.items()
+            if target >= caps[instrument_id] - 1e-12
+        ]
+        if not capped_now:
+            for instrument_id, target in tentative.items():
+                output[instrument_id] = min(target, caps[instrument_id])
+            break
+        for instrument_id in capped_now:
+            output[instrument_id] = caps[instrument_id]
+            remaining_total -= caps[instrument_id]
+            remaining.discard(instrument_id)
+    return output
+
+
+def _dynamic_target_weight_cap_for_id(
+    instrument_id: str,
+    *,
+    forecast_by_id: dict[str, dict[str, object]],
+) -> float:
+    cap_value = forecast_by_id.get(instrument_id, {}).get("max_target_weight")
+    if cap_value is None:
+        return 1.0
+    return min(max(float(cap_value), 0.0), 1.0)
 
 
 def _optimizer_reason(

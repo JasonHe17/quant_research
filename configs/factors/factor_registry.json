@@ -7,6 +7,192 @@
         "st_aware": true,
         "t_plus_one_safe": true
       },
+      "description": "Inverted cross-sectional rank of the maximum 5-minute close-to-close return over the last 24 bars.",
+      "display_name": "Intraday lottery MAX, 24-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/lottery_max_2026_05_27/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_lottery_max_5m_w24/factor_candidate_review.json",
+        "factor_evaluation": "runs/factor_research/lottery_max_2026_05_27/factor_evaluation/summary.json",
+        "portfolio_validation": "runs/factor_research/lottery_max_2026_05_27/candidate_policy_validation/validation_summary.json",
+        "portfolio_validation_status": "conditional_frontier_overlay_candidate_capacity_watchlist",
+        "registry_decision_status": "candidate",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_lottery_max_5m_w24",
+      "family": "reversal",
+      "feature_columns": [
+        "intraday_lottery_max_5m_w24"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Stocks with the highest recent single-bar upside shock attract lottery-demand buying and become temporarily overpriced, so an inverted MAX rank should improve subsequent long-only selection.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "lottery_max"
+          ],
+          "lottery_max_windows": [
+            24
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 24,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md",
+        "docs/validation/factor_admission.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "current_candidate",
+        "intraday",
+        "cross_sectional",
+        "lottery_demand",
+        "max_effect"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Inverted cross-sectional rank of the maximum 5-minute close-to-close return over the last 48 bars.",
+      "display_name": "Intraday lottery MAX, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/lottery_max_2026_05_27/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_lottery_max_5m_w48/factor_candidate_review.json",
+        "factor_evaluation": "runs/factor_research/lottery_max_2026_05_27/factor_evaluation/summary.json",
+        "portfolio_validation": "runs/factor_research/lottery_max_2026_05_27/candidate_policy_validation/validation_summary.json",
+        "portfolio_validation_status": "conditional_frontier_overlay_candidate_capacity_watchlist",
+        "registry_decision_status": "candidate",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_lottery_max_5m_w48",
+      "family": "reversal",
+      "feature_columns": [
+        "intraday_lottery_max_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "A two-session MAX window should capture persistent lottery-demand overpricing while changing slowly enough to keep turnover manageable.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "lottery_max"
+          ],
+          "lottery_max_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 48,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md",
+        "docs/validation/factor_admission.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "current_candidate",
+        "intraday",
+        "cross_sectional",
+        "lottery_demand",
+        "max_effect"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Inverted cross-sectional rank of the maximum 5-minute close-to-close return over the last 96 bars.",
+      "display_name": "Intraday lottery MAX, 96-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/lottery_max_2026_05_27/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_review": "runs/factor_candidate_reviews/intraday_lottery_max_5m_w96/factor_candidate_review.json",
+        "factor_evaluation": "runs/factor_research/lottery_max_2026_05_27/factor_evaluation/summary.json",
+        "portfolio_validation": "runs/factor_research/lottery_max_2026_05_27/candidate_policy_validation/validation_summary.json",
+        "portfolio_validation_status": "conditional_frontier_overlay_candidate_capacity_watchlist",
+        "registry_decision_status": "candidate",
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_lottery_max_5m_w96",
+      "family": "reversal",
+      "feature_columns": [
+        "intraday_lottery_max_5m_w96"
+      ],
+      "frequency": "5m",
+      "hypothesis": "A longer MAX window should capture month-like lottery-demand overhang at intraday frequency and remain orthogonal to time-series reversal features.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "lottery_max"
+          ],
+          "lottery_max_windows": [
+            96
+          ]
+        }
+      },
+      "label_lag_bars": 48,
+      "live_available": true,
+      "lookback_bars": 96,
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md",
+        "docs/validation/factor_admission.md"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "close_price"
+      ],
+      "status": "candidate",
+      "tags": [
+        "current_candidate",
+        "intraday",
+        "cross_sectional",
+        "lottery_demand",
+        "max_effect"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
       "description": "Rolling 24-bar 5-minute close-return volatility.",
       "display_name": "Intraday volatility, 24-bar window",
       "evaluation": {
@@ -8940,10 +9126,11 @@
     "https://english.sse.com.cn/start/trading/mechanism/",
     "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
     "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
-    "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md"
+    "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md",
+    "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md"
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-27",
-  "version": 57
+  "version": 58
 }

@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from quant_research.factors import FactorRegistry, FactorRegistryEntry, load_factor_registry
+from quant_research.factors import (
+    FactorRegistry,
+    FactorRegistryEntry,
+    load_factor_registry,
+)
 from quant_research.portfolio import (
     AllocatorRegistry,
     AllocatorRegistryEntry,
@@ -60,7 +64,9 @@ def test_allocator_registry_requires_normalized_feature_weights() -> None:
     report = validate_allocator_registry(registry)
 
     assert report.status == "fail"
-    assert any(issue.code == "feature_weights_not_normalized" for issue in report.issues)
+    assert any(
+        issue.code == "feature_weights_not_normalized" for issue in report.issues
+    )
 
 
 def test_allocator_registry_checks_factor_registry_feature_membership() -> None:
@@ -82,8 +88,7 @@ def test_allocator_registry_checks_factor_registry_feature_membership() -> None:
 
     assert report.status == "fail"
     assert any(
-        issue.code == "feature_missing_from_factor_registry"
-        for issue in report.issues
+        issue.code == "feature_missing_from_factor_registry" for issue in report.issues
     )
 
 
@@ -154,10 +159,149 @@ def test_allocator_registry_warns_on_capacity_monitor_threshold_breach(
     report = validate_allocator_registry(registry)
 
     assert report.status == "warn"
-    assert sum(
-        issue.code == "capacity_monitor_threshold_breach"
-        for issue in report.issues
-    ) == 4
+    assert (
+        sum(
+            issue.code == "capacity_monitor_threshold_breach" for issue in report.issues
+        )
+        == 4
+    )
+
+
+def test_allocator_registry_accepts_score_overlay_allocator(tmp_path: Path) -> None:
+    primary = tmp_path / "primary"
+    satellite = tmp_path / "satellite"
+    penalty = tmp_path / "penalty"
+    primary.mkdir()
+    satellite.mkdir()
+    penalty.mkdir()
+    (primary / "score_2023_01.parquet").touch()
+    (satellite / "score_2023_01.parquet").touch()
+    (penalty / "score_2023_01.parquet").touch()
+    schedule = tmp_path / "condition.csv"
+    schedule.write_text("timestamp,risk_state\n2023-01-03T15:00:00+08:00,reduced\n")
+    entry = _score_overlay_allocator(
+        "overlay_allocator",
+        primary_score_dir=str(primary),
+        satellite_score_dir=str(satellite),
+        condition_schedule=str(schedule),
+        postprocessors=[
+            {
+                "type": "optimizer_risk_penalty_join",
+                "penalty_dir": str(penalty),
+                "penalty_column": "optimizer_risk_penalty_bps",
+                "fill_value": 0.0,
+            }
+        ],
+    )
+    registry = AllocatorRegistry(
+        registry_name="test_allocators",
+        version=1,
+        allocators=(entry,),
+    )
+
+    report = validate_allocator_registry(registry, project_root=".")
+
+    assert report.status == "pass"
+    assert report.allocators[0]["score_construction"] == "score_overlay"
+
+
+def test_allocator_registry_rejects_invalid_score_overlay_weight(
+    tmp_path: Path,
+) -> None:
+    primary = tmp_path / "primary"
+    satellite = tmp_path / "satellite"
+    primary.mkdir()
+    satellite.mkdir()
+    (primary / "score_2023_01.parquet").touch()
+    (satellite / "score_2023_01.parquet").touch()
+    entry = _score_overlay_allocator(
+        "overlay_allocator",
+        primary_score_dir=str(primary),
+        satellite_score_dir=str(satellite),
+        overlay_weights=[1.2],
+    )
+    registry = AllocatorRegistry(
+        registry_name="test_allocators",
+        version=1,
+        allocators=(entry,),
+    )
+
+    report = validate_allocator_registry(registry, project_root=".")
+
+    assert report.status == "fail"
+    assert any(issue.code == "invalid_overlay_weight" for issue in report.issues)
+
+
+def test_allocator_registry_accepts_target_weight_cap_postprocessor(
+    tmp_path: Path,
+) -> None:
+    primary = tmp_path / "primary"
+    satellite = tmp_path / "satellite"
+    cap = tmp_path / "cap"
+    primary.mkdir()
+    satellite.mkdir()
+    cap.mkdir()
+    (primary / "score_2023_01.parquet").touch()
+    (satellite / "score_2023_01.parquet").touch()
+    (cap / "score_2023_01.parquet").touch()
+    entry = _score_overlay_allocator(
+        "overlay_allocator",
+        primary_score_dir=str(primary),
+        satellite_score_dir=str(satellite),
+        postprocessors=[
+            {
+                "type": "target_weight_cap_join",
+                "cap_dir": str(cap),
+                "cap_column": "max_target_weight",
+                "fill_value": 1.0,
+            }
+        ],
+    )
+    registry = AllocatorRegistry(
+        registry_name="test_allocators",
+        version=1,
+        allocators=(entry,),
+    )
+
+    report = validate_allocator_registry(registry, project_root=".")
+
+    assert report.status == "pass"
+
+
+def test_allocator_registry_rejects_invalid_optimizer_target_cap_mode() -> None:
+    entry = _allocator("alpha_allocator")
+    payload = entry.to_dict()
+    payload["execution_policy"]["optimizer_target_cap_mode"] = "bad"
+    registry = AllocatorRegistry(
+        registry_name="test_allocators",
+        version=1,
+        allocators=(AllocatorRegistryEntry.from_dict(payload),),
+    )
+
+    report = validate_allocator_registry(registry)
+
+    assert report.status == "fail"
+    assert any(
+        issue.code == "invalid_optimizer_target_cap_mode" for issue in report.issues
+    )
+
+
+def test_allocator_registry_accepts_replace_optimizer_target_cap_mode() -> None:
+    entry = _allocator("alpha_allocator")
+    payload = entry.to_dict()
+    payload["execution_policy"]["optimizer_target_cap_mode"] = "replace"
+    registry = AllocatorRegistry(
+        registry_name="test_allocators",
+        version=1,
+        allocators=(AllocatorRegistryEntry.from_dict(payload),),
+    )
+
+    report = validate_allocator_registry(registry)
+
+    assert report.status != "fail"
+    assert not any(
+        issue.code == "invalid_optimizer_target_cap_mode" for issue in report.issues
+    )
 
 
 def _allocator(
@@ -243,4 +387,65 @@ def _factor(feature: str, *, status: str = "candidate") -> FactorRegistryEntry:
         },
         point_in_time_safe=True,
         live_available=True,
+    )
+
+
+def _score_overlay_allocator(
+    allocator_id: str,
+    *,
+    primary_score_dir: str,
+    satellite_score_dir: str,
+    condition_schedule: str | None = None,
+    overlay_weights: list[float] | None = None,
+    postprocessors: list[dict[str, object]] | None = None,
+) -> AllocatorRegistryEntry:
+    score: dict[str, object] = {
+        "construction": "score_overlay",
+        "primary_score_dir": primary_score_dir,
+        "satellite_score_dir": satellite_score_dir,
+        "method_prefix": "overlay_test",
+        "overlay_weights": overlay_weights or [0.1],
+        "overlay_mode": "blend",
+        "rank_normalize": True,
+    }
+    if postprocessors is not None:
+        score["postprocessors"] = postprocessors
+    if condition_schedule is not None:
+        score["condition"] = {
+            "schedule_path": condition_schedule,
+            "column": "risk_state",
+            "values": ["reduced"],
+        }
+    return AllocatorRegistryEntry(
+        allocator_id=allocator_id,
+        display_name=allocator_id,
+        status="candidate",
+        description="A score-overlay test allocator.",
+        hypothesis="A test overlay hypothesis.",
+        score=score,
+        risk_controls={},
+        execution_policy={
+            "top_n": 50,
+            "entry_rank": 50,
+            "exit_rank": 150,
+            "max_entries_per_rebalance": 10,
+            "max_exits_per_rebalance": 10,
+            "rebalance_every_n_bars": 48,
+            "partial_rebalance_rate": 0.5,
+            "no_trade_weight_band": 0.002,
+        },
+        cost_model={
+            "commission_bps": 3.0,
+            "slippage_bps": 1.0,
+            "sell_stamp_tax_bps": 5.0,
+            "min_commission": 5.0,
+        },
+        validation={
+            "status": "pass",
+            "standard_validation": "pyproject.toml",
+            "robust_validation": "pyproject.toml",
+        },
+        governance={"decision": "candidate_allocator"},
+        data={},
+        references=("pyproject.toml",),
     )

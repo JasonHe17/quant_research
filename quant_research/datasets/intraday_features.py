@@ -31,6 +31,7 @@ _VALID_GROUPS = {
     "vwap_deviation",
     "downside_volatility",
     "return_skewness",
+    "lottery_max",
     "money_flow",
     "signed_turnover_imbalance",
     "risk_adjusted_momentum",
@@ -95,6 +96,7 @@ class IntradayFeatureConfig:
     vwap_deviation_windows: tuple[int, ...] = (48,)
     downside_volatility_windows: tuple[int, ...] = (12, 48)
     return_skewness_windows: tuple[int, ...] = (12, 48)
+    lottery_max_windows: tuple[int, ...] = (24, 48, 96)
     money_flow_windows: tuple[int, ...] = (12, 48)
     signed_turnover_imbalance_windows: tuple[int, ...] = (12, 48)
     risk_adjusted_momentum_windows: tuple[int, ...] = (12, 48)
@@ -160,6 +162,7 @@ class IntradayFeatureConfig:
             ("vwap_deviation_windows", self.vwap_deviation_windows),
             ("downside_volatility_windows", self.downside_volatility_windows),
             ("return_skewness_windows", self.return_skewness_windows),
+            ("lottery_max_windows", self.lottery_max_windows),
             ("money_flow_windows", self.money_flow_windows),
             (
                 "signed_turnover_imbalance_windows",
@@ -1281,6 +1284,20 @@ def build_intraday_feature_matrix(
                 lambda values: values.rolling(window, min_periods=window).skew()
             )
             feature_columns.append(column)
+    if "lottery_max" in groups:
+        for window in config.lottery_max_windows:
+            rolling_max_return = one_bar_return.groupby(frame["instrument_id"]).transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).max()
+            )
+            column = f"intraday_lottery_max_5m_w{window}"
+            output[column] = _inverted_cross_sectional_percentile(
+                rolling_max_return,
+                frame["bar_end_time"],
+            )
+            feature_columns.append(column)
     if "price_position" in groups:
         frame["high_price"] = frame["high_price"].astype(float)
         frame["low_price"] = frame["low_price"].astype(float)
@@ -1735,6 +1752,20 @@ def _expanded_groups(groups: tuple[str, ...]) -> set[str]:
     if "all" not in selected:
         return selected
     return _VALID_GROUPS - {"all"}
+
+
+def _inverted_cross_sectional_percentile(
+    values: pd.Series,
+    timestamps: pd.Series,
+) -> pd.Series:
+    """Rank by timestamp so high raw values receive low scores."""
+
+    ranks = values.groupby(timestamps).rank(method="average", na_option="keep")
+    counts = values.notna().groupby(timestamps).transform("sum")
+    denominator = (counts - 1).where(counts > 1)
+    percentile = (ranks - 1.0) / denominator
+    percentile = percentile.where(counts > 1, 0.5)
+    return (1.0 - percentile).where(values.notna())
 
 
 def _rolling_timestamp_state(

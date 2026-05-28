@@ -11,12 +11,17 @@ from typing import Any
 
 from quant_research.factors import FactorRegistry
 
-
 ALLOCATOR_STATUSES = frozenset(
     {"planned", "candidate", "watchlist", "reject", "promoted", "deprecated"}
 )
 VALIDATION_STATUSES = frozenset({"pass", "warn", "fail", "pending"})
 FEATURE_DIRECTIONS = frozenset({"long", "invert"})
+SCORE_CONSTRUCTIONS = frozenset({"factor_basket", "score_overlay"})
+OVERLAY_MODES = frozenset(
+    {"blend", "downside_penalty", "entry_exclusion", "optimizer_risk_penalty"}
+)
+DECISION_TIMINGS = frozenset({"all", "daily_first_plus_condition"})
+CONDITION_PRIMARY_MODES = frozenset({"current", "daily_first"})
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]*$")
 _CAPACITY_MONITOR_THRESHOLDS = {
     "min_total_return": ("total_return", "min"),
@@ -208,11 +213,15 @@ def validate_allocator_registry(
     root = Path(project_root)
     issues: list[AllocatorRegistryIssue] = []
     if not registry.registry_name:
-        _add_issue(issues, "error", "missing_registry_name", "registry_name is required")
+        _add_issue(
+            issues, "error", "missing_registry_name", "registry_name is required"
+        )
     if registry.version <= 0:
         _add_issue(issues, "error", "invalid_version", "version must be positive")
     if not registry.allocators:
-        _add_issue(issues, "error", "empty_registry", "at least one allocator is required")
+        _add_issue(
+            issues, "error", "empty_registry", "at least one allocator is required"
+        )
 
     seen_ids: set[str] = set()
     allocator_rows: list[dict[str, Any]] = []
@@ -258,10 +267,13 @@ def write_allocator_registry_report(
     json_path = output_path / "allocator_registry_validation.json"
     markdown_path = output_path / "allocator_registry_validation.md"
     json_path.write_text(
-        json.dumps(report.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(report.to_dict(), ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
         encoding="utf-8",
     )
-    markdown_path.write_text(render_allocator_registry_markdown(report), encoding="utf-8")
+    markdown_path.write_text(
+        render_allocator_registry_markdown(report), encoding="utf-8"
+    )
     return {"json": str(json_path), "markdown": str(markdown_path)}
 
 
@@ -353,7 +365,12 @@ def _validate_entry(
                 field=field_name,
             )
 
-    _validate_score(entry, issues=issues, feature_to_factor=feature_to_factor)
+    _validate_score(
+        entry,
+        issues=issues,
+        feature_to_factor=feature_to_factor,
+        project_root=project_root,
+    )
     _validate_execution_policy(entry, issues=issues)
     _validate_risk_controls(entry, issues=issues, project_root=project_root)
     _validate_cost_model(entry, issues=issues)
@@ -375,6 +392,38 @@ def _validate_entry(
 
 
 def _validate_score(
+    entry: AllocatorRegistryEntry,
+    *,
+    issues: list[AllocatorRegistryIssue],
+    feature_to_factor: dict[str, Any],
+    project_root: Path,
+) -> None:
+    construction = _score_construction(entry)
+    if construction not in SCORE_CONSTRUCTIONS:
+        _add_issue(
+            issues,
+            "error",
+            "invalid_score_construction",
+            f"score.construction must be one of {sorted(SCORE_CONSTRUCTIONS)}",
+            allocator_id=entry.allocator_id,
+            field="score.construction",
+        )
+        return
+    if construction == "score_overlay":
+        _validate_score_overlay(entry, issues=issues, project_root=project_root)
+        return
+    _validate_factor_basket_score(
+        entry,
+        issues=issues,
+        feature_to_factor=feature_to_factor,
+    )
+
+
+def _score_construction(entry: AllocatorRegistryEntry) -> str:
+    return str(entry.score.get("construction") or "factor_basket")
+
+
+def _validate_factor_basket_score(
     entry: AllocatorRegistryEntry,
     *,
     issues: list[AllocatorRegistryIssue],
@@ -456,7 +505,10 @@ def _validate_score(
                 allocator_id=entry.allocator_id,
                 field=f"score.features[{index}].feature",
             )
-        elif factor_entry is not None and factor_entry.status in {"reject", "deprecated"}:
+        elif factor_entry is not None and factor_entry.status in {
+            "reject",
+            "deprecated",
+        }:
             _add_issue(
                 issues,
                 "error",
@@ -474,6 +526,255 @@ def _validate_score(
             allocator_id=entry.allocator_id,
             field="score.features",
         )
+
+
+def _validate_score_overlay(
+    entry: AllocatorRegistryEntry,
+    *,
+    issues: list[AllocatorRegistryIssue],
+    project_root: Path,
+) -> None:
+    score = entry.score
+    _check_score_directory(
+        score.get("primary_score_dir"),
+        issues=issues,
+        allocator_id=entry.allocator_id,
+        field="score.primary_score_dir",
+        project_root=project_root,
+    )
+    _check_score_directory(
+        score.get("satellite_score_dir"),
+        issues=issues,
+        allocator_id=entry.allocator_id,
+        field="score.satellite_score_dir",
+        project_root=project_root,
+    )
+    method_prefix = str(score.get("method_prefix") or "")
+    if not method_prefix or not _ID_RE.match(method_prefix):
+        _add_issue(
+            issues,
+            "error",
+            "invalid_overlay_method_prefix",
+            "score.method_prefix must use lowercase letters, digits, and underscores",
+            allocator_id=entry.allocator_id,
+            field="score.method_prefix",
+        )
+    overlay_mode = str(score.get("overlay_mode") or "blend")
+    if overlay_mode not in OVERLAY_MODES:
+        _add_issue(
+            issues,
+            "error",
+            "invalid_overlay_mode",
+            f"score.overlay_mode must be one of {sorted(OVERLAY_MODES)}",
+            allocator_id=entry.allocator_id,
+            field="score.overlay_mode",
+        )
+    weights = score.get("overlay_weights")
+    if not isinstance(weights, list) or not weights:
+        _add_issue(
+            issues,
+            "error",
+            "missing_overlay_weights",
+            "score.overlay_weights must be a non-empty list",
+            allocator_id=entry.allocator_id,
+            field="score.overlay_weights",
+        )
+    else:
+        for index, value in enumerate(weights):
+            weight = _optional_float(value)
+            if weight is None:
+                _add_issue(
+                    issues,
+                    "error",
+                    "invalid_overlay_weight",
+                    "overlay weights must be numeric",
+                    allocator_id=entry.allocator_id,
+                    field=f"score.overlay_weights[{index}]",
+                )
+                continue
+            if overlay_mode == "optimizer_risk_penalty":
+                invalid = weight < 0
+            elif overlay_mode == "entry_exclusion":
+                invalid = weight != 0 and not 0.0 < weight < 1.0
+            else:
+                invalid = not 0.0 <= weight <= 1.0
+            if invalid:
+                _add_issue(
+                    issues,
+                    "error",
+                    "invalid_overlay_weight",
+                    "overlay weight is outside the allowed range for overlay_mode",
+                    allocator_id=entry.allocator_id,
+                    field=f"score.overlay_weights[{index}]",
+                )
+    quantile = _optional_float(score.get("downside_penalty_quantile", 0.2))
+    if quantile is None or not 0.0 < quantile < 1.0:
+        _add_issue(
+            issues,
+            "error",
+            "invalid_downside_penalty_quantile",
+            "score.downside_penalty_quantile must be in (0, 1)",
+            allocator_id=entry.allocator_id,
+            field="score.downside_penalty_quantile",
+        )
+    decision_timing = str(score.get("decision_timing") or "all")
+    if decision_timing not in DECISION_TIMINGS:
+        _add_issue(
+            issues,
+            "error",
+            "invalid_decision_timing",
+            f"score.decision_timing must be one of {sorted(DECISION_TIMINGS)}",
+            allocator_id=entry.allocator_id,
+            field="score.decision_timing",
+        )
+    condition_primary_mode = str(score.get("condition_primary_mode") or "current")
+    if condition_primary_mode not in CONDITION_PRIMARY_MODES:
+        _add_issue(
+            issues,
+            "error",
+            "invalid_condition_primary_mode",
+            f"score.condition_primary_mode must be one of {sorted(CONDITION_PRIMARY_MODES)}",
+            allocator_id=entry.allocator_id,
+            field="score.condition_primary_mode",
+        )
+    condition = score.get("condition")
+    if condition is not None:
+        if not isinstance(condition, dict):
+            _add_issue(
+                issues,
+                "error",
+                "invalid_overlay_condition",
+                "score.condition must be an object",
+                allocator_id=entry.allocator_id,
+                field="score.condition",
+            )
+        else:
+            _check_existing_path(
+                condition.get("schedule_path"),
+                issues=issues,
+                allocator_id=entry.allocator_id,
+                field="score.condition.schedule_path",
+                project_root=project_root,
+            )
+            if not str(condition.get("column") or ""):
+                _add_issue(
+                    issues,
+                    "error",
+                    "missing_overlay_condition_column",
+                    "score.condition.column is required",
+                    allocator_id=entry.allocator_id,
+                    field="score.condition.column",
+                )
+            values = condition.get("values")
+            if not isinstance(values, list) or not values:
+                _add_issue(
+                    issues,
+                    "error",
+                    "missing_overlay_condition_values",
+                    "score.condition.values must be a non-empty list",
+                    allocator_id=entry.allocator_id,
+                    field="score.condition.values",
+                )
+    postprocessors = score.get("postprocessors", [])
+    if postprocessors is None:
+        postprocessors = []
+    if not isinstance(postprocessors, list):
+        _add_issue(
+            issues,
+            "error",
+            "invalid_score_postprocessors",
+            "score.postprocessors must be a list",
+            allocator_id=entry.allocator_id,
+            field="score.postprocessors",
+        )
+        return
+    for index, postprocessor in enumerate(postprocessors):
+        field = f"score.postprocessors[{index}]"
+        if not isinstance(postprocessor, dict):
+            _add_issue(
+                issues,
+                "error",
+                "invalid_score_postprocessor",
+                "score postprocessor must be an object",
+                allocator_id=entry.allocator_id,
+                field=field,
+            )
+            continue
+        postprocessor_type = str(postprocessor.get("type") or "")
+        if postprocessor_type not in {
+            "optimizer_risk_penalty_join",
+            "target_weight_cap_join",
+        }:
+            _add_issue(
+                issues,
+                "error",
+                "invalid_score_postprocessor_type",
+                (
+                    "score postprocessor type must be optimizer_risk_penalty_join "
+                    "or target_weight_cap_join"
+                ),
+                allocator_id=entry.allocator_id,
+                field=f"{field}.type",
+            )
+            continue
+        if postprocessor_type == "optimizer_risk_penalty_join":
+            _check_score_directory(
+                postprocessor.get("penalty_dir"),
+                issues=issues,
+                allocator_id=entry.allocator_id,
+                field=f"{field}.penalty_dir",
+                project_root=project_root,
+            )
+            if not str(
+                postprocessor.get("penalty_column") or "optimizer_risk_penalty_bps"
+            ):
+                _add_issue(
+                    issues,
+                    "error",
+                    "missing_score_postprocessor_penalty_column",
+                    "optimizer_risk_penalty_join requires a penalty_column",
+                    allocator_id=entry.allocator_id,
+                    field=f"{field}.penalty_column",
+                )
+            fill_value = _optional_float(postprocessor.get("fill_value", 0.0))
+            if fill_value is None or fill_value < 0:
+                _add_issue(
+                    issues,
+                    "error",
+                    "invalid_score_postprocessor_fill_value",
+                    "optimizer_risk_penalty_join fill_value must be non-negative",
+                    allocator_id=entry.allocator_id,
+                    field=f"{field}.fill_value",
+                )
+            continue
+        _check_score_directory(
+            postprocessor.get("cap_dir"),
+            issues=issues,
+            allocator_id=entry.allocator_id,
+            field=f"{field}.cap_dir",
+            project_root=project_root,
+        )
+        if not str(postprocessor.get("cap_column") or "max_target_weight"):
+            _add_issue(
+                issues,
+                "error",
+                "missing_score_postprocessor_cap_column",
+                "target_weight_cap_join requires a cap_column",
+                allocator_id=entry.allocator_id,
+                field=f"{field}.cap_column",
+            )
+        fill_value = postprocessor.get("fill_value")
+        if fill_value is not None:
+            cap_fill_value = _optional_float(fill_value)
+            if cap_fill_value is None or not 0.0 <= cap_fill_value <= 1.0:
+                _add_issue(
+                    issues,
+                    "error",
+                    "invalid_score_postprocessor_fill_value",
+                    "target_weight_cap_join fill_value must be in [0, 1]",
+                    allocator_id=entry.allocator_id,
+                    field=f"{field}.fill_value",
+                )
 
 
 def _validate_execution_policy(
@@ -532,6 +833,16 @@ def _validate_execution_policy(
             allocator_id=entry.allocator_id,
             field="execution_policy.no_trade_weight_band",
         )
+    target_cap_mode = str(policy.get("optimizer_target_cap_mode") or "clip")
+    if target_cap_mode not in {"clip", "redistribute", "replace"}:
+        _add_issue(
+            issues,
+            "error",
+            "invalid_optimizer_target_cap_mode",
+            "execution_policy.optimizer_target_cap_mode must be clip, redistribute, or replace",
+            allocator_id=entry.allocator_id,
+            field="execution_policy.optimizer_target_cap_mode",
+        )
 
 
 def _validate_risk_controls(
@@ -540,6 +851,31 @@ def _validate_risk_controls(
     issues: list[AllocatorRegistryIssue],
     project_root: Path,
 ) -> None:
+    if _score_construction(entry) == "score_overlay":
+        event_gate = entry.risk_controls.get("event_state_gate")
+        if isinstance(event_gate, dict) and event_gate.get("schedule_path"):
+            _check_existing_path(
+                event_gate.get("schedule_path"),
+                issues=issues,
+                allocator_id=entry.allocator_id,
+                field="risk_controls.event_state_gate.schedule_path",
+                project_root=project_root,
+            )
+        factor_health = entry.risk_controls.get("factor_health")
+        if isinstance(factor_health, dict) and factor_health.get("mode") not in (
+            None,
+            "off",
+            "lagged_shrink",
+        ):
+            _add_issue(
+                issues,
+                "error",
+                "invalid_factor_health_mode",
+                "score-overlay factor_health.mode must be off or lagged_shrink",
+                allocator_id=entry.allocator_id,
+                field="risk_controls.factor_health.mode",
+            )
+        return
     event_gate = entry.risk_controls.get("event_state_gate")
     if not isinstance(event_gate, dict):
         _add_issue(
@@ -594,7 +930,12 @@ def _validate_cost_model(
     *,
     issues: list[AllocatorRegistryIssue],
 ) -> None:
-    for key in ("commission_bps", "slippage_bps", "sell_stamp_tax_bps", "min_commission"):
+    for key in (
+        "commission_bps",
+        "slippage_bps",
+        "sell_stamp_tax_bps",
+        "min_commission",
+    ):
         value = _optional_float(entry.cost_model.get(key))
         if value is None or value < 0:
             _add_issue(
@@ -895,6 +1236,7 @@ def _allocator_row(entry: AllocatorRegistryEntry) -> dict[str, Any]:
         "display_name": entry.display_name,
         "status": entry.status,
         "validation_status": entry.validation.get("status"),
+        "score_construction": _score_construction(entry),
         "feature_count": len(features) if isinstance(features, list) else 0,
         "reference_count": len(entry.references),
     }
@@ -940,6 +1282,48 @@ def _check_existing_path(
             "error",
             "missing_artifact",
             f"artifact does not exist: {value}",
+            allocator_id=allocator_id,
+            field=field,
+        )
+
+
+def _check_score_directory(
+    value: object,
+    *,
+    issues: list[AllocatorRegistryIssue],
+    allocator_id: str,
+    field: str,
+    project_root: Path,
+) -> None:
+    if value in (None, ""):
+        _add_issue(
+            issues,
+            "error",
+            "missing_score_directory",
+            f"{field} is required",
+            allocator_id=allocator_id,
+            field=field,
+        )
+        return
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = project_root / path
+    if not path.is_dir():
+        _add_issue(
+            issues,
+            "error",
+            "missing_score_directory",
+            f"score directory does not exist: {value}",
+            allocator_id=allocator_id,
+            field=field,
+        )
+        return
+    if not any(path.glob("score_*.parquet")):
+        _add_issue(
+            issues,
+            "warning",
+            "empty_score_directory",
+            f"score directory has no score_*.parquet files: {value}",
             allocator_id=allocator_id,
             field=field,
         )
