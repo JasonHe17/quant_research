@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -26,7 +27,7 @@ from quant_research.models import (  # noqa: E402
     evaluate_cross_sectional_predictions,
     train_lightgbm_regressor,
 )
-from quant_research.portfolio import load_candidate_factors  # noqa: E402
+from quant_research.portfolio import CandidateFactor, load_candidate_factors  # noqa: E402
 
 SAMPLE_WEIGHT_COLUMN = "sample_weight"
 
@@ -75,15 +76,30 @@ def run_ml_factor_challenger(args: argparse.Namespace) -> dict[str, Any]:
         for path in score_dir.glob("score_*.parquet"):
             path.unlink()
 
-    candidates = load_candidate_factors(
+    raw_candidates = load_candidate_factors(
         Path(args.admission_report),
         statuses=tuple(args.statuses),
         evaluation_roles=tuple(args.evaluation_roles),
         include_features=tuple(args.include_features),
     )
+    candidates, excluded_label_derived_features = _filter_label_derived_candidates(
+        raw_candidates,
+        label_column=args.label_column,
+        include_features=tuple(args.include_features),
+        allow_label_derived_features=args.allow_label_derived_features,
+    )
     feature_columns = tuple(factor.feature for factor in candidates)
     directions = {factor.feature: factor.direction for factor in candidates}
     dataset_paths = _dataset_paths(args)
+    _validate_dataset_columns(
+        dataset_paths,
+        required_columns=(
+            "timestamp",
+            "instrument_id",
+            args.label_column,
+            *feature_columns,
+        ),
+    )
     folds = tuple(_parse_fold(value) for value in args.folds) or _default_folds(args)
     commands = {
         "backtest_example": _backtest_example_command(args, score_dir),
@@ -149,6 +165,7 @@ def run_ml_factor_challenger(args: argparse.Namespace) -> dict[str, Any]:
         "status": "completed",
         "params": _summary_params(args),
         "candidate_features": list(feature_columns),
+        "excluded_label_derived_features": excluded_label_derived_features,
         "folds": fold_summaries,
         "oos_metrics": oos_metrics,
         "redundancy": {
@@ -387,6 +404,65 @@ def _prepare_supervised_frame(
     )
 
 
+def _filter_label_derived_candidates(
+    candidates: tuple[CandidateFactor, ...],
+    *,
+    label_column: str,
+    include_features: tuple[str, ...],
+    allow_label_derived_features: bool,
+) -> tuple[tuple[CandidateFactor, ...], list[str]]:
+    unsafe = [
+        candidate.feature
+        for candidate in candidates
+        if _is_label_derived_feature(candidate.feature, label_column=label_column)
+    ]
+    if allow_label_derived_features or not unsafe:
+        return candidates, []
+    explicit_unsafe = sorted(set(unsafe) & set(include_features))
+    if explicit_unsafe:
+        raise ValueError(
+            "explicit include_features contains label-derived columns: "
+            f"{explicit_unsafe}; rerun with --allow-label-derived-features only "
+            "for controlled leakage diagnostics"
+        )
+    unsafe_set = set(unsafe)
+    filtered = tuple(
+        candidate for candidate in candidates if candidate.feature not in unsafe_set
+    )
+    if not filtered:
+        raise ValueError(
+            "all candidate features were excluded as label-derived columns: "
+            f"{sorted(unsafe)}"
+        )
+    return filtered, sorted(unsafe)
+
+
+def _is_label_derived_feature(feature: str, *, label_column: str) -> bool:
+    if not feature:
+        return True
+    blocked_exact = {
+        label_column,
+        f"{label_column}_rank",
+        "forward_return",
+        "forward_return_rank",
+        "entry_timestamp",
+        "entry_price",
+        "exit_timestamp",
+        "exit_price",
+    }
+    if feature in blocked_exact:
+        return True
+    blocked_prefixes = (
+        f"{label_column}_",
+        "forward_return_",
+        "entry_",
+        "exit_",
+    )
+    if feature.startswith(blocked_prefixes):
+        return True
+    return feature.endswith(("_exit_timestamp", "_exit_price", "_rank"))
+
+
 def _cross_sectional_transform(
     frame: pd.DataFrame,
     *,
@@ -486,6 +562,37 @@ def _load_window(
         pd.concat(frames, ignore_index=True),
         max_rows=max_rows,
         seed=seed,
+    )
+
+
+def _validate_dataset_columns(
+    dataset_paths: list[Path],
+    *,
+    required_columns: tuple[str, ...],
+) -> None:
+    required = tuple(dict.fromkeys(required_columns))
+    missing_by_path: list[dict[str, object]] = []
+    for path in dataset_paths:
+        columns = set(pq.read_schema(path).names)
+        missing = [column for column in required if column not in columns]
+        if missing:
+            missing_by_path.append(
+                {
+                    "path": str(path),
+                    "missing_columns": missing,
+                }
+            )
+    if not missing_by_path:
+        return
+    preview = missing_by_path[:5]
+    suffix = (
+        f"; additional_bad_partitions={len(missing_by_path) - len(preview)}"
+        if len(missing_by_path) > len(preview)
+        else ""
+    )
+    raise ValueError(
+        "dataset partitions are missing required model columns: "
+        f"{preview}{suffix}"
     )
 
 
@@ -964,6 +1071,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, Any]:
         "statuses": args.statuses,
         "evaluation_roles": args.evaluation_roles,
         "include_features": args.include_features,
+        "allow_label_derived_features": args.allow_label_derived_features,
         "label_column": args.label_column,
         "score_transform": args.score_transform,
         "score_mode": args.score_mode,
@@ -1066,6 +1174,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--statuses", nargs="+", default=["candidate"])
     parser.add_argument("--evaluation-roles", nargs="+", default=["alpha_rank"])
     parser.add_argument("--include-features", nargs="+", default=[])
+    parser.add_argument(
+        "--allow-label-derived-features",
+        action="store_true",
+        help=(
+            "allow columns derived from labels or execution metadata; intended "
+            "only for controlled leakage diagnostics"
+        ),
+    )
     parser.add_argument("--score-transform", choices=("rank", "zscore"), default="rank")
     parser.add_argument(
         "--score-mode",

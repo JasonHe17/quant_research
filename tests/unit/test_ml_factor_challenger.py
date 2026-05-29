@@ -133,6 +133,76 @@ def test_apply_sample_weights_emphasizes_cross_sectional_tails() -> None:
     assert output["sample_weight"].tolist() == pytest.approx([3.0, 1.0, 1.0, 3.0])
 
 
+def test_filter_label_derived_candidates_drops_automatic_feature_leakage() -> None:
+    module = _load_module()
+    candidates = (
+        module.CandidateFactor("alpha_safe", 1, 0.1),
+        module.CandidateFactor("forward_return_48b_exit_price", 1, 0.2),
+        module.CandidateFactor("forward_return_48b_rank", 1, 0.3),
+    )
+
+    filtered, excluded = module._filter_label_derived_candidates(
+        candidates,
+        label_column="forward_return_48b",
+        include_features=(),
+        allow_label_derived_features=False,
+    )
+
+    assert [candidate.feature for candidate in filtered] == ["alpha_safe"]
+    assert excluded == ["forward_return_48b_exit_price", "forward_return_48b_rank"]
+
+
+def test_filter_label_derived_candidates_rejects_explicit_leakage() -> None:
+    module = _load_module()
+    candidates = (
+        module.CandidateFactor("forward_return_48b_exit_price", 1, 0.2),
+    )
+
+    with pytest.raises(ValueError, match="explicit include_features"):
+        module._filter_label_derived_candidates(
+            candidates,
+            label_column="forward_return_48b",
+            include_features=("forward_return_48b_exit_price",),
+            allow_label_derived_features=False,
+        )
+
+
+def test_validate_dataset_columns_reports_missing_partition_columns(tmp_path) -> None:
+    module = _load_module()
+    good = tmp_path / "dataset_2024_01.parquet"
+    bad = tmp_path / "dataset_2024_02.parquet"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-01T09:35:00+08:00",
+                "instrument_id": "a",
+                "forward_return_48b": 0.01,
+                "alpha": 1.0,
+            }
+        ]
+    ).to_parquet(good, index=False)
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-02-01T09:35:00+08:00",
+                "instrument_id": "a",
+                "forward_return_48b": 0.01,
+            }
+        ]
+    ).to_parquet(bad, index=False)
+
+    with pytest.raises(ValueError, match="missing required model columns"):
+        module._validate_dataset_columns(
+            [good, bad],
+            required_columns=(
+                "timestamp",
+                "instrument_id",
+                "forward_return_48b",
+                "alpha",
+            ),
+        )
+
+
 def test_primary_pool_rerank_keeps_only_primary_top_ranked_names(tmp_path) -> None:
     module = _load_module()
     primary_path = tmp_path / "score_2024_01.parquet"
