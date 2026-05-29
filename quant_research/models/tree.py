@@ -22,6 +22,7 @@ class TreeBaselineConfig:
     early_stopping_rounds: int = 25
     seed: int = 42
     num_threads: int = 4
+    sample_weight_column: str | None = None
     extra_params: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -178,6 +179,7 @@ def train_lightgbm_regressor(
     train_set = lgb.Dataset(
         train.loc[:, feature_columns],
         label=train[config.label_column].astype(float),
+        weight=_sample_weight_values(train, config),
         feature_name=list(feature_columns),
         free_raw_data=False,
     )
@@ -190,6 +192,7 @@ def train_lightgbm_regressor(
             lgb.Dataset(
                 valid.loc[:, feature_columns],
                 label=valid[config.label_column].astype(float),
+                weight=_sample_weight_values(valid, config),
                 reference=train_set,
                 feature_name=list(feature_columns),
                 free_raw_data=False,
@@ -291,7 +294,29 @@ def _feature_columns_or_infer(
     if config.feature_columns:
         _require_columns(frame, config.feature_columns)
         return config.feature_columns
-    return infer_feature_columns(frame, label_column=config.label_column)
+    exclude_columns = (
+        (config.sample_weight_column,) if config.sample_weight_column else ()
+    )
+    return infer_feature_columns(
+        frame,
+        label_column=config.label_column,
+        exclude_columns=exclude_columns,
+    )
+
+
+def _sample_weight_values(
+    frame: pd.DataFrame,
+    config: TreeBaselineConfig,
+) -> pd.Series | None:
+    if not config.sample_weight_column:
+        return None
+    _require_columns(frame, (config.sample_weight_column,))
+    weights = pd.to_numeric(frame[config.sample_weight_column], errors="coerce")
+    if weights.isna().any():
+        raise ValueError("sample weights must be numeric and non-null")
+    if (weights < 0).any():
+        raise ValueError("sample weights must be non-negative")
+    return weights.astype(float)
 
 
 def _nullable_float(value: object) -> float | None:
