@@ -104,6 +104,18 @@ The standard methods are:
 - `decorrelated`: non-negative ridge-adjusted inverse-correlation weights using
   the factor correlation matrix.
 
+By default, only factors with `evaluation_role=alpha_rank` enter this ordinary
+score-construction path. Portfolio-native signals such as `risk_penalty`,
+`entry_filter`, `state_allocator`, and `event_overlay` must be selected
+explicitly with `--evaluation-roles` and should normally use a role-specific
+validation path instead of a linear alpha blend.
+
+The historical transform is `--score-transform rank`. For experiments where
+factor magnitude matters, use `--score-transform zscore` to standardize each
+factor cross-sectionally before applying direction and weights. Keep `rank` as
+the default comparator in promotion-grade runs unless the experiment explicitly
+tests transform choice.
+
 ## Smoke Run
 
 Use one partition before running larger windows:

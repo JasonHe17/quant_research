@@ -282,10 +282,14 @@ def _scenario_command(
         *args.registry_statuses,
         "--statuses",
         *args.admission_statuses,
+        "--evaluation-roles",
+        *args.evaluation_roles,
         "--output-dir",
         str(_scenario_output_dir(args, scenario)),
         "--methods",
         *args.methods,
+        "--score-transform",
+        args.score_transform,
         "--partition-start",
         scenario.partition_start,
         "--partition-end",
@@ -1282,7 +1286,9 @@ def _validation_summary(
             "enforce_registry": args.enforce_registry,
             "registry_statuses": args.registry_statuses,
             "admission_statuses": args.admission_statuses,
+            "evaluation_roles": args.evaluation_roles,
             "methods": args.methods,
+            "score_transform": args.score_transform,
             "primary_method": args.primary_method,
             "backtest_policy_set": args.backtest_policy_set,
             "backtest_policies": args.backtest_policies,
@@ -1769,6 +1775,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="factor admission statuses eligible for score construction",
     )
     parser.add_argument(
+        "--evaluation-roles",
+        nargs="+",
+        choices=(
+            "alpha_rank",
+            "risk_penalty",
+            "entry_filter",
+            "state_allocator",
+            "event_overlay",
+        ),
+        default=["alpha_rank"],
+        help=(
+            "factor evaluation roles eligible for ordinary score construction; "
+            "defaults to alpha_rank so portfolio-native signals stay out of "
+            "linear alpha blends unless explicitly selected"
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         default="runs/candidate_factor_portfolios/partial_rebalance_validation",
     )
@@ -1793,6 +1816,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs="+",
         default=[],
         help="optional feature allowlist passed to candidate-factor portfolio runs",
+    )
+    parser.add_argument(
+        "--score-transform",
+        choices=("rank", "zscore"),
+        default="rank",
+        help=(
+            "cross-sectional transform for candidate-factor score construction; "
+            "rank preserves historical behavior"
+        ),
     )
     parser.add_argument("--primary-method", default="decorrelated")
     parser.add_argument("--policy", default="partial_rebalance_daily")

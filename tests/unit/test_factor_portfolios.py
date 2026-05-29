@@ -99,6 +99,47 @@ def test_load_candidate_factors_can_filter_shared_admission_features(
     assert factors == (CandidateFactor("alpha_b", -1, -0.01),)
 
 
+def test_load_candidate_factors_filters_evaluation_roles_by_default(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "admission.json"
+    path.write_text(
+        json.dumps(
+            {
+                "factors": [
+                    {
+                        "feature": "alpha_rank_feature",
+                        "evaluation_role": "alpha_rank",
+                        "admission_status": "candidate",
+                        "direction": "long",
+                        "spearman_rank_ic_mean": 0.02,
+                    },
+                    {
+                        "feature": "risk_penalty_feature",
+                        "evaluation_role": "risk_penalty",
+                        "admission_status": "candidate",
+                        "direction": "invert",
+                        "spearman_rank_ic_mean": -0.01,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    factors = load_candidate_factors(path)
+
+    assert factors == (CandidateFactor("alpha_rank_feature", 1, 0.02),)
+
+    risk_factors = load_candidate_factors(
+        path,
+        evaluation_roles=("risk_penalty",),
+    )
+    assert risk_factors == (
+        CandidateFactor("risk_penalty_feature", -1, -0.01, "risk_penalty"),
+    )
+
+
 def test_candidate_factor_registry_filter_excludes_unregistered_and_rejected(
     tmp_path: Path,
 ) -> None:
@@ -133,6 +174,19 @@ def test_candidate_factor_registry_filter_excludes_unregistered_and_rejected(
                         "description": "test",
                         "hypothesis": "test",
                     },
+                    {
+                        "factor_id": "alpha_risk",
+                        "display_name": "alpha_risk",
+                        "family": "risk",
+                        "status": "candidate",
+                        "expected_direction": "invert",
+                        "evaluation_role": "risk_penalty",
+                        "feature_columns": ["alpha_risk"],
+                        "required_inputs": ["close_price"],
+                        "frequency": "5m",
+                        "description": "test",
+                        "hypothesis": "test",
+                    },
                 ],
             }
         ),
@@ -145,6 +199,7 @@ def test_candidate_factor_registry_filter_excludes_unregistered_and_rejected(
             "enforce_registry": True,
             "registry": str(registry_path),
             "registry_statuses": ["candidate", "promoted"],
+            "evaluation_roles": ["alpha_rank"],
         },
     )()
 
@@ -153,6 +208,7 @@ def test_candidate_factor_registry_filter_excludes_unregistered_and_rejected(
         (
             CandidateFactor("alpha_a", 1, 0.02),
             CandidateFactor("alpha_b", 1, 0.01),
+            CandidateFactor("alpha_risk", -1, -0.01, "risk_penalty"),
             CandidateFactor("alpha_unregistered", 1, 0.01),
         ),
     )
@@ -161,6 +217,7 @@ def test_candidate_factor_registry_filter_excludes_unregistered_and_rejected(
     assert summary["output_candidate_count"] == 1
     assert summary["excluded_features"] == [
         {"feature": "alpha_b", "reason": "registry_status=reject"},
+        {"feature": "alpha_risk", "reason": "evaluation_role=risk_penalty"},
         {"feature": "alpha_unregistered", "reason": "unregistered"},
     ]
 
@@ -221,6 +278,27 @@ def test_build_composite_scores_ranks_and_orients_cross_sectionally() -> None:
 
     assert scores.iloc[0]["instrument_id"] == "c"
     assert scores.iloc[0]["score"] > scores.iloc[-1]["score"]
+
+
+def test_build_composite_scores_supports_zscore_transform() -> None:
+    frame = pd.DataFrame(
+        [
+            {"timestamp": "t0", "instrument_id": "a", "alpha_a": 1.0},
+            {"timestamp": "t0", "instrument_id": "b", "alpha_a": 2.0},
+            {"timestamp": "t0", "instrument_id": "c", "alpha_a": 10.0},
+        ]
+    )
+
+    scores = build_composite_scores(
+        frame,
+        candidates=(CandidateFactor("alpha_a", 1, 0.02),),
+        weights={"alpha_a": 1.0},
+        score_transform="zscore",
+    )
+
+    assert scores.iloc[0]["instrument_id"] == "c"
+    assert scores.iloc[0]["score"] > 1.0
+    assert scores.iloc[-1]["instrument_id"] == "a"
 
 
 def test_build_composite_scores_applies_factor_health_scales() -> None:
@@ -1295,6 +1373,7 @@ def _portfolio_args(**overrides: object) -> object:
         "registry": "configs/factors/factor_registry.json",
         "enforce_registry": True,
         "registry_statuses": ["candidate", "promoted"],
+        "evaluation_roles": ["alpha_rank"],
         "factor_correlation": "correlation.csv",
         "methods": ["decorrelated"],
         "statuses": ["candidate"],
@@ -1306,6 +1385,7 @@ def _portfolio_args(**overrides: object) -> object:
         "output_dir": "runs",
         "factor_max_weight": None,
         "factor_max_contribution_share": None,
+        "score_transform": "rank",
         "factor_health_mode": "off",
         "factor_health_lookback_windows": 20,
         "factor_health_ensemble_lookbacks": None,

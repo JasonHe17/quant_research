@@ -102,6 +102,7 @@ def main() -> None:
         candidates = load_candidate_factors(
             Path(args.admission_report),
             statuses=tuple(args.statuses),
+            evaluation_roles=tuple(args.evaluation_roles),
             include_features=tuple(args.include_features),
         )
         registry_filter = _registry_filter_summary(args, candidates)
@@ -138,6 +139,7 @@ def main() -> None:
             diagnostics_top_n=args.score_diagnostics_top_n,
             diagnostics_label_column=args.label_column,
             forecast_calibration_config=_forecast_calibration_config(args),
+            score_transform=args.score_transform,
         )
         summary = {
             "params": _summary_params(args),
@@ -241,6 +243,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
         "registry": args.registry,
         "enforce_registry": args.enforce_registry,
         "registry_statuses": args.registry_statuses,
+        "evaluation_roles": args.evaluation_roles,
         "factor_correlation": args.factor_correlation,
         "methods": args.methods,
         "statuses": args.statuses,
@@ -251,6 +254,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
         "run_backtests": args.run_backtests,
         "factor_max_weight": args.factor_max_weight,
         "factor_max_contribution_share": args.factor_max_contribution_share,
+        "score_transform": args.score_transform,
         "factor_health_mode": args.factor_health_mode,
         "factor_health_lookback_windows": args.factor_health_lookback_windows,
         "factor_health_ensemble_lookbacks": args.factor_health_ensemble_lookbacks,
@@ -366,6 +370,7 @@ def _registry_filter_summary(
             "enabled": False,
             "registry": args.registry,
             "registry_statuses": args.registry_statuses,
+            "evaluation_roles": args.evaluation_roles,
             "input_candidate_count": len(candidates),
             "output_candidate_count": len(candidates),
             "included_features": [factor.feature for factor in candidates],
@@ -374,34 +379,44 @@ def _registry_filter_summary(
         }
     registry = load_factor_registry(args.registry)
     feature_status: dict[str, str] = {}
+    feature_role: dict[str, str] = {}
     for entry in registry.entries:
         for feature in entry.feature_columns:
             feature_status[feature] = entry.status
+            feature_role[feature] = entry.evaluation_role
     allowed_statuses = set(args.registry_statuses)
+    allowed_roles = set(args.evaluation_roles)
     included: list[CandidateFactor] = []
     excluded: list[dict[str, str]] = []
     for factor in candidates:
         status = feature_status.get(factor.feature)
-        if status in allowed_statuses:
+        role = feature_role.get(factor.feature, factor.evaluation_role)
+        if status in allowed_statuses and role in allowed_roles:
             included.append(factor)
         else:
+            if status is None:
+                reason = "unregistered"
+            elif status not in allowed_statuses:
+                reason = f"registry_status={status}"
+            else:
+                reason = f"evaluation_role={role}"
             excluded.append(
                 {
                     "feature": factor.feature,
-                    "reason": "unregistered"
-                    if status is None
-                    else f"registry_status={status}",
+                    "reason": reason,
                 }
             )
     if not included:
         raise ValueError(
             "no admission factors remain after registry filtering; "
-            f"registry={args.registry}, allowed_statuses={sorted(allowed_statuses)}"
+            f"registry={args.registry}, allowed_statuses={sorted(allowed_statuses)}, "
+            f"allowed_roles={sorted(allowed_roles)}"
         )
     return {
         "enabled": True,
         "registry": args.registry,
         "registry_statuses": list(args.registry_statuses),
+        "evaluation_roles": list(args.evaluation_roles),
         "input_candidate_count": len(candidates),
         "output_candidate_count": len(included),
         "included_features": [factor.feature for factor in included],
@@ -1285,6 +1300,23 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--statuses", nargs="+", default=["candidate"])
     parser.add_argument(
+        "--evaluation-roles",
+        nargs="+",
+        choices=(
+            "alpha_rank",
+            "risk_penalty",
+            "entry_filter",
+            "state_allocator",
+            "event_overlay",
+        ),
+        default=["alpha_rank"],
+        help=(
+            "factor evaluation roles eligible for ordinary score construction; "
+            "defaults to alpha_rank so portfolio-native signals are not "
+            "accidentally blended as standalone rank alphas"
+        ),
+    )
+    parser.add_argument(
         "--include-features",
         nargs="+",
         default=[],
@@ -1309,6 +1341,16 @@ def _parse_args() -> argparse.Namespace:
         "--factor-max-contribution-share",
         type=float,
         help="cap each row-level factor contribution as a share of absolute contribution",
+    )
+    parser.add_argument(
+        "--score-transform",
+        choices=("rank", "zscore"),
+        default="rank",
+        help=(
+            "cross-sectional transform applied before factor weighting; rank "
+            "preserves the historical behavior, zscore keeps standardized "
+            "relative magnitude"
+        ),
     )
     parser.add_argument(
         "--factor-health-mode",

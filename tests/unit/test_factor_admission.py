@@ -91,6 +91,73 @@ def test_factor_admission_supports_inverted_direction() -> None:
     assert row["admission_status"] == "candidate"
 
 
+def test_factor_admission_allows_sparse_event_overlay_role() -> None:
+    factor_summary = pd.DataFrame(
+        [
+            {
+                "feature": "alpha_eod",
+                "coverage": 0.12,
+                "timestamp_count": 6,
+                "sample_count": 600,
+            }
+        ]
+    )
+    by_timestamp = pd.DataFrame(
+        _rows("alpha_eod", [0.03, 0.02, 0.04, 0.03, 0.02, 0.04], 0.003, 0.20)
+    )
+
+    report = build_factor_admission_report(
+        benchmark_summary={"status": "completed", "acceptance": {}, "backtests": {}},
+        factor_summary=factor_summary,
+        by_timestamp=by_timestamp,
+        thresholds=FactorAdmissionThresholds(
+            min_timestamp_count=6,
+            min_years_observed=3,
+            min_stable_years=2,
+            min_abs_rank_ic_t_stat=1.0,
+            min_directional_ic_hit_rate=0.5,
+        ),
+        feature_roles={"alpha_eod": "event_overlay"},
+    )
+
+    row = report["factors"][0]
+    assert row["evaluation_role"] == "event_overlay"
+    assert row["admission_status"] == "candidate"
+    assert row["failed_checks"] == []
+    assert row["informational_failed_checks"] == ["coverage"]
+    assert report["summary"]["role_counts"]["event_overlay"]["candidate"] == 1
+
+
+def test_factor_admission_treats_state_allocator_rank_ic_as_diagnostic() -> None:
+    factor_summary = pd.DataFrame(
+        [{"feature": "market_state", "coverage": 1.0, "timestamp_count": 6, "sample_count": 600}]
+    )
+    by_timestamp = pd.DataFrame(
+        _rows("market_state", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], -0.001, 0.99)
+    )
+
+    report = build_factor_admission_report(
+        benchmark_summary={"status": "completed", "acceptance": {}, "backtests": {}},
+        factor_summary=factor_summary,
+        by_timestamp=by_timestamp,
+        thresholds=FactorAdmissionThresholds(
+            min_timestamp_count=6,
+            min_years_observed=3,
+            min_stable_years=2,
+            min_abs_rank_ic_mean=0.001,
+            min_abs_rank_ic_t_stat=1.0,
+            min_directional_ic_hit_rate=0.5,
+        ),
+        feature_roles={"market_state": "state_allocator"},
+    )
+
+    row = report["factors"][0]
+    assert row["evaluation_role"] == "state_allocator"
+    assert row["admission_status"] == "candidate"
+    assert "abs_rank_ic_mean" in row["informational_failed_checks"]
+    assert "cost_adjusted_spread" in row["informational_failed_checks"]
+
+
 def _rows(
     feature: str,
     ic_values: list[float],

@@ -76,6 +76,34 @@ def test_factor_registry_accepts_structured_research_memory() -> None:
     assert report.status == "pass"
 
 
+def test_factor_registry_accepts_portfolio_native_evaluation_role() -> None:
+    entry = _entry(
+        "alpha_risk_penalty",
+        "alpha_risk_penalty_feature",
+        evaluation_role="risk_penalty",
+    )
+    registry = FactorRegistry(registry_name="test", version=1, entries=(entry,))
+
+    report = validate_factor_registry(registry)
+
+    assert report.status == "pass"
+    assert report.entries[0]["evaluation_role"] == "risk_penalty"
+
+
+def test_factor_registry_rejects_unknown_evaluation_role() -> None:
+    entry = _entry(
+        "alpha_bad_role",
+        "alpha_bad_role_feature",
+        evaluation_role="not_a_role",
+    )
+    registry = FactorRegistry(registry_name="test", version=1, entries=(entry,))
+
+    report = validate_factor_registry(registry)
+
+    assert report.status == "fail"
+    assert any(issue.code == "unknown_evaluation_role" for issue in report.issues)
+
+
 def test_factor_research_memory_matches_rejected_similar_factor() -> None:
     rejected = _entry(
         "intraday_vwap_deviation_5m_w48",
@@ -233,6 +261,7 @@ def _entry(
     required_inputs: tuple[str, ...] = ("close_price",),
     lookback_bars: int | None = None,
     research_memory: dict[str, object] | None = None,
+    evaluation_role: str = "alpha_rank",
 ) -> FactorRegistryEntry:
     return FactorRegistryEntry(
         factor_id=factor_id,
@@ -261,4 +290,5 @@ def _entry(
         references=("tests",),
         point_in_time_safe=point_in_time_safe,
         live_available=True,
+        evaluation_role=evaluation_role,
     )

@@ -12,6 +12,17 @@ from typing import Any
 import pandas as pd
 
 
+FACTOR_ADMISSION_ROLES = frozenset(
+    {
+        "alpha_rank",
+        "risk_penalty",
+        "entry_filter",
+        "state_allocator",
+        "event_overlay",
+    }
+)
+
+
 @dataclass(frozen=True, slots=True)
 class FactorAdmissionThresholds:
     """Thresholds used to classify factors after standard acceptance."""
@@ -54,10 +65,12 @@ def build_factor_admission_report(
     factor_summary: pd.DataFrame,
     by_timestamp: pd.DataFrame,
     thresholds: FactorAdmissionThresholds | None = None,
+    feature_roles: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build a machine-readable factor admission report."""
 
     thresholds = thresholds or FactorAdmissionThresholds()
+    feature_roles = _normalize_feature_roles(feature_roles)
     _require_columns(factor_summary, ("feature",))
     _require_columns(
         by_timestamp,
@@ -84,6 +97,7 @@ def build_factor_admission_report(
             group=group,
             summary=summary_by_feature.get(str(feature), {}),
             thresholds=thresholds,
+            evaluation_role=feature_roles.get(str(feature), "alpha_rank"),
         )
         for feature, group in by_timestamp.groupby("feature", sort=True)
     ]
@@ -98,6 +112,7 @@ def build_factor_admission_report(
         status: sum(1 for row in rows if row["admission_status"] == status)
         for status in ("candidate", "watchlist", "reject")
     }
+    role_counts = _role_status_counts(rows)
     acceptance = benchmark_summary.get("acceptance", {})
     backtests = benchmark_summary.get("backtests", {})
     return {
@@ -114,6 +129,7 @@ def build_factor_admission_report(
             "candidate_count": status_counts["candidate"],
             "watchlist_count": status_counts["watchlist"],
             "reject_count": status_counts["reject"],
+            "role_counts": role_counts,
         },
         "backtest_snapshot": _backtest_snapshot(backtests),
         "factors": rows,
@@ -151,6 +167,7 @@ def _factor_admission_row(
     group: pd.DataFrame,
     summary: dict[str, Any],
     thresholds: FactorAdmissionThresholds,
+    evaluation_role: str,
 ) -> dict[str, Any]:
     rank_ic = pd.to_numeric(group["spearman_rank_ic"], errors="coerce").dropna()
     rank_ic_mean = _mean(rank_ic)
@@ -190,6 +207,7 @@ def _factor_admission_row(
         cost_adjusted_spread=cost_adjusted_spread,
         turnover=turnover,
         thresholds=thresholds,
+        evaluation_role=evaluation_role,
     )
     hard_failures = [
         check
@@ -210,6 +228,7 @@ def _factor_admission_row(
     )
     return {
         "feature": feature,
+        "evaluation_role": evaluation_role,
         "admission_status": admission_status,
         "direction": direction_label,
         "sample_count": int(summary.get("sample_count") or group["sample_count"].sum()),
@@ -227,7 +246,14 @@ def _factor_admission_row(
         "stable_year_count": stable_years,
         "yearly_spearman_rank_ic_mean": yearly_ic,
         "failed_checks": [
-            check["name"] for check in checks if check["status"] == "fail"
+            check["name"]
+            for check in checks
+            if check["status"] == "fail" and check["severity"] != "info"
+        ],
+        "informational_failed_checks": [
+            check["name"]
+            for check in checks
+            if check["status"] == "fail" and check["severity"] == "info"
         ],
         "checks": checks,
     }
@@ -245,12 +271,14 @@ def _factor_checks(
     cost_adjusted_spread: float | None,
     turnover: float | None,
     thresholds: FactorAdmissionThresholds,
+    evaluation_role: str,
 ) -> list[dict[str, Any]]:
+    severity = _role_check_severity(evaluation_role)
     return [
         _check(
             "coverage",
             coverage >= thresholds.min_coverage,
-            "hard",
+            severity["coverage"],
             actual=coverage,
             threshold=thresholds.min_coverage,
         ),
@@ -264,14 +292,14 @@ def _factor_checks(
         _check(
             "abs_rank_ic_mean",
             abs_rank_ic_mean >= thresholds.min_abs_rank_ic_mean,
-            "hard",
+            severity["rank_ic"],
             actual=abs_rank_ic_mean,
             threshold=thresholds.min_abs_rank_ic_mean,
         ),
         _check(
             "abs_rank_ic_t_stat",
             abs_rank_ic_t_stat >= thresholds.min_abs_rank_ic_t_stat,
-            "hard",
+            severity["rank_ic"],
             actual=abs_rank_ic_t_stat,
             threshold=thresholds.min_abs_rank_ic_t_stat,
         ),
@@ -279,21 +307,21 @@ def _factor_checks(
             "directional_ic_hit_rate",
             directional_hit_rate is not None
             and directional_hit_rate >= thresholds.min_directional_ic_hit_rate,
-            "hard",
+            severity["rank_ic"],
             actual=directional_hit_rate,
             threshold=thresholds.min_directional_ic_hit_rate,
         ),
         _check(
             "years_observed",
             len(yearly_ic) >= thresholds.min_years_observed,
-            "soft",
+            severity["stability"],
             actual=len(yearly_ic),
             threshold=thresholds.min_years_observed,
         ),
         _check(
             "stable_year_count",
             stable_years >= thresholds.min_stable_years,
-            "soft",
+            severity["stability"],
             actual=stable_years,
             threshold=thresholds.min_stable_years,
         ),
@@ -301,14 +329,14 @@ def _factor_checks(
             "cost_adjusted_spread",
             cost_adjusted_spread is not None
             and cost_adjusted_spread > thresholds.min_cost_adjusted_spread,
-            "soft",
+            severity["implementation"],
             actual=cost_adjusted_spread,
             threshold=thresholds.min_cost_adjusted_spread,
         ),
         _check(
             "top_n_turnover",
             turnover is not None and turnover <= thresholds.max_top_n_turnover,
-            "soft",
+            severity["implementation"],
             actual=turnover,
             threshold=thresholds.max_top_n_turnover,
         ),
@@ -330,6 +358,65 @@ def _check(
         "actual": actual,
         "threshold": threshold,
     }
+
+
+def _normalize_feature_roles(feature_roles: dict[str, str] | None) -> dict[str, str]:
+    if not feature_roles:
+        return {}
+    normalized = {}
+    for feature, role in feature_roles.items():
+        if role not in FACTOR_ADMISSION_ROLES:
+            raise ValueError(
+                f"unknown evaluation role for {feature}: {role}; "
+                f"expected one of {sorted(FACTOR_ADMISSION_ROLES)}"
+            )
+        normalized[str(feature)] = str(role)
+    return normalized
+
+
+def _role_check_severity(evaluation_role: str) -> dict[str, str]:
+    if evaluation_role == "alpha_rank":
+        return {
+            "coverage": "hard",
+            "rank_ic": "hard",
+            "stability": "soft",
+            "implementation": "soft",
+        }
+    if evaluation_role in {"risk_penalty", "entry_filter"}:
+        return {
+            "coverage": "hard",
+            "rank_ic": "hard",
+            "stability": "soft",
+            "implementation": "info",
+        }
+    if evaluation_role == "event_overlay":
+        return {
+            "coverage": "info",
+            "rank_ic": "hard",
+            "stability": "soft",
+            "implementation": "info",
+        }
+    if evaluation_role == "state_allocator":
+        return {
+            "coverage": "hard",
+            "rank_ic": "info",
+            "stability": "info",
+            "implementation": "info",
+        }
+    raise ValueError(
+        f"unknown evaluation role: {evaluation_role}; "
+        f"expected one of {sorted(FACTOR_ADMISSION_ROLES)}"
+    )
+
+
+def _role_status_counts(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    output: dict[str, dict[str, int]] = {}
+    for row in rows:
+        role = str(row.get("evaluation_role", "alpha_rank"))
+        status = str(row.get("admission_status", "reject"))
+        output.setdefault(role, {"candidate": 0, "watchlist": 0, "reject": 0})
+        output[role][status] = output[role].get(status, 0) + 1
+    return dict(sorted(output.items()))
 
 
 def _yearly_ic(group: pd.DataFrame) -> dict[str, float | None]:
@@ -386,16 +473,35 @@ def _render_markdown_report(report: dict[str, Any]) -> str:
         f"- Watchlist: `{summary['watchlist_count']}`",
         f"- Rejected: `{summary['reject_count']}`",
         "",
-        "## Factor Table",
+        "### Role Counts",
         "",
-        "| feature | status | direction | rank_ic | t_stat | hit_rate | cost_adj_spread | stable_years | failed_checks |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| role | candidate | watchlist | reject |",
+        "| --- | ---: | ---: | ---: |",
     ]
+    for role, counts in summary.get("role_counts", {}).items():
+        lines.append(
+            "| {role} | {candidate} | {watchlist} | {reject} |".format(
+                role=role,
+                candidate=counts.get("candidate", 0),
+                watchlist=counts.get("watchlist", 0),
+                reject=counts.get("reject", 0),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Factor Table",
+            "",
+            "| feature | role | status | direction | rank_ic | t_stat | hit_rate | cost_adj_spread | stable_years | failed_checks |",
+            "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
     for row in report.get("factors", []):
         lines.append(
-            "| {feature} | {status} | {direction} | {rank_ic} | {t_stat} | "
+            "| {feature} | {role} | {status} | {direction} | {rank_ic} | {t_stat} | "
             "{hit_rate} | {spread} | {stable_years} | {failed} |".format(
                 feature=row["feature"],
+                role=row.get("evaluation_role", "alpha_rank"),
                 status=row["admission_status"],
                 direction=row["direction"],
                 rank_ic=_format_number(row["spearman_rank_ic_mean"]),

@@ -24,6 +24,7 @@ class FrameworkV1BenchmarkConfig:
 
     profile: str
     catalog_path: Path
+    factor_registry: Path
     output_dir: Path
     start: str
     end: str
@@ -388,6 +389,8 @@ def _candidate_policy_validation_command(config: FrameworkV1BenchmarkConfig) -> 
         str(_effective_candidate_admission_report(config)),
         "--factor-correlation",
         str(config.output_dir / "factor_evaluation" / "feature_correlation.csv"),
+        "--registry",
+        str(config.factor_registry),
         "--output-dir",
         str(output_dir),
         "--profile",
@@ -450,6 +453,8 @@ def _factor_admission_command(config: FrameworkV1BenchmarkConfig) -> list[str]:
         str(config.output_dir / "benchmark_summary.json"),
         "--factor-summary",
         str(config.output_dir / "factor_evaluation" / "summary.json"),
+        "--factor-registry",
+        str(config.factor_registry),
         "--output-dir",
         str(config.output_dir / "factor_admission"),
         "--cost-bps",
@@ -1073,6 +1078,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _jsonable_config(config: FrameworkV1BenchmarkConfig) -> dict[str, Any]:
     payload = asdict(config)
     payload["catalog_path"] = str(config.catalog_path)
+    payload["factor_registry"] = str(config.factor_registry)
     payload["output_dir"] = str(config.output_dir)
     payload["label_horizon_bars"] = list(config.label_horizon_bars)
     payload["auto_factor_admission"] = config.auto_factor_admission
@@ -1111,6 +1117,7 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
     return FrameworkV1BenchmarkConfig(
         profile=args.profile,
         catalog_path=Path(args.catalog_path),
+        factor_registry=Path(args.factor_registry),
         output_dir=Path(args.output_dir),
         start=args.start,
         end=args.end,
@@ -1173,6 +1180,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--catalog-path",
         default="../quant_dataset/canonical_store/catalog/quant_research.duckdb",
+    )
+    parser.add_argument(
+        "--factor-registry",
+        default="configs/factors/factor_registry.json",
+        help=(
+            "factor registry used for role-aware factor admission and candidate "
+            "policy validation"
+        ),
     )
     parser.add_argument(
         "--profile",

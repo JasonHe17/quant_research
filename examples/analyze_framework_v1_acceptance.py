@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from quant_research.factors import load_factor_registry
 from quant_research.validation import (
     FactorAdmissionThresholds,
     build_factor_admission_report,
@@ -45,6 +46,7 @@ def main() -> None:
         factor_summary=factor_summary,
         by_timestamp=by_timestamp,
         thresholds=thresholds,
+        feature_roles=_feature_roles_from_registry(args),
     )
     artifacts = write_factor_admission_outputs(
         report,
@@ -89,6 +91,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--factor-summary")
     parser.add_argument("--by-timestamp")
     parser.add_argument(
+        "--factor-registry",
+        help=(
+            "Optional factor registry used to map feature columns to evaluation "
+            "roles such as alpha_rank, risk_penalty, entry_filter, "
+            "state_allocator, or event_overlay."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         default="runs/framework_v1_acceptance/standard/factor_admission",
     )
@@ -113,6 +123,17 @@ def _parse_args() -> argparse.Namespace:
         help="exit non-zero if no factor reaches candidate status",
     )
     return parser.parse_args()
+
+
+def _feature_roles_from_registry(args: argparse.Namespace) -> dict[str, str]:
+    if not args.factor_registry:
+        return {}
+    registry = load_factor_registry(Path(args.factor_registry))
+    roles: dict[str, str] = {}
+    for entry in registry.entries:
+        for feature in entry.feature_columns:
+            roles[feature] = entry.evaluation_role
+    return roles
 
 
 if __name__ == "__main__":

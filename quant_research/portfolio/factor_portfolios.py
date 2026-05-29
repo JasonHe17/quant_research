@@ -25,12 +25,21 @@ class CandidateFactor:
     feature: str
     direction: int
     rank_ic_mean: float
+    evaluation_role: str = "alpha_rank"
 
     def __post_init__(self) -> None:
         if not self.feature:
             raise ValueError("feature must be non-empty")
         if self.direction not in {-1, 1}:
             raise ValueError("direction must be -1 or 1")
+        if self.evaluation_role not in {
+            "alpha_rank",
+            "risk_penalty",
+            "entry_filter",
+            "state_allocator",
+            "event_overlay",
+        }:
+            raise ValueError("evaluation_role is not a supported factor role")
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,28 +77,35 @@ def load_candidate_factors(
     admission_report_path: Path,
     *,
     statuses: tuple[str, ...] = ("candidate",),
+    evaluation_roles: tuple[str, ...] = ("alpha_rank",),
     include_features: tuple[str, ...] = (),
 ) -> tuple[CandidateFactor, ...]:
     """Load candidate factors from a factor admission report."""
 
     report = json.loads(admission_report_path.read_text(encoding="utf-8"))
     include_set = set(include_features)
+    role_set = set(evaluation_roles)
     factors = []
     for row in report.get("factors", []):
         feature = str(row["feature"])
+        role = str(row.get("evaluation_role", "alpha_rank"))
         if include_set and feature not in include_set:
             continue
         if row.get("admission_status") not in statuses:
+            continue
+        if role not in role_set:
             continue
         factors.append(
             CandidateFactor(
                 feature=feature,
                 direction=-1 if row.get("direction") == "invert" else 1,
                 rank_ic_mean=float(row.get("spearman_rank_ic_mean") or 0.0),
+                evaluation_role=role,
             )
         )
     if not factors:
         message = f"no factors found for statuses: {statuses}"
+        message += f", evaluation_roles: {evaluation_roles}"
         if include_set:
             message += f", include_features: {sorted(include_set)}"
         raise ValueError(message)
@@ -571,9 +587,12 @@ def build_composite_scores(
     weights: dict[str, float],
     factor_health: pd.DataFrame | None = None,
     max_factor_contribution_share: float | None = None,
+    score_transform: str = "rank",
 ) -> pd.DataFrame:
     """Build timestamp-level composite scores from candidate factor columns."""
 
+    if score_transform not in {"rank", "zscore"}:
+        raise ValueError("score_transform must be rank or zscore")
     features = tuple(factor.feature for factor in candidates)
     _require_columns(frame, ("timestamp", "instrument_id", *features))
     output = frame.loc[:, ["timestamp", "instrument_id"]].copy()
@@ -590,11 +609,12 @@ def build_composite_scores(
             base_weight=weight,
             health_scales=health_scales,
         )
-        ranks = frame.groupby("timestamp", sort=False)[factor.feature].rank(
-            method="average",
-            pct=True,
+        oriented = _oriented_factor_signal(
+            frame,
+            feature=factor.feature,
+            direction=factor.direction,
+            score_transform=score_transform,
         )
-        oriented = (ranks - 0.5) * factor.direction
         valid = oriented.notna()
         contribution = pd.Series(0.0, index=frame.index)
         contribution.loc[valid] = oriented.loc[valid] * effective_weight.loc[valid]
@@ -626,9 +646,12 @@ def write_score_partitions(
     diagnostics_top_n: int | None = None,
     diagnostics_label_column: str = "forward_return",
     forecast_calibration_config: ScoreForecastCalibrationConfig | None = None,
+    score_transform: str = "rank",
 ) -> dict[str, Any]:
     """Write composite score parquet partitions for each method."""
 
+    if score_transform not in {"rank", "zscore"}:
+        raise ValueError("score_transform must be rank or zscore")
     if not diagnostics_label_column:
         raise ValueError("diagnostics_label_column must be non-empty")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -672,6 +695,7 @@ def write_score_partitions(
                 weights=effective_weights,
                 factor_health=health,
                 max_factor_contribution_share=max_factor_contribution_share,
+                score_transform=score_transform,
             )
             if forecast_calibration_config is not None:
                 joined = scores.loc[:, ["timestamp", "instrument_id", "score"]].merge(
@@ -722,6 +746,7 @@ def write_score_partitions(
                     max_factor_contribution_share=max_factor_contribution_share,
                     top_n=diagnostics_top_n,
                     label_column=diagnostics_label_column,
+                    score_transform=score_transform,
                 )
                 diagnostics_path = diagnostics_dir / f"factor_contribution_{partition}.csv"
                 diagnostics.to_csv(diagnostics_path, index=False)
@@ -745,6 +770,7 @@ def write_score_partitions(
             "path": str(method_dir / "*.parquet"),
             "weights": effective_weights,
             "raw_weights": weights,
+            "score_transform": score_transform,
             "row_count": row_count,
             "partition_count": partition_count,
             "factor_contribution_diagnostics": diagnostics_paths,
@@ -766,9 +792,12 @@ def factor_contribution_diagnostics(
     max_factor_contribution_share: float | None = None,
     top_n: int,
     label_column: str = "forward_return",
+    score_transform: str = "rank",
 ) -> pd.DataFrame:
     """Summarize factor contribution concentration in top-score baskets."""
 
+    if score_transform not in {"rank", "zscore"}:
+        raise ValueError("score_transform must be rank or zscore")
     if not label_column:
         raise ValueError("label_column must be non-empty")
     if top_n <= 0:
@@ -780,6 +809,7 @@ def factor_contribution_diagnostics(
         weights=weights,
         factor_health=factor_health,
         max_factor_contribution_share=max_factor_contribution_share,
+        score_transform=score_transform,
     )
     joined = scores.loc[:, ["timestamp", "instrument_id", "score"]].merge(
         contribution_frame,
@@ -945,6 +975,29 @@ def _effective_factor_weight(
     return scale * float(base_weight)
 
 
+def _oriented_factor_signal(
+    frame: pd.DataFrame,
+    *,
+    feature: str,
+    direction: int,
+    score_transform: str,
+) -> pd.Series:
+    values = pd.to_numeric(frame[feature], errors="coerce")
+    if score_transform == "rank":
+        ranks = values.groupby(frame["timestamp"], sort=False).rank(
+            method="average",
+            pct=True,
+        )
+        return (ranks - 0.5) * direction
+    if score_transform == "zscore":
+        grouped = values.groupby(frame["timestamp"], sort=False)
+        mean = grouped.transform("mean")
+        std = grouped.transform(lambda series: series.std(ddof=0))
+        zscore = (values - mean) / std.where(std != 0.0)
+        return zscore * direction
+    raise ValueError("score_transform must be rank or zscore")
+
+
 def _factor_health_for_partition(
     factor_health_schedule: pd.DataFrame | None,
     *,
@@ -965,7 +1018,10 @@ def _factor_contribution_frame(
     weights: dict[str, float],
     factor_health: pd.DataFrame | None,
     max_factor_contribution_share: float | None = None,
+    score_transform: str = "rank",
 ) -> pd.DataFrame:
+    if score_transform not in {"rank", "zscore"}:
+        raise ValueError("score_transform must be rank or zscore")
     output = frame.loc[:, ["timestamp", "instrument_id"]].copy()
     health_scales = _factor_health_scale_lookup(factor_health)
     contributions: dict[str, pd.Series] = {}
@@ -977,11 +1033,13 @@ def _factor_contribution_frame(
             base_weight=weight,
             health_scales=health_scales,
         )
-        ranks = frame.groupby("timestamp", sort=False)[factor.feature].rank(
-            method="average",
-            pct=True,
+        oriented = _oriented_factor_signal(
+            frame,
+            feature=factor.feature,
+            direction=factor.direction,
+            score_transform=score_transform,
         )
-        contributions[factor.feature] = (ranks - 0.5) * factor.direction * effective_weight
+        contributions[factor.feature] = oriented * effective_weight
     if contributions:
         contribution_frame = _cap_factor_contributions(
             pd.DataFrame(contributions, index=frame.index),

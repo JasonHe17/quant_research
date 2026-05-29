@@ -31,6 +31,15 @@ FACTOR_STATUSES = frozenset(
     {"planned", "candidate", "watchlist", "reject", "promoted", "deprecated"}
 )
 EXPECTED_DIRECTIONS = frozenset({"long", "invert", "neutral", "mixed"})
+FACTOR_EVALUATION_ROLES = frozenset(
+    {
+        "alpha_rank",
+        "risk_penalty",
+        "entry_filter",
+        "state_allocator",
+        "event_overlay",
+    }
+)
 DECISION_REASONS = frozenset(
     {
         "weak_ic",
@@ -81,6 +90,7 @@ class FactorRegistryEntry:
     live_available: bool = False
     owner: str = "research"
     notes: str = ""
+    evaluation_role: str = "alpha_rank"
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "FactorRegistryEntry":
@@ -92,6 +102,7 @@ class FactorRegistryEntry:
             family=str(payload.get("family", "")),
             status=str(payload.get("status", "")),
             expected_direction=str(payload.get("expected_direction", "")),
+            evaluation_role=str(payload.get("evaluation_role", "alpha_rank")),
             feature_columns=tuple(str(value) for value in payload.get("feature_columns", ())),
             required_inputs=tuple(str(value) for value in payload.get("required_inputs", ())),
             frequency=str(payload.get("frequency", "")),
@@ -123,6 +134,7 @@ class FactorRegistryEntry:
             "family": self.family,
             "status": self.status,
             "expected_direction": self.expected_direction,
+            "evaluation_role": self.evaluation_role,
             "feature_columns": list(self.feature_columns),
             "required_inputs": list(self.required_inputs),
             "frequency": self.frequency,
@@ -397,6 +409,7 @@ def validate_factor_registry(registry: FactorRegistry) -> FactorRegistryValidati
             "entry_count": len(registry.entries),
             "status_counts": _count_by(registry.entries, "status"),
             "family_counts": _count_by(registry.entries, "family"),
+            "evaluation_role_counts": _count_by(registry.entries, "evaluation_role"),
             "error_count": error_count,
             "warning_count": warning_count,
         },
@@ -441,17 +454,29 @@ def render_factor_registry_markdown(report: FactorRegistryValidationReport) -> s
         f"- Errors: `{summary.get('error_count')}`",
         f"- Warnings: `{summary.get('warning_count')}`",
         "",
-        "## Entries",
+        "## Evaluation Roles",
         "",
-        "| factor_id | status | family | direction | features | issues |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| role | count |",
+        "| --- | ---: |",
     ]
+    for role, count in summary.get("evaluation_role_counts", {}).items():
+        lines.append(f"| {role} | {count} |")
+    lines.extend(
+        [
+            "",
+            "## Entries",
+            "",
+            "| factor_id | status | family | role | direction | features | issues |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
     for entry in report.entries:
         lines.append(
-            "| {factor_id} | {status} | {family} | {direction} | {features} | {issues} |".format(
+            "| {factor_id} | {status} | {family} | {role} | {direction} | {features} | {issues} |".format(
                 factor_id=entry["factor_id"],
                 status=entry["status"],
                 family=entry["family"],
+                role=entry["evaluation_role"],
                 direction=entry["expected_direction"],
                 features=", ".join(entry["feature_columns"]),
                 issues=", ".join(entry["issues"]) or "-",
@@ -553,6 +578,15 @@ def _validate_entry(
             f"expected_direction must be one of {sorted(EXPECTED_DIRECTIONS)}",
             factor_id=entry.factor_id,
             field="expected_direction",
+        )
+    if entry.evaluation_role not in FACTOR_EVALUATION_ROLES:
+        _issue(
+            issues,
+            "error",
+            "unknown_evaluation_role",
+            f"evaluation_role must be one of {sorted(FACTOR_EVALUATION_ROLES)}",
+            factor_id=entry.factor_id,
+            field="evaluation_role",
         )
     if not entry.feature_columns:
         _issue(
@@ -778,6 +812,7 @@ def _entry_summary(
         "status": entry.status,
         "family": entry.family,
         "expected_direction": entry.expected_direction,
+        "evaluation_role": entry.evaluation_role,
         "feature_columns": list(entry.feature_columns),
         "required_inputs": list(entry.required_inputs),
         "point_in_time_safe": entry.point_in_time_safe,

@@ -5815,6 +5815,7 @@
         }
       },
       "expected_direction": "long",
+      "evaluation_role": "event_overlay",
       "factor_id": "intraday_eod_reversal_5m_lb1_tail6",
       "family": "reversal",
       "feature_columns": [
@@ -6221,6 +6222,7 @@
         }
       },
       "expected_direction": "long",
+      "evaluation_role": "event_overlay",
       "factor_id": "intraday_eod_reversal_5m_lb6_tail6",
       "family": "reversal",
       "feature_columns": [
@@ -6621,6 +6623,7 @@
         }
       },
       "expected_direction": "long",
+      "evaluation_role": "event_overlay",
       "factor_id": "intraday_eod_reversal_5m_lb12_tail6",
       "family": "reversal",
       "feature_columns": [
@@ -7038,6 +7041,7 @@
         }
       },
       "expected_direction": "long",
+      "evaluation_role": "event_overlay",
       "factor_id": "intraday_eod_reversal_5m_lb24_tail6",
       "family": "reversal",
       "feature_columns": [
@@ -7251,6 +7255,7 @@
         }
       },
       "expected_direction": "invert",
+      "evaluation_role": "risk_penalty",
       "factor_id": "intraday_volume_concentration_5m_w96",
       "family": "volume",
       "feature_columns": [
@@ -7504,6 +7509,7 @@
         }
       },
       "expected_direction": "invert",
+      "evaluation_role": "risk_penalty",
       "factor_id": "intraday_volume_concentration_5m_w48",
       "family": "volume",
       "feature_columns": [
@@ -7757,6 +7763,7 @@
         }
       },
       "expected_direction": "invert",
+      "evaluation_role": "risk_penalty",
       "factor_id": "intraday_volume_concentration_5m_w24",
       "family": "volume",
       "feature_columns": [

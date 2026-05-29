@@ -140,6 +140,9 @@ def test_framework_v1_benchmark_can_plan_candidate_policy_validation(
     assert "run_candidate_policy_validation.py" in command[1]
     assert command[command.index("--dataset-dir") + 1] == str(output_dir / "alpha_dataset")
     assert command[command.index("--admission-report") + 1] == str(admission)
+    assert command[command.index("--registry") + 1] == (
+        "configs/factors/factor_registry.json"
+    )
     assert command[
         command.index("--methods") + 1 : command.index("--primary-method")
     ] == ["decorrelated", "equal"]
@@ -185,6 +188,9 @@ def test_framework_v1_benchmark_can_plan_auto_factor_admission(
     assert "factor_admission" in commands
     assert "candidate_policy_validation" in commands
     assert "analyze_framework_v1_acceptance.py" in commands["factor_admission"][1]
+    assert commands["factor_admission"][
+        commands["factor_admission"].index("--factor-registry") + 1
+    ] == "configs/factors/factor_registry.json"
     admission_path = output_dir / "factor_admission" / "factor_admission_report.json"
     assert commands["candidate_policy_validation"][
         commands["candidate_policy_validation"].index("--admission-report") + 1

@@ -64,10 +64,11 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
 
     assert "--backtest-policies" not in command
     assert command[command.index("--label-column") + 1] == "forward_return"
-    assert command[command.index("--methods") + 1 : command.index("--partition-start")] == [
+    assert command[command.index("--methods") + 1 : command.index("--score-transform")] == [
         "decorrelated",
         "equal",
     ]
+    assert command[command.index("--score-transform") + 1] == "rank"
     assert command[command.index("--partition-start") + 1] == "2023_01"
     assert command[command.index("--include-features") + 1] == "alpha_a"
     assert command.index("--include-features") < command.index("--run-backtests")
@@ -94,7 +95,10 @@ def test_candidate_policy_validation_command_uses_selected_policy(tmp_path: Path
     ] == ["candidate", "promoted"]
     assert command[
         command.index("--statuses") + 1 : command.index("--output-dir")
-    ] == ["candidate"]
+    ] == ["candidate", "--evaluation-roles", "alpha_rank"]
+    assert command[
+        command.index("--evaluation-roles") + 1 : command.index("--output-dir")
+    ] == ["alpha_rank"]
     assert "--enforce-registry" in command
     assert "--resume-existing" in command
 
@@ -623,10 +627,12 @@ def _validation_args(**overrides: object) -> object:
         "enforce_registry": True,
         "registry_statuses": ["candidate", "promoted"],
         "admission_statuses": ["candidate"],
+        "evaluation_roles": ["alpha_rank"],
         "output_dir": "runs/validation",
         "profile": "standard",
         "years": None,
         "methods": ["decorrelated", "equal", "ic_weighted"],
+        "score_transform": "rank",
         "include_features": [],
         "primary_method": "decorrelated",
         "backtest_policy_set": "comparison",

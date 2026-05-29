@@ -48,6 +48,40 @@ The default cost proxy is `13 bps`, representing a conservative round-trip
 estimate for 3 bps commission, 1 bp slippage on each side, and 5 bps sell stamp
 tax.
 
+## Evaluation Roles
+
+Admission can now read `evaluation_role` from the factor registry. The default
+role is `alpha_rank`, which preserves the original strict standalone-alpha
+gates. Portfolio-native signals should declare a more precise role so sparse or
+non-alpha signals are not rejected by the wrong evidence standard:
+
+| role | intended use | admission behavior |
+| --- | --- | --- |
+| `alpha_rank` | standalone cross-sectional ranking alpha | original hard/soft gates |
+| `risk_penalty` | optimizer or score risk penalty | statistical gates remain hard; standalone cost spread and turnover are diagnostics |
+| `entry_filter` | pre-trade eligibility or avoidance filter | statistical gates remain hard; standalone cost spread and turnover are diagnostics |
+| `state_allocator` | market/regime/factor-leg allocator state | coverage and timestamp count are hard; rank IC, spread, stability, and turnover are diagnostics |
+| `event_overlay` | sparse tail, event, or time-of-day overlay | timestamp count and statistical gates are hard; full-sample coverage is diagnostic |
+
+Use the registry-aware admission path when roles are registered:
+
+```bash
+conda run -n quant python examples/analyze_framework_v1_acceptance.py \
+  --benchmark-summary runs/framework_v1_acceptance/standard/benchmark_summary.json \
+  --factor-registry configs/factors/factor_registry.json \
+  --output-dir runs/framework_v1_acceptance/standard/factor_admission
+```
+
+Role-aware admission changes eligibility for the next validation step, not
+promotion. A `risk_penalty`, `entry_filter`, `state_allocator`, or
+`event_overlay` candidate still requires role-specific portfolio validation
+before it can be used in a default score, optimizer, or allocator.
+
+Ordinary candidate-factor portfolio validation loads only `alpha_rank` roles by
+default. To intentionally test another role in the same score-construction
+runner, pass `--evaluation-roles`, but document why that role is being treated
+as a rank alpha for the experiment.
+
 ## Status Semantics
 
 - `candidate`: eligible for the next research step, usually portfolio-level
