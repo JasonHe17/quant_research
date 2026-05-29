@@ -103,6 +103,23 @@ def test_primary_pool_score_blends_example_has_cli_help() -> None:
     assert "--primary-blend-weights" in result.stdout
 
 
+def test_ml_challenger_attribution_example_has_cli_help() -> None:
+    script = Path("examples/analyze_ml_challenger_attribution.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--baseline-backtest-dir" in result.stdout
+    assert "--challenger-backtest-dir" in result.stdout
+    assert "--baseline-score-dir" in result.stdout
+    assert "--challenger-score-dir" in result.stdout
+
+
 def test_candidate_policy_validation_example_has_cli_help() -> None:
     script = Path("examples/run_candidate_policy_validation.py")
 

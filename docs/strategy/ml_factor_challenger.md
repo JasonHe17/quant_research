@@ -188,3 +188,35 @@ drawdown, and lower unfilled/traded notional than the absorption baseline. The
 2% unfilled/traded ratio remains below the 5% monitoring warning threshold.
 Detailed rows are stored in
 `runs/ml_factor_challenger/primary_w050_capacity_2026_05_29.csv`.
+
+Monthly/state attribution for `primary_w050`:
+
+```bash
+conda run -n quant python examples/analyze_ml_challenger_attribution.py \
+  --baseline-backtest-dir runs/ml_factor_challenger/baselines/absorption_core_2024_2025_partial_rebalance_daily_standard_constraints \
+  --challenger-backtest-dir runs/ml_factor_challenger/primary_pool_blend_grid_2026_05_29/backtests/primary_w050/partial_rebalance_daily_standard_constraints \
+  --baseline-score-dir runs/candidate_factor_portfolios/legacy_top2_alpha_rank_rank_standard_2026_05_29/scores/decorrelated \
+  --challenger-score-dir runs/ml_factor_challenger/primary_pool_blend_grid_2026_05_29/scores/primary_w050 \
+  --dataset-dir runs/legacy_factor_revalidation/role_aware_alpha_rank_top5_standard_2026_05_29/shared_benchmark/alpha_dataset \
+  --output-dir runs/ml_factor_challenger/primary_w050_attribution_2026_05_29 \
+  --start 2024-01-01T00:00:00+08:00 \
+  --end 2025-12-31T23:59:59+08:00
+```
+
+Key attribution read:
+
+| View | Result |
+| --- | --- |
+| Monthly hit rate | `primary_w050` beats baseline in 14 of 24 months |
+| Best delta months | 2024-07, 2025-10, 2024-11, 2025-07, 2024-02 |
+| Worst delta months | 2024-10, 2025-12, 2024-08, 2025-02, 2025-08 |
+| Score replacement signal | Monthly return delta is more correlated with replacement-label delta (`0.30`) than broad market-state aggregates |
+| State signal | Prior-month downside state is the most promising observable switch proxy in this small sample |
+
+The top sample-in rule from the exploratory switch table is: use ML blend after
+months whose prior `market_state_downside_mean_5m_w48_mean` is above the lower
+third of observations. In-sample compound return rises to `31.20%`, versus
+`26.94%` for always-on `primary_w050` and `22.42%` for baseline. This is not
+yet production evidence: it has only 23 lagged monthly decisions and must be
+converted to a daily observable gate before validation. Attribution outputs are
+stored in `runs/ml_factor_challenger/primary_w050_attribution_2026_05_29`.
