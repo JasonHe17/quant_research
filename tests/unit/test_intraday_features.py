@@ -54,6 +54,7 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
             "money_flow",
             "signed_turnover_imbalance",
             "order_flow_toxicity",
+            "intraday_quality",
             "risk_adjusted_momentum",
             "volume_confirmed_momentum",
             "intraday_gap",
@@ -105,6 +106,9 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
         money_flow_windows=(3,),
         signed_turnover_imbalance_windows=(3,),
         order_flow_toxicity_windows=(3,),
+        intraday_quality_halflives=(3,),
+        intraday_quality_large_trade_windows=(3,),
+        intraday_quality_large_trade_quantile=0.5,
         risk_adjusted_momentum_windows=(3,),
         volume_confirmed_momentum_windows=(3,),
         return_turnover_correlation_windows=(3,),
@@ -166,6 +170,10 @@ def test_build_intraday_feature_matrix_generates_heterogeneous_features() -> Non
     assert "intraday_order_flow_imbalance_5m_w3" in features
     assert "intraday_vpin_5m_w3" in features
     assert "intraday_adverse_selection_5m_w3" in features
+    assert "intraday_price_efficiency_cost_5m" in features
+    assert "intraday_signed_trade_efficiency_5m" in features
+    assert "intraday_execution_quality_5m_hl3" in features
+    assert "intraday_large_trade_cost_5m_w3" in features
     assert "intraday_risk_adjusted_momentum_5m_w3" in features
     assert "intraday_volume_confirmed_momentum_5m_w3" in features
     assert "intraday_gap_5m" in features
@@ -268,6 +276,8 @@ def test_build_intraday_feature_matrix_supports_all_group_alias() -> None:
     assert "intraday_order_flow_imbalance_5m_w48" in features
     assert "intraday_vpin_5m_w48" in features
     assert "intraday_adverse_selection_5m_w48" in features
+    assert "intraday_execution_quality_5m_hl12" in features
+    assert "intraday_large_trade_cost_5m_w48" in features
     assert "intraday_risk_adjusted_momentum_5m_w48" in features
     assert "intraday_volume_confirmed_momentum_5m_w48" in features
     assert "intraday_gap_5m" in features
@@ -421,6 +431,54 @@ def test_order_flow_toxicity_decomposes_direction_magnitude_and_selection() -> N
     assert values["intraday_vpin_5m_w3"] == pytest.approx(abs(expected_ofi))
     assert values["intraday_adverse_selection_5m_w3"] == pytest.approx(
         expected_adverse_selection
+    )
+
+
+def test_intraday_quality_proxies_execution_advantage_and_large_trade_cost() -> None:
+    closes = [10.0, 11.0, 10.0, 12.0]
+    vwaps = [10.0, 10.5, 10.5, 11.5]
+    volumes = [100.0, 100.0, 100.0, 100.0]
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "high_price": close + 0.5,
+                "low_price": close - 0.5,
+                "close_price": close,
+                "volume": volume,
+                "turnover": volume * vwap,
+            }
+            for i, (close, vwap, volume) in enumerate(zip(closes, vwaps, volumes))
+        ]
+    )
+
+    features = build_intraday_feature_matrix(
+        bars,
+        IntradayFeatureConfig(
+            factor_groups=("intraday_quality",),
+            intraday_quality_halflives=(2,),
+            intraday_quality_large_trade_windows=(3,),
+            intraday_quality_large_trade_quantile=0.5,
+        ),
+    )
+
+    values = features.set_index("timestamp")
+    expected_cost = pd.Series([0.0, 0.5, 0.5, 0.5], index=[f"t{i}" for i in range(4)])
+    expected_quality = (1.0 - expected_cost).ewm(
+        halflife=2,
+        min_periods=2,
+        adjust=False,
+    ).mean()
+
+    assert values.loc["t1", "intraday_price_efficiency_cost_5m"] == pytest.approx(0.5)
+    assert values.loc["t1", "intraday_signed_trade_efficiency_5m"] == pytest.approx(0.5)
+    assert values.loc["t2", "intraday_signed_trade_efficiency_5m"] == pytest.approx(-0.5)
+    assert values.loc["t3", "intraday_execution_quality_5m_hl2"] == pytest.approx(
+        expected_quality.loc["t3"]
+    )
+    assert values.loc["t3", "intraday_large_trade_cost_5m_w3"] == pytest.approx(
+        100.0 / 2200.0
     )
 
 

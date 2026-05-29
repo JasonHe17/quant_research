@@ -7,6 +7,293 @@
         "st_aware": true,
         "t_plus_one_safe": true
       },
+      "description": "Bar-level execution inefficiency proxy: absolute close-to-bar-VWAP distance divided by the high-low spread proxy.",
+      "display_name": "Intraday price efficiency cost",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/intraday_quality_2026_05_29/factor_admission_6b/factor_admission_report.json",
+        "admission_status": "candidate",
+        "candidate_policy_validation": "runs/factor_research/intraday_quality_2026_05_29/candidate_policy_validation_6b_single/validation_summary.json",
+        "candidate_policy_validation_status": "pass",
+        "compact_core_incremental_blend": "runs/factor_research/intraday_quality_2026_05_29/compact_core_incremental_blend_standard/validation_summary.json",
+        "compact_core_incremental_downside_penalty": "runs/factor_research/intraday_quality_2026_05_29/compact_core_downside_penalty_standard/validation_summary.json",
+        "compact_core_incremental_entry_exclusion": "runs/factor_research/intraday_quality_2026_05_29/compact_core_entry_exclusion_standard/validation_summary.json",
+        "compact_core_incremental_status": "warn",
+        "compact_core_promotion_decision": "defer",
+        "compact_core_overlay_suite_decision": "no_core_promotion",
+        "compact_core_penalty_w50_full_base_return": 0.40571051195760166,
+        "compact_core_exclude_w20_full_base_return": 0.40419156771843445,
+        "compact_core_w00_full_base_return": 0.4292401077056083,
+        "compact_core_w025_full_base_return": 0.3316368108022203,
+        "compact_core_w15_full_base_return": 0.3190708310544166,
+        "cost_adjusted_top_minus_bottom_label": 0.00029205829170587125,
+        "coverage": 0.992888,
+        "dataset": "runs/factor_research/intraday_quality_2026_05_29/alpha_dataset",
+        "directional_ic_hit_rate": 0.666169254168221,
+        "factor_evaluation": "runs/factor_research/intraday_quality_2026_05_29/factor_evaluation_6b/summary.json",
+        "failed_checks": [],
+        "portfolio_full_base_decorrelated_return": 0.175957289903756,
+        "portfolio_full_high_cost_decorrelated_return": 0.1205836571348397,
+        "portfolio_validation_status": "pass",
+        "registry_decision_status": "candidate",
+        "sample_count": 102761394,
+        "spearman_rank_ic_mean": 0.032481803996673234,
+        "spearman_rank_ic_t_stat": 65.26275270289852,
+        "stable_year_count": 3,
+        "timestamp_count": 34847,
+        "top_n_turnover": 0.8389296486742697,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md",
+        "year_count": 3
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_price_efficiency_cost_5m",
+      "family": "quality",
+      "feature_columns": [
+        "intraday_price_efficiency_cost_5m"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Names with larger same-bar close-to-VWAP displacement after normalizing by intrabar spread appear to capture informed or profitable intraday pressure in the 6-bar horizon, with incremental quality-like information beyond momentum, reversal, and toxicity.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "intraday_quality"
+          ]
+        }
+      },
+      "label_lag_bars": 6,
+      "live_available": true,
+      "lookback_bars": 1,
+      "notes": "2026-05-29 standard admission selected this feature in long direction, contrary to the initial lower-cost interpretation. Candidate policy validation passed with positive full-base, high-cost, and all yearly slices. Compact-core overlay suite was warn with no failed checks, but blend, downside-penalty, and entry-exclusion variants did not improve full-sample return versus the compact-core baseline, so core promotion is deferred.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md",
+        "runs/factor_research/intraday_quality_2026_05_29/factor_evaluation_6b/summary.json",
+        "runs/factor_research/intraday_quality_2026_05_29/factor_admission_6b/factor_admission_report.json",
+        "runs/factor_research/intraday_quality_2026_05_29/candidate_policy_validation_6b_single/validation_summary.json",
+        "runs/factor_research/intraday_quality_2026_05_29/compact_core_incremental_blend_standard/validation_summary.json",
+        "runs/factor_research/intraday_quality_2026_05_29/compact_core_downside_penalty_standard/validation_summary.json",
+        "runs/factor_research/intraday_quality_2026_05_29/compact_core_entry_exclusion_standard/validation_summary.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "high_price",
+        "low_price",
+        "close_price",
+        "volume",
+        "turnover"
+      ],
+      "status": "candidate",
+      "tags": [
+        "intraday",
+        "quality",
+        "execution_quality",
+        "vwap",
+        "batch_2026_05_29_intraday_quality",
+        "standard_admission_2026_05_29",
+        "portfolio_validation_pass",
+        "compact_core_incremental_defer",
+        "overlay_suite_no_core_promotion",
+        "candidate"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "EWMA persistence of close-to-VWAP execution advantage after clipping the spread-normalized cost to [0, 1].",
+      "display_name": "Intraday execution quality, 12-bar halflife",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/intraday_quality_2026_05_29/factor_admission_6b/factor_admission_report.json",
+        "admission_status": "reject",
+        "cost_adjusted_top_minus_bottom_label": -1.598103448275862e-06,
+        "dataset": "runs/factor_research/intraday_quality_2026_05_29/alpha_dataset",
+        "factor_evaluation": "runs/factor_research/intraday_quality_2026_05_29/factor_evaluation_6b/summary.json",
+        "failed_checks": [
+          "abs_rank_ic_mean",
+          "abs_rank_ic_t_stat",
+          "directional_ic_hit_rate",
+          "stable_year_count",
+          "cost_adjusted_spread"
+        ],
+        "registry_decision_status": "reject",
+        "stable_year_count": 0,
+        "top_n_turnover": 0.0012293103448275861,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md"
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_execution_quality_5m_hl12",
+      "family": "quality",
+      "feature_columns": [
+        "intraday_execution_quality_5m_hl12"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Persistent low execution cost should proxy intraday profitability quality and remain less correlated with price-only reversal or momentum factors than raw return features.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "intraday_quality"
+          ],
+          "intraday_quality_halflives": [
+            12
+          ]
+        }
+      },
+      "label_lag_bars": 6,
+      "live_available": true,
+      "lookback_bars": 12,
+      "notes": "2026-05-29 standard admission rejected. The EWMA clipped execution-advantage series was nearly cross-sectionally constant, producing undefined rank IC and no economic spread.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md",
+        "runs/factor_research/intraday_quality_2026_05_29/factor_evaluation_6b/summary.json",
+        "runs/factor_research/intraday_quality_2026_05_29/factor_admission_6b/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "high_price",
+        "low_price",
+        "close_price",
+        "volume",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "weak_ic",
+        "evidence_artifacts": [
+          "runs/factor_research/intraday_quality_2026_05_29/factor_evaluation_6b/summary.json",
+          "runs/factor_research/intraday_quality_2026_05_29/factor_admission_6b/factor_admission_report.json"
+        ],
+        "negative_findings": "The 12-bar EWMA execution-quality feature had undefined rank IC, zero stable years, near-zero spread after costs, and failed IC magnitude, t-stat, hit-rate, stability, and cost-adjusted spread checks.",
+        "retry_conditions": "Retry only with a cross-sectionally richer execution-quality transform, such as raw unclipped spread-normalized displacement, order-book spread/depth, or trade-level execution data.",
+        "similar_to": [
+          "intraday_execution_quality_5m_hl6",
+          "intraday_signed_trade_efficiency_5m"
+        ]
+      },
+      "status": "reject",
+      "tags": [
+        "intraday",
+        "quality",
+        "execution_quality",
+        "ewma",
+        "batch_2026_05_29_intraday_quality",
+        "standard_admission_2026_05_29",
+        "weak_ic",
+        "reject"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
+      "description": "Rolling turnover-weighted directional close-to-VWAP cost on high-turnover bars used as a large-trade impact-cost proxy.",
+      "display_name": "Intraday large-trade cost, 48-bar window",
+      "evaluation": {
+        "admission_direction": "long",
+        "admission_report": "runs/factor_research/intraday_quality_2026_05_29/factor_admission_6b/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.00020717780665129856,
+        "coverage": 0.998487,
+        "dataset": "runs/factor_research/intraday_quality_2026_05_29/alpha_dataset",
+        "directional_ic_hit_rate": 0.5498850574712644,
+        "factor_evaluation": "runs/factor_research/intraday_quality_2026_05_29/factor_evaluation_6b/summary.json",
+        "failed_checks": [
+          "cost_adjusted_spread"
+        ],
+        "registry_decision_status": "watchlist",
+        "sample_count": 103340918,
+        "spearman_rank_ic_mean": 0.011801645050285562,
+        "spearman_rank_ic_t_stat": 23.3405116187963,
+        "stable_year_count": 3,
+        "timestamp_count": 34800,
+        "top_n_turnover": 0.11844091589000114,
+        "validation_review": "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md",
+        "year_count": 3
+      },
+      "expected_direction": "long",
+      "factor_id": "intraday_large_trade_cost_5m_w48",
+      "family": "quality",
+      "feature_columns": [
+        "intraday_large_trade_cost_5m_w48"
+      ],
+      "frequency": "5m",
+      "hypothesis": "Names where high-turnover bars show larger directional close-to-VWAP displacement may reflect informed or profitable pressure, but the standalone 48-bar large-trade proxy must clear cost-adjusted spread before use.",
+      "implementation": {
+        "builder": "build_intraday_feature_matrix",
+        "module": "quant_research.datasets.intraday_features",
+        "parameters": {
+          "factor_groups": [
+            "intraday_quality"
+          ],
+          "intraday_quality_large_trade_quantile": 0.8,
+          "intraday_quality_large_trade_windows": [
+            48
+          ]
+        }
+      },
+      "label_lag_bars": 6,
+      "live_available": true,
+      "lookback_bars": 48,
+      "notes": "2026-05-29 standard admission found strong positive rank IC and stable years, but after-cost top-minus-bottom spread was negative. Keep as watchlist, not eligible for standalone portfolio validation.",
+      "point_in_time_safe": true,
+      "references": [
+        "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md",
+        "runs/factor_research/intraday_quality_2026_05_29/factor_evaluation_6b/summary.json",
+        "runs/factor_research/intraday_quality_2026_05_29/factor_admission_6b/factor_admission_report.json"
+      ],
+      "required_inputs": [
+        "instrument_id",
+        "bar_end_time",
+        "high_price",
+        "low_price",
+        "close_price",
+        "volume",
+        "turnover"
+      ],
+      "research_memory": {
+        "decision_reason": "cost_fragile",
+        "evidence_artifacts": [
+          "runs/factor_research/intraday_quality_2026_05_29/factor_evaluation_6b/summary.json",
+          "runs/factor_research/intraday_quality_2026_05_29/factor_admission_6b/factor_admission_report.json"
+        ],
+        "negative_findings": "The 48-bar large-trade cost proxy had positive rank IC and stable years but failed the standard 13 bps cost-adjusted spread gate; standalone use is cost-fragile despite low turnover.",
+        "retry_conditions": "Retry only with explicit turnover/cost controls, a broader quality basket, or direct trade/order-book large-print inputs.",
+        "similar_to": [
+          "intraday_large_trade_cost_5m_w12",
+          "intraday_price_efficiency_cost_5m"
+        ]
+      },
+      "status": "watchlist",
+      "tags": [
+        "intraday",
+        "quality",
+        "execution_cost",
+        "large_trade_proxy",
+        "batch_2026_05_29_intraday_quality",
+        "standard_admission_2026_05_29",
+        "cost_fragile",
+        "watchlist"
+      ]
+    },
+    {
+      "a_share_constraints": {
+        "long_only": true,
+        "price_limit_aware": true,
+        "st_aware": true,
+        "t_plus_one_safe": true
+      },
       "description": "Rolling 6-bar normalized order-flow imbalance from signed 5-minute volume.",
       "display_name": "Intraday order-flow imbalance, 6-bar window",
       "evaluation": {
@@ -9677,10 +9964,11 @@
     "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
     "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md",
     "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md",
-    "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md"
+    "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
+    "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md"
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-28",
-  "version": 61
+  "updated_at": "2026-05-29",
+  "version": 64
 }

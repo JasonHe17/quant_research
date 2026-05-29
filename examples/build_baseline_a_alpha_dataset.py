@@ -200,6 +200,13 @@ def _build_partition_dataset(
                 args.signed_turnover_imbalance_windows
             ),
             order_flow_toxicity_windows=tuple(args.order_flow_toxicity_windows),
+            intraday_quality_halflives=tuple(args.intraday_quality_halflives),
+            intraday_quality_large_trade_windows=tuple(
+                args.intraday_quality_large_trade_windows
+            ),
+            intraday_quality_large_trade_quantile=(
+                args.intraday_quality_large_trade_quantile
+            ),
             risk_adjusted_momentum_windows=tuple(args.risk_adjusted_momentum_windows),
             volume_confirmed_momentum_windows=tuple(
                 args.volume_confirmed_momentum_windows
@@ -517,6 +524,13 @@ def _write_summary(
             "money_flow_windows": args.money_flow_windows,
             "signed_turnover_imbalance_windows": args.signed_turnover_imbalance_windows,
             "order_flow_toxicity_windows": args.order_flow_toxicity_windows,
+            "intraday_quality_halflives": args.intraday_quality_halflives,
+            "intraday_quality_large_trade_windows": (
+                args.intraday_quality_large_trade_windows
+            ),
+            "intraday_quality_large_trade_quantile": (
+                args.intraday_quality_large_trade_quantile
+            ),
             "risk_adjusted_momentum_windows": args.risk_adjusted_momentum_windows,
             "volume_confirmed_momentum_windows": args.volume_confirmed_momentum_windows,
             "return_turnover_correlation_windows": args.return_turnover_correlation_windows,
@@ -621,6 +635,7 @@ def _parse_args() -> argparse.Namespace:
             "money_flow",
             "signed_turnover_imbalance",
             "order_flow_toxicity",
+            "intraday_quality",
             "risk_adjusted_momentum",
             "volume_confirmed_momentum",
             "intraday_gap",
@@ -749,6 +764,23 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         nargs="+",
         default=[6, 12, 48],
+    )
+    parser.add_argument(
+        "--intraday-quality-halflives",
+        type=int,
+        nargs="+",
+        default=[6, 12],
+    )
+    parser.add_argument(
+        "--intraday-quality-large-trade-windows",
+        type=int,
+        nargs="+",
+        default=[48],
+    )
+    parser.add_argument(
+        "--intraday-quality-large-trade-quantile",
+        type=float,
+        default=0.8,
     )
     parser.add_argument(
         "--risk-adjusted-momentum-windows",
@@ -999,6 +1031,14 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--signed-turnover-imbalance-windows values must be positive")
     if any(value <= 1 for value in args.order_flow_toxicity_windows):
         raise ValueError("--order-flow-toxicity-windows values must be at least 2")
+    if any(value <= 0 for value in args.intraday_quality_halflives):
+        raise ValueError("--intraday-quality-halflives values must be positive")
+    if any(value <= 1 for value in args.intraday_quality_large_trade_windows):
+        raise ValueError(
+            "--intraday-quality-large-trade-windows values must be at least 2"
+        )
+    if not 0.0 < args.intraday_quality_large_trade_quantile < 1.0:
+        raise ValueError("--intraday-quality-large-trade-quantile must be in (0, 1)")
     if any(value <= 0 for value in args.risk_adjusted_momentum_windows):
         raise ValueError("--risk-adjusted-momentum-windows values must be positive")
     if any(value <= 0 for value in args.volume_confirmed_momentum_windows):
@@ -1139,6 +1179,13 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
             args.signed_turnover_imbalance_windows
         ),
         "order_flow_toxicity_windows": list(args.order_flow_toxicity_windows),
+        "intraday_quality_halflives": list(args.intraday_quality_halflives),
+        "intraday_quality_large_trade_windows": list(
+            args.intraday_quality_large_trade_windows
+        ),
+        "intraday_quality_large_trade_quantile": (
+            args.intraday_quality_large_trade_quantile
+        ),
         "risk_adjusted_momentum_windows": list(args.risk_adjusted_momentum_windows),
         "volume_confirmed_momentum_windows": list(
             args.volume_confirmed_momentum_windows
@@ -1249,6 +1296,8 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
                     *args.money_flow_windows,
                     *args.signed_turnover_imbalance_windows,
                     *args.order_flow_toxicity_windows,
+                    *args.intraday_quality_halflives,
+                    *args.intraday_quality_large_trade_windows,
                     *args.risk_adjusted_momentum_windows,
                     *args.volume_confirmed_momentum_windows,
                     *args.return_turnover_correlation_windows,

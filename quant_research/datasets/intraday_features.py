@@ -35,6 +35,7 @@ _VALID_GROUPS = {
     "money_flow",
     "signed_turnover_imbalance",
     "order_flow_toxicity",
+    "intraday_quality",
     "risk_adjusted_momentum",
     "volume_confirmed_momentum",
     "intraday_gap",
@@ -101,6 +102,9 @@ class IntradayFeatureConfig:
     money_flow_windows: tuple[int, ...] = (12, 48)
     signed_turnover_imbalance_windows: tuple[int, ...] = (12, 48)
     order_flow_toxicity_windows: tuple[int, ...] = (6, 12, 48)
+    intraday_quality_halflives: tuple[int, ...] = (6, 12)
+    intraday_quality_large_trade_windows: tuple[int, ...] = (48,)
+    intraday_quality_large_trade_quantile: float = 0.8
     risk_adjusted_momentum_windows: tuple[int, ...] = (12, 48)
     volume_confirmed_momentum_windows: tuple[int, ...] = (12, 48)
     return_turnover_correlation_windows: tuple[int, ...] = (12, 48)
@@ -171,6 +175,11 @@ class IntradayFeatureConfig:
                 self.signed_turnover_imbalance_windows,
             ),
             ("order_flow_toxicity_windows", self.order_flow_toxicity_windows),
+            ("intraday_quality_halflives", self.intraday_quality_halflives),
+            (
+                "intraday_quality_large_trade_windows",
+                self.intraday_quality_large_trade_windows,
+            ),
             ("risk_adjusted_momentum_windows", self.risk_adjusted_momentum_windows),
             ("volume_confirmed_momentum_windows", self.volume_confirmed_momentum_windows),
             (
@@ -233,6 +242,14 @@ class IntradayFeatureConfig:
             raise ValueError("volume_distribution_windows values must be at least 2")
         if any(value <= 1 for value in self.order_flow_toxicity_windows):
             raise ValueError("order_flow_toxicity_windows values must be at least 2")
+        if any(value <= 1 for value in self.intraday_quality_large_trade_windows):
+            raise ValueError(
+                "intraday_quality_large_trade_windows values must be at least 2"
+            )
+        if not 0.0 < self.intraday_quality_large_trade_quantile < 1.0:
+            raise ValueError(
+                "intraday_quality_large_trade_quantile must be in (0, 1)"
+            )
         if any(short <= 0 or long <= 0 for short, long in self.daily_moving_average_pairs):
             raise ValueError("daily_moving_average_pairs values must be positive")
         if any(short >= long for short, long in self.daily_moving_average_pairs):
@@ -322,6 +339,7 @@ def build_intraday_feature_matrix(
         "volume_confirmed_momentum",
         "conditional_reversal",
         "order_flow_toxicity",
+        "intraday_quality",
     }:
         required.append("volume")
     if "volume_distribution_shape" in groups:
@@ -337,6 +355,7 @@ def build_intraday_feature_matrix(
         "liquidity_impact",
         "vwap_deviation",
         "event_shock_proxy",
+        "intraday_quality",
     }:
         required.append("turnover")
     if groups & {
@@ -354,6 +373,8 @@ def build_intraday_feature_matrix(
         required.append("turnover")
     if groups & {"vwap_deviation"}:
         required.append("volume")
+    if "intraday_quality" in groups:
+        required.extend(["high_price", "low_price"])
     if groups & {
         "limit_pressure_resilience",
         "market_state",
@@ -1757,6 +1778,70 @@ def build_intraday_feature_matrix(
             feature_columns.extend(
                 [ofi_column, vpin_column, adverse_selection_column]
             )
+    if "intraday_quality" in groups:
+        frame["high_price"] = frame["high_price"].astype(float)
+        frame["low_price"] = frame["low_price"].astype(float)
+        frame["turnover"] = frame["turnover"].astype(float)
+        frame["volume"] = frame["volume"].astype(float)
+        bar_vwap = frame["turnover"] / frame["volume"].where(frame["volume"] != 0.0)
+        spread_proxy = (frame["high_price"] - frame["low_price"]).abs()
+        price_efficiency_cost = (
+            (frame["close_price"] - bar_vwap).abs()
+            / spread_proxy.where(spread_proxy != 0.0)
+        )
+        price_advantage = 1.0 - price_efficiency_cost.clip(lower=0.0, upper=1.0)
+        price_efficiency_column = "intraday_price_efficiency_cost_5m"
+        signed_efficiency_column = "intraday_signed_trade_efficiency_5m"
+        output[price_efficiency_column] = price_efficiency_cost
+        output[signed_efficiency_column] = np.sign(one_bar_return) * price_advantage
+        feature_columns.extend([price_efficiency_column, signed_efficiency_column])
+        for halflife in config.intraday_quality_halflives:
+            column = f"intraday_execution_quality_5m_hl{halflife}"
+            output[column] = price_advantage.groupby(frame["instrument_id"]).transform(
+                lambda values, halflife=halflife: values.ewm(
+                    halflife=halflife,
+                    min_periods=halflife,
+                    adjust=False,
+                ).mean()
+            )
+            feature_columns.append(column)
+        directional_price_cost = (
+            np.sign(one_bar_return)
+            * (frame["close_price"] - bar_vwap)
+            / bar_vwap.where(bar_vwap != 0.0)
+        )
+        turnover_grouped = frame.groupby("instrument_id", sort=False)["turnover"]
+        for window in config.intraday_quality_large_trade_windows:
+            large_trade_threshold = turnover_grouped.transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).quantile(config.intraday_quality_large_trade_quantile)
+            )
+            large_trade_turnover = frame["turnover"].where(
+                frame["turnover"] >= large_trade_threshold,
+                0.0,
+            )
+            weighted_cost = directional_price_cost.fillna(0.0) * large_trade_turnover
+            rolling_cost = weighted_cost.groupby(frame["instrument_id"]).transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).sum()
+            )
+            rolling_large_turnover = large_trade_turnover.groupby(
+                frame["instrument_id"]
+            ).transform(
+                lambda values, window=window: values.rolling(
+                    window,
+                    min_periods=window,
+                ).sum()
+            )
+            column = f"intraday_large_trade_cost_5m_w{window}"
+            output[column] = rolling_cost / rolling_large_turnover.where(
+                rolling_large_turnover != 0.0
+            )
+            feature_columns.append(column)
     if "return_turnover_correlation" in groups:
         frame["turnover"] = frame["turnover"].astype(float)
         for window in config.return_turnover_correlation_windows:
