@@ -87,6 +87,22 @@ def test_ml_factor_challenger_example_has_cli_help() -> None:
     assert "--redundancy-sample-rows" in result.stdout
 
 
+def test_primary_pool_score_blends_example_has_cli_help() -> None:
+    script = Path("examples/build_primary_pool_score_blends.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--primary-score-dir" in result.stdout
+    assert "--ml-pool-score-dir" in result.stdout
+    assert "--primary-blend-weights" in result.stdout
+
+
 def test_candidate_policy_validation_example_has_cli_help() -> None:
     script = Path("examples/run_candidate_policy_validation.py")
 

@@ -108,3 +108,32 @@ Promotion rule: compare only OOS backtests against the current
 stress, annual slices, drawdown, and turnover all need to clear the same
 standard validation bar before this challenger can replace or augment the
 manual-weight baseline.
+
+For fast blend-weight sweeps after an ML-only primary-pool score already
+exists, reuse the model scores instead of retraining:
+
+```bash
+conda run -n quant python examples/build_primary_pool_score_blends.py \
+  --primary-score-dir runs/candidate_factor_portfolios/legacy_top2_alpha_rank_rank_standard_2026_05_29/scores/decorrelated \
+  --ml-pool-score-dir runs/ml_factor_challenger/compact_core_lightgbm_primary_pool_rerank_2026_05_29/scores/lightgbm \
+  --output-dir runs/ml_factor_challenger/primary_pool_blend_grid_2026_05_29 \
+  --primary-blend-weights 0.5 0.6 0.7 0.8 0.9
+```
+
+Current 2024-2025 standard-constraint sweep:
+
+| Method | Primary weight | Total return | Max drawdown |
+| --- | ---: | ---: | ---: |
+| Baseline absorption | - | 22.42% | -29.77% |
+| Standalone LightGBM | - | 16.51% | -30.69% |
+| Pure ML pool rerank | 0.0 | 19.45% | -27.66% |
+| Primary-pool blend | 0.5 | 26.94% | -27.30% |
+| Primary-pool blend | 0.6 | 22.82% | -28.29% |
+| Primary-pool blend | 0.7 | 24.31% | -27.66% |
+| Primary-pool blend | 0.8 | 24.54% | -28.12% |
+| Primary-pool blend | 0.9 | 25.21% | -28.79% |
+
+The current best challenger is `primary_w050`, stored under
+`runs/ml_factor_challenger/primary_pool_blend_grid_2026_05_29`.  Treat it as a
+candidate for stress validation, not as promoted production logic, until annual
+slices, high-cost stress, and pool-rank sensitivity are reviewed.
