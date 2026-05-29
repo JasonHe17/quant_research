@@ -26,8 +26,10 @@ from examples.run_tree_score_backtest import (
     _build_target_weights,
     _cost_pressure_scale,
     _cost_pressure_turnover_cap,
+    _load_policy_override_schedule,
     _load_ranked_score_signals,
     _next_segment_end,
+    _params_for_policy_override,
     _realized_transaction_cost_bps,
     _resolved_policy_estimated_cost_bps,
     _score_rank_limit,
@@ -164,6 +166,41 @@ def test_rank_buffer_drop_policy_exits_beyond_exit_rank_and_enters_replacement()
     assert targets["inst-new"] == pytest.approx(1.0)
     assert reasons["inst-held"] == "exit_rank"
     assert reasons["inst-new"] == "entry_rank"
+
+
+def test_rank_buffer_drop_policy_refreshes_worst_retained_name() -> None:
+    forecasts = pd.DataFrame(
+        [
+            _forecast("2024-01-02T09:35:00+08:00", "inst-new", 0.95, 1),
+            _forecast("2024-01-02T09:35:00+08:00", "inst-keep", 0.80, 2),
+            _forecast("2024-01-02T09:35:00+08:00", "inst-refresh", 0.60, 3),
+        ]
+    )
+    state = pd.DataFrame(
+        [
+            {"instrument_id": "inst-keep", "current_weight": 0.5, "holding_bars": 5},
+            {
+                "instrument_id": "inst-refresh",
+                "current_weight": 0.5,
+                "holding_bars": 5,
+            },
+        ]
+    )
+
+    result = RankBufferDropPolicy(
+        RankBufferDropConfig(
+            target_count=2,
+            entry_rank=1,
+            exit_rank=3,
+            refresh_exits_per_rebalance=1,
+        )
+    ).decide(forecasts, state)
+
+    decisions = result.trade_decisions.set_index("instrument_id")
+    assert decisions.loc["inst-refresh", "target_weight"] == pytest.approx(0.0)
+    assert decisions.loc["inst-refresh", "decision_reason"] == "refresh_exit"
+    assert decisions.loc["inst-new", "target_weight"] == pytest.approx(0.5)
+    assert decisions.loc["inst-new", "decision_reason"] == "entry_rank"
 
 
 def test_rank_buffer_drop_policy_skips_ineligible_new_entries_without_mixing_rank() -> None:
@@ -1663,6 +1700,34 @@ def test_tree_score_segment_executions_match_sparse_filtered_window() -> None:
     pd.testing.assert_frame_equal(segment, expected)
 
 
+def test_tree_score_policy_schedule_overrides_policy_params(tmp_path) -> None:
+    schedule_path = tmp_path / "policy_schedule.csv"
+    pd.DataFrame(
+        [
+            {
+                "trade_date": "2024-01-02",
+                "selected_method": "candidate_a",
+                "policy_exit_rank": 50,
+                "policy_force_source_transition_exits": "true",
+                "policy_source_transition_exit_rate": 0.25,
+            }
+        ]
+    ).to_csv(schedule_path, index=False)
+    params = replace(
+        _tree_score_params(tmp_path),
+        policy_schedule_path=schedule_path,
+        policy_exit_rank=2,
+    )
+
+    overrides = _load_policy_override_schedule(params)
+    effective = _params_for_policy_override(params, overrides["2024-01-02"])
+
+    assert _score_rank_limit(params) == 50
+    assert effective.policy_exit_rank == 50
+    assert effective.policy_force_source_transition_exits is True
+    assert effective.policy_source_transition_exit_rate == pytest.approx(0.25)
+
+
 def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
     return TreeScoreBacktestParams(
         predictions_path=tmp_path,
@@ -1683,6 +1748,7 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         policy_exit_rank=2,
         policy_max_entries_per_rebalance=None,
         policy_max_exits_per_rebalance=None,
+        policy_refresh_exits_per_rebalance=0,
         policy_min_hold_bars=0,
         policy_min_expected_edge_bps=None,
         policy_estimated_cost_bps=0.0,
@@ -1694,6 +1760,7 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         policy_turnover_budget_pacing=0.0,
         policy_gross_exposure_scale=1.0,
         policy_gross_exposure_scale_path=None,
+        policy_schedule_path=None,
         policy_drawdown_brake_threshold=None,
         policy_drawdown_brake_reduced_scale=0.5,
         policy_cost_pressure_threshold_bps=None,

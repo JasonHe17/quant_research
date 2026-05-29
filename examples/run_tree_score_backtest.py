@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import sys
@@ -68,6 +68,7 @@ class TreeScoreBacktestParams:
     policy_exit_rank: int | None
     policy_max_entries_per_rebalance: int | None
     policy_max_exits_per_rebalance: int | None
+    policy_refresh_exits_per_rebalance: int
     policy_min_hold_bars: int
     policy_min_expected_edge_bps: float | None
     policy_estimated_cost_bps: float
@@ -79,6 +80,7 @@ class TreeScoreBacktestParams:
     policy_turnover_budget_pacing: float
     policy_gross_exposure_scale: float
     policy_gross_exposure_scale_path: Path | None
+    policy_schedule_path: Path | None
     policy_drawdown_brake_threshold: float | None
     policy_drawdown_brake_reduced_scale: float
     policy_cost_pressure_threshold_bps: float | None
@@ -138,6 +140,33 @@ class BarTimeIndex:
     row_indices_by_time: dict[object, object]
 
 
+_POLICY_OVERRIDE_FIELD_TYPES = {
+    "trade_policy": "str",
+    "policy_entry_rank": "int",
+    "policy_exit_rank": "int",
+    "policy_max_entries_per_rebalance": "int",
+    "policy_max_exits_per_rebalance": "int",
+    "policy_refresh_exits_per_rebalance": "int",
+    "policy_min_hold_bars": "int",
+    "policy_min_expected_edge_bps": "float",
+    "policy_no_trade_weight_band": "float",
+    "policy_partial_rebalance_rate": "float",
+    "policy_max_gross_turnover_per_rebalance": "float",
+    "policy_gross_exposure_scale": "float",
+    "policy_force_source_transition_exits": "bool",
+    "policy_source_transition_exit_rate": "float",
+    "policy_source_transition_turnover_cap": "float",
+    "optimizer_candidate_rank": "int",
+    "optimizer_score_to_edge_bps": "float",
+    "optimizer_min_net_edge_bps": "float",
+    "optimizer_risk_penalty_multiplier": "float",
+    "optimizer_target_cap_mode": "str",
+    "optimizer_weighting": "str",
+    "optimizer_max_name_weight": "float",
+    "optimizer_max_gross_exposure_increase_per_rebalance": "float",
+}
+
+
 def main() -> None:
     params = _parse_args()
     result = run_tree_score_backtest(params)
@@ -184,8 +213,13 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
     if params.policy_cost_pressure_threshold_bps is not None:
         raise ValueError("cost pressure brake requires --data-access-mode fast_parquet")
 
+    policy_overrides_by_date = _load_policy_override_schedule(params)
     ranked_signals = _load_ranked_score_signals(params)
-    target_build = _build_target_weights(ranked_signals, params)
+    target_build = _build_target_weights(
+        ranked_signals,
+        params,
+        policy_overrides_by_date=policy_overrides_by_date,
+    )
     signals = target_build.target_weights
     if signals.empty:
         raise ValueError("no score signals loaded for requested period")
@@ -240,6 +274,9 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "policy_exit_rank": params.policy_exit_rank,
             "policy_max_entries_per_rebalance": params.policy_max_entries_per_rebalance,
             "policy_max_exits_per_rebalance": params.policy_max_exits_per_rebalance,
+            "policy_refresh_exits_per_rebalance": (
+                params.policy_refresh_exits_per_rebalance
+            ),
             "policy_min_hold_bars": params.policy_min_hold_bars,
             "policy_min_expected_edge_bps": params.policy_min_expected_edge_bps,
             "policy_estimated_cost_bps": params.policy_estimated_cost_bps,
@@ -253,6 +290,11 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "policy_gross_exposure_scale_path": (
                 str(params.policy_gross_exposure_scale_path)
                 if params.policy_gross_exposure_scale_path is not None
+                else None
+            ),
+            "policy_schedule_path": (
+                str(params.policy_schedule_path)
+                if params.policy_schedule_path is not None
                 else None
             ),
             "policy_drawdown_brake_threshold": params.policy_drawdown_brake_threshold,
@@ -345,6 +387,7 @@ def _run_tree_score_backtest_streaming(
     policy_source_by_instrument: dict[str, str] = {}
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
+    policy_overrides_by_date = _load_policy_override_schedule(params)
     for work_unit in _streaming_work_units(backtest_params):
         bars = _load_bars_from_files(
             backtest_params,
@@ -375,6 +418,7 @@ def _run_tree_score_backtest_streaming(
             budget_state=budget_state,
             source_state=policy_source_state,
             source_by_instrument=policy_source_by_instrument,
+            policy_overrides_by_date=policy_overrides_by_date,
         )
         signals = target_build.target_weights
         policy_state = target_build.policy_state
@@ -475,6 +519,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
     peak_equity = float(params.initial_cash)
     last_simulated_time: object | None = None
     scale_by_timestamp = _load_policy_gross_exposure_schedule(params)
+    policy_overrides_by_date = _load_policy_override_schedule(params)
 
     def run_execution_batch(executions: pd.DataFrame) -> None:
         nonlocal state, trade_count, total_executions
@@ -580,6 +625,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
                 cost_pressure_scale=cost_pressure_scale,
                 cost_pressure_turnover_cap=cost_pressure_turnover_cap,
                 realized_cost_bps=realized_cost_bps,
+                policy_overrides_by_date=policy_overrides_by_date,
             )
             signals = target_build.target_weights
             policy_state = target_build.policy_state
@@ -758,6 +804,15 @@ def _score_rank_limit(params: TreeScoreBacktestParams) -> int:
             limits.append(params.optimizer_candidate_rank)
         if params.policy_exit_rank is not None:
             limits.append(params.policy_exit_rank)
+    for override in _load_policy_override_schedule(params).values():
+        for field in (
+            "policy_entry_rank",
+            "policy_exit_rank",
+            "optimizer_candidate_rank",
+        ):
+            value = override.get(field)
+            if value is not None:
+                limits.append(int(value))
     return max(limits)
 
 
@@ -775,6 +830,86 @@ def _prediction_scan_target(path: Path) -> str:
     return str(path)
 
 
+def _load_policy_override_schedule(
+    params: TreeScoreBacktestParams,
+) -> dict[str, dict[str, object]]:
+    path = params.policy_schedule_path
+    if path is None:
+        return {}
+    frame = pd.read_csv(path)
+    if "trade_date" not in frame.columns:
+        raise ValueError("--policy-schedule-path must include trade_date")
+    overrides: dict[str, dict[str, object]] = {}
+    for row in frame.to_dict(orient="records"):
+        trade_date = str(row.get("trade_date", "")).strip()
+        if not trade_date:
+            continue
+        payload: dict[str, object] = {}
+        selected_method = row.get("selected_method")
+        if selected_method is not None and not pd.isna(selected_method):
+            payload["selected_method"] = str(selected_method)
+        for field, value_type in _POLICY_OVERRIDE_FIELD_TYPES.items():
+            if field not in row:
+                continue
+            value = _coerce_policy_override_value(row[field], value_type)
+            if value is not None:
+                payload[field] = value
+        if payload:
+            overrides[trade_date] = payload
+    return overrides
+
+
+def _policy_override_for_signal(
+    overrides_by_date: dict[str, dict[str, object]],
+    signal_time: object,
+) -> dict[str, object]:
+    if not overrides_by_date:
+        return {}
+    trade_date = pd.Timestamp(signal_time)
+    if trade_date.tzinfo is None:
+        trade_date = trade_date.tz_localize("UTC")
+    trade_date_key = str(trade_date.tz_convert("Asia/Shanghai").date())
+    return overrides_by_date.get(trade_date_key, {})
+
+
+def _params_for_policy_override(
+    params: TreeScoreBacktestParams,
+    override: dict[str, object],
+) -> TreeScoreBacktestParams:
+    if not override:
+        return params
+    updates = {
+        field: value
+        for field, value in override.items()
+        if field in _POLICY_OVERRIDE_FIELD_TYPES
+    }
+    if not updates:
+        return params
+    return replace(params, **updates)
+
+
+def _coerce_policy_override_value(value: object, value_type: str) -> object | None:
+    if value is None or pd.isna(value):
+        return None
+    if value_type == "str":
+        text = str(value).strip()
+        return text or None
+    if value_type == "bool":
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in {"1", "true", "t", "yes", "y"}:
+            return True
+        if text in {"0", "false", "f", "no", "n"}:
+            return False
+        raise ValueError(f"invalid boolean policy override: {value!r}")
+    if value_type == "int":
+        return int(float(value))
+    if value_type == "float":
+        return float(value)
+    raise ValueError(f"unsupported policy override type: {value_type}")
+
+
 def _build_target_weights(
     ranked_signals: pd.DataFrame,
     params: TreeScoreBacktestParams,
@@ -789,6 +924,7 @@ def _build_target_weights(
     cost_pressure_scale: float | None = None,
     cost_pressure_turnover_cap: float | None = None,
     realized_cost_bps: float | None = None,
+    policy_overrides_by_date: dict[str, dict[str, object]] | None = None,
 ) -> TargetWeightBuildResult:
     if params.trade_policy == "naive_top_n":
         return TargetWeightBuildResult(
@@ -807,11 +943,7 @@ def _build_target_weights(
         raise ValueError(f"unsupported trade policy: {params.trade_policy}")
     if scale_by_timestamp is None:
         scale_by_timestamp = _load_policy_gross_exposure_schedule(params)
-    base_scale = _effective_gross_exposure_scale(
-        params.policy_gross_exposure_scale,
-        gross_exposure_scale_cap,
-    )
-    default_policy = _policy_for_params(params, gross_exposure_scale=base_scale)
+    policy_overrides_by_date = policy_overrides_by_date or {}
     diagnostics: list[pd.DataFrame] = []
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
@@ -824,23 +956,32 @@ def _build_target_weights(
     remaining_turnover_budget = current_budget_state.remaining_turnover_budget
     budget_period_key = current_budget_state.budget_period_key
     for index, (signal_time, group) in enumerate(grouped_signals):
+        policy_override = _policy_override_for_signal(
+            policy_overrides_by_date,
+            signal_time,
+        )
+        effective_params = _params_for_policy_override(params, policy_override)
         refreshed_budget = _policy_budget_state_for_signal(
-            params,
+            effective_params,
             signal_time=signal_time,
             remaining_turnover_budget=remaining_turnover_budget,
             budget_period_key=budget_period_key,
         )
         remaining_turnover_budget = refreshed_budget.remaining_turnover_budget
         budget_period_key = refreshed_budget.budget_period_key
-        policy = default_policy
+        base_scale = _effective_gross_exposure_scale(
+            effective_params.policy_gross_exposure_scale,
+            gross_exposure_scale_cap,
+        )
+        policy = _policy_for_params(effective_params, gross_exposure_scale=base_scale)
         effective_policy_scale = base_scale
         policy_turnover_cap = _policy_turnover_cap_for_signal(
-            params,
+            effective_params,
             remaining_turnover_budget=remaining_turnover_budget,
             remaining_decision_count=group_count - index,
         )
         path_turnover_cap = _path_turnover_cap_for_signal(
-            params,
+            effective_params,
             remaining_turnover_budget=remaining_turnover_budget,
             remaining_decision_count=group_count - index,
         )
@@ -856,18 +997,18 @@ def _build_target_weights(
         if scale_by_timestamp:
             scale = scale_by_timestamp.get(
                 _timestamp_key(signal_time),
-                params.policy_gross_exposure_scale,
+                effective_params.policy_gross_exposure_scale,
             )
             scale = _effective_gross_exposure_scale(scale, gross_exposure_scale_cap)
             effective_policy_scale = scale
             policy = _policy_for_params(
-                params,
+                effective_params,
                 gross_exposure_scale=scale,
                 turnover_cap=policy_turnover_cap,
             )
-        elif policy_turnover_cap != params.policy_max_gross_turnover_per_rebalance:
+        elif policy_turnover_cap != effective_params.policy_max_gross_turnover_per_rebalance:
             policy = _policy_for_params(
-                params,
+                effective_params,
                 gross_exposure_scale=base_scale,
                 turnover_cap=policy_turnover_cap,
             )
@@ -887,7 +1028,7 @@ def _build_target_weights(
                 "target_weight_cap",
                 "optimizer_max_target_weight",
                 "entry_eligible",
-                params.policy_source_column,
+                effective_params.policy_source_column,
             )
             if column in group.columns
         ]
@@ -896,11 +1037,11 @@ def _build_target_weights(
         )
         signal_source = _signal_source_for_group(
             group,
-            params.policy_source_column,
+            effective_params.policy_source_column,
         )
         source_change_reset = False
         if (
-            params.policy_reset_on_source_change
+            effective_params.policy_reset_on_source_change
             and signal_source is not None
             and current_source_state is not None
             and signal_source != current_source_state
@@ -912,7 +1053,7 @@ def _build_target_weights(
             current_source_state = signal_source
         source_transition_forced_exit_count = 0
         if (
-            params.policy_force_source_transition_exits
+            effective_params.policy_force_source_transition_exits
             and signal_source is not None
             and not state.empty
         ):
@@ -927,13 +1068,15 @@ def _build_target_weights(
             if source_transition_forced_exit_count > 0:
                 transition_turnover_cap = _min_optional_turnover_cap(
                     policy_turnover_cap,
-                    params.policy_source_transition_turnover_cap,
+                    effective_params.policy_source_transition_turnover_cap,
                 )
                 policy = _policy_for_params(
-                    params,
+                    effective_params,
                     gross_exposure_scale=effective_policy_scale,
                     turnover_cap=transition_turnover_cap,
-                    partial_rebalance_rate=params.policy_source_transition_exit_rate,
+                    partial_rebalance_rate=(
+                        effective_params.policy_source_transition_exit_rate
+                    ),
                     no_trade_weight_band=0.0,
                 )
         result = policy.decide(forecasts, state)
@@ -976,6 +1119,13 @@ def _build_target_weights(
             diagnostics_frame["realized_cost_bps"] = float(realized_cost_bps)
         if signal_source is not None:
             diagnostics_frame["signal_source"] = signal_source
+        if policy_override:
+            diagnostics_frame["policy_schedule_selected_method"] = str(
+                policy_override.get("selected_method", "")
+            )
+            for field in _POLICY_OVERRIDE_FIELD_TYPES:
+                if field in policy_override:
+                    diagnostics_frame[f"scheduled_{field}"] = policy_override[field]
         diagnostics_frame["source_change_reset"] = bool(source_change_reset)
         diagnostics_frame["source_transition_forced_exit_count"] = int(
             source_transition_forced_exit_count
@@ -1244,6 +1394,7 @@ def _rank_buffer_drop_config(
         exit_rank=params.policy_exit_rank or max(params.top_n, params.hold_rank_buffer or params.top_n),
         max_entries_per_rebalance=params.policy_max_entries_per_rebalance,
         max_exits_per_rebalance=params.policy_max_exits_per_rebalance,
+        refresh_exits_per_rebalance=params.policy_refresh_exits_per_rebalance,
         min_hold_bars=params.policy_min_hold_bars,
         min_expected_edge_bps=params.policy_min_expected_edge_bps,
         estimated_cost_bps=params.policy_estimated_cost_bps,
@@ -1774,6 +1925,9 @@ def _summary_payload(
             "policy_exit_rank": params.policy_exit_rank,
             "policy_max_entries_per_rebalance": params.policy_max_entries_per_rebalance,
             "policy_max_exits_per_rebalance": params.policy_max_exits_per_rebalance,
+            "policy_refresh_exits_per_rebalance": (
+                params.policy_refresh_exits_per_rebalance
+            ),
             "policy_min_hold_bars": params.policy_min_hold_bars,
             "policy_min_expected_edge_bps": params.policy_min_expected_edge_bps,
             "policy_estimated_cost_bps": params.policy_estimated_cost_bps,
@@ -2152,6 +2306,7 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--policy-exit-rank", type=int)
     parser.add_argument("--policy-max-entries-per-rebalance", type=int)
     parser.add_argument("--policy-max-exits-per-rebalance", type=int)
+    parser.add_argument("--policy-refresh-exits-per-rebalance", type=int, default=0)
     parser.add_argument("--policy-min-hold-bars", type=int, default=0)
     parser.add_argument("--policy-min-expected-edge-bps", type=float)
     parser.add_argument("--policy-estimated-cost-bps", type=float)
@@ -2167,6 +2322,13 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--policy-turnover-budget-pacing", type=float, default=0.0)
     parser.add_argument("--policy-gross-exposure-scale", type=float, default=1.0)
     parser.add_argument("--policy-gross-exposure-scale-path")
+    parser.add_argument(
+        "--policy-schedule-path",
+        help=(
+            "optional CSV with trade_date and policy override columns; used for "
+            "no-leak adaptive policy parameter schedules"
+        ),
+    )
     parser.add_argument("--policy-drawdown-brake-threshold", type=float)
     parser.add_argument("--policy-drawdown-brake-reduced-scale", type=float, default=0.5)
     parser.add_argument("--policy-cost-pressure-threshold-bps", type=float)
@@ -2255,6 +2417,8 @@ def _parse_args() -> TreeScoreBacktestParams:
         and args.policy_max_exits_per_rebalance < 0
     ):
         raise ValueError("--policy-max-exits-per-rebalance must be non-negative")
+    if args.policy_refresh_exits_per_rebalance < 0:
+        raise ValueError("--policy-refresh-exits-per-rebalance must be non-negative")
     if args.policy_min_hold_bars < 0:
         raise ValueError("--policy-min-hold-bars must be non-negative")
     if (
@@ -2282,6 +2446,8 @@ def _parse_args() -> TreeScoreBacktestParams:
         raise ValueError("--policy-turnover-budget-pacing must be non-negative")
     if not 0 <= args.policy_gross_exposure_scale <= 1:
         raise ValueError("--policy-gross-exposure-scale must be in [0, 1]")
+    if args.policy_schedule_path and not Path(args.policy_schedule_path).exists():
+        raise FileNotFoundError(f"--policy-schedule-path not found: {args.policy_schedule_path}")
     if (
         args.policy_drawdown_brake_threshold is not None
         and not -1 < args.policy_drawdown_brake_threshold < 0
@@ -2373,6 +2539,7 @@ def _parse_args() -> TreeScoreBacktestParams:
         policy_exit_rank=args.policy_exit_rank,
         policy_max_entries_per_rebalance=args.policy_max_entries_per_rebalance,
         policy_max_exits_per_rebalance=args.policy_max_exits_per_rebalance,
+        policy_refresh_exits_per_rebalance=args.policy_refresh_exits_per_rebalance,
         policy_min_hold_bars=args.policy_min_hold_bars,
         policy_min_expected_edge_bps=args.policy_min_expected_edge_bps,
         policy_estimated_cost_bps=_resolved_policy_estimated_cost_bps(args),
@@ -2387,6 +2554,9 @@ def _parse_args() -> TreeScoreBacktestParams:
             Path(args.policy_gross_exposure_scale_path)
             if args.policy_gross_exposure_scale_path
             else None
+        ),
+        policy_schedule_path=(
+            Path(args.policy_schedule_path) if args.policy_schedule_path else None
         ),
         policy_drawdown_brake_threshold=args.policy_drawdown_brake_threshold,
         policy_drawdown_brake_reduced_scale=args.policy_drawdown_brake_reduced_scale,

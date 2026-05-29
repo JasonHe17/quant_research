@@ -103,6 +103,40 @@ def test_selection_schedule_switch_penalty_can_keep_previous_method() -> None:
     assert with_penalty["switch_penalty_applied"].tolist() == [0.04, 0.0]
 
 
+def test_daily_schedule_attaches_selected_policy_overrides() -> None:
+    module = _load_module()
+    selector = pd.DataFrame(
+        [
+            {
+                "period_start": "2024-03-01",
+                "period_end": "2024-03-02",
+                "selected_method": "candidate_a",
+                "baseline_fallback": False,
+                "selected_objective": 0.10,
+                "baseline_objective": 0.05,
+                "selected_objective_edge": 0.05,
+            }
+        ]
+    )
+
+    schedule = module._daily_schedule(
+        selector,
+        start="2024-03-01T00:00:00+08:00",
+        end="2024-03-31T23:59:59+08:00",
+        policy_by_method={
+            "candidate_a": {
+                "policy_exit_rank": 50,
+                "policy_force_source_transition_exits": False,
+            },
+        },
+    )
+
+    assert schedule["trade_date"].tolist() == ["2024-03-01", "2024-03-02"]
+    assert schedule["selected_method"].tolist() == ["candidate_a", "candidate_a"]
+    assert schedule["policy_exit_rank"].tolist() == [50, 50]
+    assert schedule["policy_force_source_transition_exits"].tolist() == [False, False]
+
+
 def _backtest(equity: list[tuple[str, float]]) -> dict[str, pd.DataFrame]:
     return {
         "equity": pd.DataFrame(

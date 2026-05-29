@@ -39,6 +39,10 @@ def build_backtest_adaptive_state_switch(args: argparse.Namespace) -> dict[str, 
     if missing_backtests:
         raise ValueError(f"missing candidate backtests for: {missing_backtests}")
     candidates = tuple(candidate_score_dirs.keys())
+    policy_by_method = {
+        "baseline": _parse_policy_kv_list(args.baseline_policy),
+        **_parse_named_policies(args.candidate_policy),
+    }
     backtests = {
         "baseline": _load_backtest(Path(args.baseline_backtest_dir)),
         **{
@@ -63,11 +67,18 @@ def build_backtest_adaptive_state_switch(args: argparse.Namespace) -> dict[str, 
         switch_penalty=args.switch_penalty,
         fallback_to_baseline=not args.no_baseline_fallback,
     )
-    schedule = _daily_schedule(selector, start=args.start, end=args.end)
+    schedule = _daily_schedule(
+        selector,
+        start=args.start,
+        end=args.end,
+        policy_by_method=policy_by_method,
+    )
     selector_path = output_dir / "backtest_adaptive_selector.csv"
     schedule_path = output_dir / "backtest_adaptive_schedule.csv"
+    policy_schedule_path = output_dir / "backtest_adaptive_policy_schedule.csv"
     selector.to_csv(selector_path, index=False)
     schedule.to_csv(schedule_path, index=False)
+    schedule.to_csv(policy_schedule_path, index=False)
     partition_rows = _write_selected_scores(
         baseline_score_dir=Path(args.baseline_score_dir),
         candidate_score_dirs={
@@ -86,6 +97,8 @@ def build_backtest_adaptive_state_switch(args: argparse.Namespace) -> dict[str, 
             "baseline_backtest_dir": args.baseline_backtest_dir,
             "candidate_score": args.candidate_score,
             "candidate_backtest": args.candidate_backtest,
+            "baseline_policy": args.baseline_policy,
+            "candidate_policy": args.candidate_policy,
             "output_dir": args.output_dir,
             "method_name": args.method_name,
             "start": args.start,
@@ -114,6 +127,7 @@ def build_backtest_adaptive_state_switch(args: argparse.Namespace) -> dict[str, 
         },
         "schedule": {
             "path": str(schedule_path),
+            "policy_schedule_path": str(policy_schedule_path),
             "day_count": int(len(schedule)),
             "selected_methods": schedule["selected_method"].value_counts().to_dict()
             if not schedule.empty
@@ -313,22 +327,27 @@ def _daily_schedule(
     *,
     start: str,
     end: str,
+    policy_by_method: dict[str, dict[str, object]] | None = None,
 ) -> pd.DataFrame:
     start_date = _timestamp(start).tz_convert("Asia/Shanghai").date()
     end_date = _timestamp(end).tz_convert("Asia/Shanghai").date()
+    policy_by_method = policy_by_method or {}
     rows: list[dict[str, Any]] = []
     for row in selector.itertuples(index=False):
         period_start = max(pd.Timestamp(row.period_start).date(), start_date)
         period_end = min(pd.Timestamp(row.period_end).date(), end_date)
+        selected_method = str(row.selected_method)
+        policy = policy_by_method.get(selected_method, {})
         for day in pd.date_range(period_start, period_end, freq="D"):
             rows.append(
                 {
                     "trade_date": str(day.date()),
-                    "selected_method": row.selected_method,
+                    "selected_method": selected_method,
                     "baseline_fallback": bool(row.baseline_fallback),
                     "selected_objective": row.selected_objective,
                     "baseline_objective": row.baseline_objective,
                     "selected_objective_edge": row.selected_objective_edge,
+                    **policy,
                 }
             )
     return pd.DataFrame(rows)
@@ -457,6 +476,47 @@ def _parse_named_paths(values: list[str]) -> dict[str, str]:
     return output
 
 
+def _parse_named_policies(values: list[str]) -> dict[str, dict[str, object]]:
+    output: dict[str, dict[str, object]] = {}
+    for value in values:
+        name, sep, payload = value.partition(":")
+        if not sep or not name or not payload:
+            raise ValueError("named policies must be name:key=value[,key=value...]")
+        if name in output:
+            raise ValueError(f"duplicate named policy: {name}")
+        output[name] = _parse_policy_kv_list([payload])
+    return output
+
+
+def _parse_policy_kv_list(values: list[str]) -> dict[str, object]:
+    policy: dict[str, object] = {}
+    for value in values:
+        for item in value.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            key, sep, raw_value = item.partition("=")
+            if not sep or not key:
+                raise ValueError("policy entries must be key=value")
+            policy[key.strip()] = _parse_policy_value(raw_value.strip())
+    return policy
+
+
+def _parse_policy_value(value: str) -> object:
+    lowered = value.lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    if lowered in {"none", "null", ""}:
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        return value
+    if number.is_integer() and "." not in value and "e" not in lowered:
+        return int(number)
+    return number
+
+
 def _method_column_prefix(name: str) -> str:
     return (
         name.replace("-", "_")
@@ -481,6 +541,18 @@ def _parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         help="candidate backtest directory as name=path; repeatable",
+    )
+    parser.add_argument(
+        "--baseline-policy",
+        action="append",
+        default=[],
+        help="baseline policy override entries as key=value[,key=value...]",
+    )
+    parser.add_argument(
+        "--candidate-policy",
+        action="append",
+        default=[],
+        help="candidate policy override as name:key=value[,key=value...]; repeatable",
     )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--method-name", default="backtest_adaptive_state_switch")
@@ -524,6 +596,12 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--candidate-score must be provided")
     if not args.candidate_backtest:
         raise ValueError("--candidate-backtest must be provided")
+    candidate_score_dirs = _parse_named_paths(args.candidate_score)
+    candidate_policy = _parse_named_policies(args.candidate_policy)
+    unknown_policy_names = sorted(set(candidate_policy) - set(candidate_score_dirs))
+    if unknown_policy_names:
+        raise ValueError(f"candidate policies without candidate score: {unknown_policy_names}")
+    _parse_policy_kv_list(args.baseline_policy)
     for item in args.candidate_score:
         _, _, path = item.partition("=")
         if not Path(path).exists():

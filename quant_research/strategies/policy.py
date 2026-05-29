@@ -98,6 +98,7 @@ class RankBufferDropConfig:
     policy_version: str = "v1"
     max_entries_per_rebalance: int | None = None
     max_exits_per_rebalance: int | None = None
+    refresh_exits_per_rebalance: int = 0
     min_hold_bars: int = 0
     weighting: WeightingMethod = "equal"
     max_name_weight: float | None = None
@@ -122,6 +123,8 @@ class RankBufferDropConfig:
             raise ValueError("max_entries_per_rebalance must be non-negative")
         if self.max_exits_per_rebalance is not None and self.max_exits_per_rebalance < 0:
             raise ValueError("max_exits_per_rebalance must be non-negative")
+        if self.refresh_exits_per_rebalance < 0:
+            raise ValueError("refresh_exits_per_rebalance must be non-negative")
         if self.min_hold_bars < 0:
             raise ValueError("min_hold_bars must be non-negative")
         if self.weighting not in {"equal", "score"}:
@@ -295,6 +298,25 @@ class RankBufferDropPolicy:
                 continue
             exit_candidates.append(instrument_id)
 
+        refresh_exits = _refresh_exit_candidates(
+            retained,
+            forecast_by_id=forecast_by_id,
+            state_by_id=state_by_id,
+            reason_by_id=reason_by_id,
+            max_refresh_exits=cfg.refresh_exits_per_rebalance,
+            min_hold_bars=cfg.min_hold_bars,
+        )
+        if refresh_exits:
+            refresh_exit_set = set(refresh_exits)
+            retained = [
+                instrument_id
+                for instrument_id in retained
+                if instrument_id not in refresh_exit_set
+            ]
+            exit_candidates.extend(refresh_exits)
+            for instrument_id in refresh_exits:
+                reason_by_id[instrument_id] = "refresh_exit"
+
         selected_exits = _limited_exits(
             exit_candidates,
             forecast_by_id=forecast_by_id,
@@ -304,10 +326,8 @@ class RankBufferDropPolicy:
         selected_exit_set = set(selected_exits)
         for instrument_id in exit_candidates:
             if instrument_id in selected_exit_set:
-                reason_by_id[instrument_id] = (
-                    "exit_rank"
-                    if instrument_id in forecast_by_id
-                    else "universe_removed"
+                reason_by_id[instrument_id] = reason_by_id.get(instrument_id) or (
+                    "exit_rank" if instrument_id in forecast_by_id else "universe_removed"
                 )
             else:
                 retained.append(instrument_id)
@@ -906,6 +926,33 @@ def _limited_exits(
     if max_exits is None:
         return ordered
     return ordered[:max_exits]
+
+
+def _refresh_exit_candidates(
+    retained: list[str],
+    *,
+    forecast_by_id: dict[str, dict[str, object]],
+    state_by_id: dict[str, dict[str, object]],
+    reason_by_id: dict[str, str],
+    max_refresh_exits: int,
+    min_hold_bars: int,
+) -> list[str]:
+    if max_refresh_exits <= 0:
+        return []
+    eligible: list[tuple[int, float, str]] = []
+    for instrument_id in retained:
+        if reason_by_id.get(instrument_id) != "hold_buffer":
+            continue
+        holding_bars = int(state_by_id[instrument_id].get("holding_bars") or 0)
+        if holding_bars < min_hold_bars:
+            continue
+        rank = _rank_for(instrument_id, forecast_by_id)
+        if rank is None:
+            continue
+        score = float(forecast_by_id.get(instrument_id, {}).get("score") or -10**9)
+        eligible.append((rank, score, instrument_id))
+    ordered = sorted(eligible, key=lambda item: (-item[0], item[1], item[2]))
+    return [instrument_id for _, _, instrument_id in ordered[:max_refresh_exits]]
 
 
 def _aim_weights(
