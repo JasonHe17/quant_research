@@ -264,6 +264,9 @@ are removed from the current forecast so the rank-buffer policy treats them as
 exit candidates. The transition still respects `--policy-max-exits-per-rebalance`.
 Use `--policy-source-transition-exit-rate 1.0` so selected transition exits do
 not remain as tiny residual policy positions and block new entries.
+`--policy-source-transition-turnover-cap` can additionally cap gross turnover
+only on source-transition decisions; this is separate from the ordinary
+rebalance turnover cap.
 
 ```bash
 conda run -n quant python examples/run_tree_score_backtest.py \
@@ -307,8 +310,35 @@ Updated read:
 | Soft transition, 2024 | 7.25% | -28.72% | 68.52 | Fixes hard-reset 2024 weakness |
 | Soft transition, 2025 | 56.67% | -18.08% | 65.80 | Keeps most of the 2025 upside |
 
+Parameter sweep read:
+
+| Variant | Active days | Total return | Max drawdown | Gross turnover | Read |
+| --- | ---: | ---: | ---: | ---: | --- |
+| q33, exit rate 1.0 | 228 | 67.44% | -28.72% | 132.12 | Strong, but not the best gate |
+| q50, exit rate 1.0 | 142 | 68.09% | -27.02% | 120.66 | Current best standard setting |
+| q67, exit rate 1.0 | 87 | 61.01% | -30.08% | 108.03 | Too conservative |
+| q33, exit rate 0.75 | 228 | 21.59% | -31.22% | 106.47 | Too slow; old-source residuals block entries |
+| q33, exit rate 0.5 | 228 | 21.86% | -31.69% | 82.11 | Too slow |
+| q33, source turnover cap 0.1 | 228 | 23.57% | -30.01% | 58.65 | Too restrictive |
+| q33, source turnover cap 0.2 | 228 | 18.61% | -31.35% | 81.53 | Too restrictive |
+| q33, source turnover cap 0.3 | 228 | 21.70% | -31.26% | 104.51 | Too restrictive |
+| q33, source turnover cap 0.5 | 228 | 67.44% | -28.72% | 132.12 | Does not bind versus uncapped |
+
+q50 stress validation:
+
+| Scenario | Total return | Max drawdown | Gross turnover |
+| --- | ---: | ---: | ---: |
+| Full standard | 68.09% | -27.02% | 120.66 |
+| Full doubled-cost | 56.30% | -28.40% | 120.80 |
+| 5% bar participation | 75.94% | -26.66% | 117.65 |
+| 2024 standard | 9.08% | -27.02% | 68.99 |
+| 2025 standard | 57.17% | -16.88% | 55.71 |
+
 Conclusion: the daily observable gate plus soft source transition is now a
 serious challenger to both always-on `primary_w050` and the absorption baseline.
-It still needs a parameter sweep on activation quantile, transition exit rate,
-and source-change turnover budget before promotion, because turnover is higher
-than the baseline even though drawdown and stressed returns improved.
+The current preferred configuration is q50 downside-state activation,
+`--policy-force-source-transition-exits`, and
+`--policy-source-transition-exit-rate 1.0`, with no additional source-transition
+turnover cap unless future capacity work requires it. The q50 gate improves
+return, drawdown, and turnover versus q33, while retaining strong high-cost,
+capacity, and annual-slice behavior.

@@ -977,6 +977,48 @@ def test_tree_score_target_builder_can_force_old_source_holdings_to_exit(tmp_pat
     assert result.source_by_instrument == {"inst-new": "challenger"}
 
 
+def test_tree_score_target_builder_caps_source_transition_turnover(tmp_path) -> None:
+    ranked = pd.DataFrame(
+        [
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-old",
+                "score": 0.9,
+                "rank": 1,
+                "signal_source": "baseline",
+            },
+            {
+                "signal_time": "t1",
+                "instrument_id": "inst-new",
+                "score": 0.95,
+                "rank": 1,
+                "signal_source": "challenger",
+            },
+            {
+                "signal_time": "t1",
+                "instrument_id": "inst-old",
+                "score": 0.8,
+                "rank": 2,
+                "signal_source": "challenger",
+            },
+        ]
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        policy_force_source_transition_exits=True,
+        policy_source_transition_turnover_cap=0.5,
+    )
+
+    result = _build_target_weights(ranked, params)
+
+    t1_targets = result.target_weights.loc[
+        result.target_weights["signal_time"] == "t1"
+    ].set_index("instrument_id")["target_weight"]
+    assert t1_targets["inst-old"] == pytest.approx(0.75)
+    assert t1_targets["inst-new"] == pytest.approx(0.25)
+    assert result.diagnostics["turnover_scaled_count"].sum() == 2
+
+
 def test_tree_score_target_builder_forwards_dynamic_target_weight_cap(
     tmp_path,
 ) -> None:
@@ -1660,6 +1702,7 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         policy_reset_on_source_change=False,
         policy_force_source_transition_exits=False,
         policy_source_transition_exit_rate=1.0,
+        policy_source_transition_turnover_cap=None,
         policy_source_column="signal_source",
         optimizer_candidate_rank=None,
         optimizer_score_to_edge_bps=100.0,

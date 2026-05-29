@@ -87,6 +87,7 @@ class TreeScoreBacktestParams:
     policy_reset_on_source_change: bool
     policy_force_source_transition_exits: bool
     policy_source_transition_exit_rate: float
+    policy_source_transition_turnover_cap: float | None
     policy_source_column: str
     optimizer_candidate_rank: int | None
     optimizer_score_to_edge_bps: float
@@ -270,6 +271,9 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
                 params.policy_force_source_transition_exits
             ),
             "policy_source_transition_exit_rate": params.policy_source_transition_exit_rate,
+            "policy_source_transition_turnover_cap": (
+                params.policy_source_transition_turnover_cap
+            ),
             "policy_source_column": params.policy_source_column,
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
@@ -921,10 +925,14 @@ def _build_target_weights(
                 )
             )
             if source_transition_forced_exit_count > 0:
+                transition_turnover_cap = _min_optional_turnover_cap(
+                    policy_turnover_cap,
+                    params.policy_source_transition_turnover_cap,
+                )
                 policy = _policy_for_params(
                     params,
                     gross_exposure_scale=effective_policy_scale,
-                    turnover_cap=policy_turnover_cap,
+                    turnover_cap=transition_turnover_cap,
                     partial_rebalance_rate=params.policy_source_transition_exit_rate,
                     no_trade_weight_band=0.0,
                 )
@@ -1797,6 +1805,9 @@ def _summary_payload(
                 params.policy_force_source_transition_exits
             ),
             "policy_source_transition_exit_rate": params.policy_source_transition_exit_rate,
+            "policy_source_transition_turnover_cap": (
+                params.policy_source_transition_turnover_cap
+            ),
             "policy_source_column": params.policy_source_column,
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
@@ -2175,6 +2186,7 @@ def _parse_args() -> TreeScoreBacktestParams:
         ),
     )
     parser.add_argument("--policy-source-transition-exit-rate", type=float, default=1.0)
+    parser.add_argument("--policy-source-transition-turnover-cap", type=float)
     parser.add_argument("--policy-source-column", default="signal_source")
     parser.add_argument("--optimizer-candidate-rank", type=int)
     parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
@@ -2335,6 +2347,11 @@ def _parse_args() -> TreeScoreBacktestParams:
         )
     if not 0 < args.policy_source_transition_exit_rate <= 1:
         raise ValueError("--policy-source-transition-exit-rate must be in (0, 1]")
+    if (
+        args.policy_source_transition_turnover_cap is not None
+        and args.policy_source_transition_turnover_cap < 0
+    ):
+        raise ValueError("--policy-source-transition-turnover-cap must be non-negative")
     if args.streaming_chunk_padding_days < 0:
         raise ValueError("--streaming-chunk-padding-days must be non-negative")
     return TreeScoreBacktestParams(
@@ -2381,6 +2398,7 @@ def _parse_args() -> TreeScoreBacktestParams:
         policy_reset_on_source_change=args.policy_reset_on_source_change,
         policy_force_source_transition_exits=args.policy_force_source_transition_exits,
         policy_source_transition_exit_rate=args.policy_source_transition_exit_rate,
+        policy_source_transition_turnover_cap=args.policy_source_transition_turnover_cap,
         policy_source_column=args.policy_source_column,
         optimizer_candidate_rank=args.optimizer_candidate_rank,
         optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,
