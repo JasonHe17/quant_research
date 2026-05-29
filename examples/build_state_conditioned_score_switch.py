@@ -30,6 +30,7 @@ def build_state_conditioned_score_switch(args: argparse.Namespace) -> dict[str, 
         activation_quantile=args.activation_quantile,
         min_history_days=args.min_history_days,
         active_when=args.active_when,
+        history_start=args.schedule_history_start or args.start,
         start=args.start,
         end=args.end,
     )
@@ -56,6 +57,7 @@ def build_state_conditioned_score_switch(args: argparse.Namespace) -> dict[str, 
             "activation_quantile": args.activation_quantile,
             "min_history_days": args.min_history_days,
             "active_when": args.active_when,
+            "schedule_history_start": args.schedule_history_start or args.start,
             "start": args.start,
             "end": args.end,
         },
@@ -88,17 +90,21 @@ def _daily_state_schedule(
     activation_quantile: float,
     min_history_days: int,
     active_when: str,
+    history_start: str,
     start: str,
     end: str,
 ) -> pd.DataFrame:
+    history_start_at = _timestamp(history_start)
     start_at = _timestamp(start)
     end_at = _timestamp(end)
+    if history_start_at > start_at:
+        raise ValueError("schedule history start must be on or before start")
     frames: list[pd.DataFrame] = []
-    for path in _dataset_paths(dataset_dir, start=start_at, end=end_at):
+    for path in _dataset_paths(dataset_dir, start=history_start_at, end=end_at):
         frame = pd.read_parquet(path, columns=["timestamp", state_column])
         frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
         frame = frame.loc[
-            (frame["timestamp"] >= start_at) & (frame["timestamp"] <= end_at)
+            (frame["timestamp"] >= history_start_at) & (frame["timestamp"] <= end_at)
         ].copy()
         if frame.empty:
             continue
@@ -144,7 +150,11 @@ def _daily_state_schedule(
     schedule["lagged_state_value"] = lagged
     schedule["lagged_quantile_threshold"] = threshold
     schedule["active"] = active.fillna(False).astype(bool)
-    return schedule
+    start_date = str(start_at.tz_convert("Asia/Shanghai").date())
+    end_date = str(end_at.tz_convert("Asia/Shanghai").date())
+    return schedule.loc[
+        (schedule["trade_date"] >= start_date) & (schedule["trade_date"] <= end_date)
+    ].reset_index(drop=True)
 
 
 def _write_switched_scores(
@@ -255,6 +265,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--activation-quantile", type=float, default=0.33)
     parser.add_argument("--min-history-days", type=int, default=20)
     parser.add_argument("--active-when", choices=("gte", "lte"), default="gte")
+    parser.add_argument(
+        "--schedule-history-start",
+        help=(
+            "optional earlier dataset start used only for lagged expanding state "
+            "thresholds; switched score output still starts at --start"
+        ),
+    )
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--resume-existing", action="store_true")
