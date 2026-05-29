@@ -85,6 +85,8 @@ class TreeScoreBacktestParams:
     policy_cost_pressure_reduced_scale: float
     policy_cost_pressure_max_gross_turnover_per_rebalance: float | None
     policy_reset_on_source_change: bool
+    policy_force_source_transition_exits: bool
+    policy_source_transition_exit_rate: float
     policy_source_column: str
     optimizer_candidate_rank: int | None
     optimizer_score_to_edge_bps: float
@@ -123,6 +125,7 @@ class TargetWeightBuildResult:
     budget_state: PolicyBudgetState
     diagnostics: pd.DataFrame
     source_state: str | None = None
+    source_by_instrument: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,6 +266,10 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
                 params.policy_cost_pressure_max_gross_turnover_per_rebalance
             ),
             "policy_reset_on_source_change": params.policy_reset_on_source_change,
+            "policy_force_source_transition_exits": (
+                params.policy_force_source_transition_exits
+            ),
+            "policy_source_transition_exit_rate": params.policy_source_transition_exit_rate,
             "policy_source_column": params.policy_source_column,
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
@@ -331,6 +338,7 @@ def _run_tree_score_backtest_streaming(
     instruments: set[str] = set()
     policy_state = empty_portfolio_state()
     policy_source_state: str | None = None
+    policy_source_by_instrument: dict[str, str] = {}
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
     for work_unit in _streaming_work_units(backtest_params):
@@ -362,10 +370,12 @@ def _run_tree_score_backtest_streaming(
             policy_state=policy_state,
             budget_state=budget_state,
             source_state=policy_source_state,
+            source_by_instrument=policy_source_by_instrument,
         )
         signals = target_build.target_weights
         policy_state = target_build.policy_state
         policy_source_state = target_build.source_state
+        policy_source_by_instrument = target_build.source_by_instrument or {}
         budget_state = target_build.budget_state
         if not target_build.diagnostics.empty:
             policy_diagnostics.append(target_build.diagnostics)
@@ -455,6 +465,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
     instruments: set[str] = set()
     policy_state = empty_portfolio_state()
     policy_source_state: str | None = None
+    policy_source_by_instrument: dict[str, str] = {}
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
     peak_equity = float(params.initial_cash)
@@ -558,6 +569,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
                 policy_state=policy_state,
                 budget_state=budget_state,
                 source_state=policy_source_state,
+                source_by_instrument=policy_source_by_instrument,
                 gross_exposure_scale_cap=gross_exposure_scale_cap,
                 scale_by_timestamp=scale_by_timestamp,
                 drawdown_brake_scale=drawdown_brake_scale,
@@ -568,6 +580,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
             signals = target_build.target_weights
             policy_state = target_build.policy_state
             policy_source_state = target_build.source_state
+            policy_source_by_instrument = target_build.source_by_instrument or {}
             budget_state = target_build.budget_state
             if not target_build.diagnostics.empty:
                 policy_diagnostics.append(target_build.diagnostics)
@@ -765,6 +778,7 @@ def _build_target_weights(
     policy_state: pd.DataFrame | None = None,
     budget_state: PolicyBudgetState | None = None,
     source_state: str | None = None,
+    source_by_instrument: dict[str, str] | None = None,
     gross_exposure_scale_cap: float | None = None,
     scale_by_timestamp: dict[str, float] | None = None,
     drawdown_brake_scale: float | None = None,
@@ -782,6 +796,8 @@ def _build_target_weights(
             if budget_state is not None
             else _initial_policy_budget_state(params),
             diagnostics=pd.DataFrame(),
+            source_state=source_state,
+            source_by_instrument=source_by_instrument or {},
         )
     if params.trade_policy not in {"rank_buffer_drop", "cost_aware_optimizer"}:
         raise ValueError(f"unsupported trade policy: {params.trade_policy}")
@@ -796,6 +812,7 @@ def _build_target_weights(
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
     current_source_state = source_state
+    current_source_by_instrument = dict(source_by_instrument or {})
     grouped_signals, group_count = _signal_groups(ranked_signals)
     current_budget_state = (
         budget_state if budget_state is not None else _initial_policy_budget_state(params)
@@ -812,6 +829,7 @@ def _build_target_weights(
         remaining_turnover_budget = refreshed_budget.remaining_turnover_budget
         budget_period_key = refreshed_budget.budget_period_key
         policy = default_policy
+        effective_policy_scale = base_scale
         policy_turnover_cap = _policy_turnover_cap_for_signal(
             params,
             remaining_turnover_budget=remaining_turnover_budget,
@@ -837,6 +855,7 @@ def _build_target_weights(
                 params.policy_gross_exposure_scale,
             )
             scale = _effective_gross_exposure_scale(scale, gross_exposure_scale_cap)
+            effective_policy_scale = scale
             policy = _policy_for_params(
                 params,
                 gross_exposure_scale=scale,
@@ -883,9 +902,32 @@ def _build_target_weights(
             and signal_source != current_source_state
         ):
             state = empty_portfolio_state()
+            current_source_by_instrument = {}
             source_change_reset = True
         if signal_source is not None:
             current_source_state = signal_source
+        source_transition_forced_exit_count = 0
+        if (
+            params.policy_force_source_transition_exits
+            and signal_source is not None
+            and not state.empty
+        ):
+            forecasts, source_transition_forced_exit_count = (
+                _remove_cross_source_held_forecasts(
+                    forecasts,
+                    state,
+                    source_by_instrument=current_source_by_instrument,
+                    signal_source=signal_source,
+                )
+            )
+            if source_transition_forced_exit_count > 0:
+                policy = _policy_for_params(
+                    params,
+                    gross_exposure_scale=effective_policy_scale,
+                    turnover_cap=policy_turnover_cap,
+                    partial_rebalance_rate=params.policy_source_transition_exit_rate,
+                    no_trade_weight_band=0.0,
+                )
         result = policy.decide(forecasts, state)
         if path_turnover_cap is not None:
             result = _enforce_path_turnover_cap(result, path_turnover_cap)
@@ -927,6 +969,9 @@ def _build_target_weights(
         if signal_source is not None:
             diagnostics_frame["signal_source"] = signal_source
         diagnostics_frame["source_change_reset"] = bool(source_change_reset)
+        diagnostics_frame["source_transition_forced_exit_count"] = int(
+            source_transition_forced_exit_count
+        )
         diagnostics.append(diagnostics_frame)
         target = result.portfolio_intent.loc[
             result.portfolio_intent["policy_target_weight"].astype(float) > 0,
@@ -939,6 +984,11 @@ def _build_target_weights(
             ],
         ].copy()
         if target.empty:
+            current_source_by_instrument = _next_source_by_instrument(
+                result.policy_state,
+                previous_source_by_instrument=current_source_by_instrument,
+                signal_source=signal_source,
+            )
             continue
         target = target.rename(
             columns={
@@ -960,6 +1010,11 @@ def _build_target_weights(
                 ],
             ]
         )
+        current_source_by_instrument = _next_source_by_instrument(
+            result.policy_state,
+            previous_source_by_instrument=current_source_by_instrument,
+            signal_source=signal_source,
+        )
     if targets:
         target_weights = pd.concat(targets, ignore_index=True)
     else:
@@ -973,6 +1028,7 @@ def _build_target_weights(
         ),
         diagnostics=_concat_policy_diagnostics(diagnostics),
         source_state=current_source_state,
+        source_by_instrument=current_source_by_instrument,
     )
 
 
@@ -999,6 +1055,53 @@ def _signal_source_for_group(group: pd.DataFrame, column: str) -> str | None:
             f"signal source column {column!r} has multiple values for one timestamp"
         )
     return values[0]
+
+
+def _remove_cross_source_held_forecasts(
+    forecasts: pd.DataFrame,
+    state: pd.DataFrame,
+    *,
+    source_by_instrument: dict[str, str],
+    signal_source: str,
+) -> tuple[pd.DataFrame, int]:
+    if forecasts.empty or state.empty or not source_by_instrument:
+        return forecasts, 0
+    held_ids = state.loc[
+        state["current_weight"].astype(float) > 0,
+        "instrument_id",
+    ].astype(str)
+    forced_ids = {
+        instrument_id
+        for instrument_id in held_ids
+        if source_by_instrument.get(instrument_id)
+        and source_by_instrument[instrument_id] != signal_source
+    }
+    if not forced_ids:
+        return forecasts, 0
+    keep = ~forecasts["instrument_id"].astype(str).isin(forced_ids)
+    filtered = forecasts.loc[keep].copy()
+    if filtered.empty:
+        return forecasts, 0
+    return filtered, len(forced_ids)
+
+
+def _next_source_by_instrument(
+    state: pd.DataFrame,
+    *,
+    previous_source_by_instrument: dict[str, str],
+    signal_source: str | None,
+) -> dict[str, str]:
+    if state.empty:
+        return {}
+    output: dict[str, str] = {}
+    for row in state.itertuples(index=False):
+        instrument_id = str(row.instrument_id)
+        previous_source = previous_source_by_instrument.get(instrument_id)
+        if previous_source is not None:
+            output[instrument_id] = previous_source
+        elif signal_source is not None:
+            output[instrument_id] = signal_source
+    return output
 
 
 def _effective_gross_exposure_scale(
@@ -1093,6 +1196,8 @@ def _policy_for_params(
     *,
     gross_exposure_scale: float | None = None,
     turnover_cap: float | None = None,
+    partial_rebalance_rate: float | None = None,
+    no_trade_weight_band: float | None = None,
 ) -> RankBufferDropPolicy | CostAwareOptimizerPolicy:
     if params.trade_policy == "rank_buffer_drop":
         return RankBufferDropPolicy(
@@ -1100,6 +1205,8 @@ def _policy_for_params(
                 params,
                 gross_exposure_scale=gross_exposure_scale,
                 turnover_cap=turnover_cap,
+                partial_rebalance_rate=partial_rebalance_rate,
+                no_trade_weight_band=no_trade_weight_band,
             )
         )
     if params.trade_policy == "cost_aware_optimizer":
@@ -1108,6 +1215,8 @@ def _policy_for_params(
                 params,
                 gross_exposure_scale=gross_exposure_scale,
                 turnover_cap=turnover_cap,
+                partial_rebalance_rate=partial_rebalance_rate,
+                no_trade_weight_band=no_trade_weight_band,
             )
         )
     raise ValueError(f"unsupported trade policy: {params.trade_policy}")
@@ -1118,6 +1227,8 @@ def _rank_buffer_drop_config(
     *,
     gross_exposure_scale: float | None = None,
     turnover_cap: float | None = None,
+    partial_rebalance_rate: float | None = None,
+    no_trade_weight_band: float | None = None,
 ) -> RankBufferDropConfig:
     return RankBufferDropConfig(
         target_count=params.top_n,
@@ -1128,8 +1239,16 @@ def _rank_buffer_drop_config(
         min_hold_bars=params.policy_min_hold_bars,
         min_expected_edge_bps=params.policy_min_expected_edge_bps,
         estimated_cost_bps=params.policy_estimated_cost_bps,
-        no_trade_weight_band=params.policy_no_trade_weight_band,
-        partial_rebalance_rate=params.policy_partial_rebalance_rate,
+        no_trade_weight_band=(
+            params.policy_no_trade_weight_band
+            if no_trade_weight_band is None
+            else no_trade_weight_band
+        ),
+        partial_rebalance_rate=(
+            params.policy_partial_rebalance_rate
+            if partial_rebalance_rate is None
+            else partial_rebalance_rate
+        ),
         max_gross_turnover_per_rebalance=(
             params.policy_max_gross_turnover_per_rebalance
             if turnover_cap is None
@@ -1148,6 +1267,8 @@ def _cost_aware_optimizer_config(
     *,
     gross_exposure_scale: float | None = None,
     turnover_cap: float | None = None,
+    partial_rebalance_rate: float | None = None,
+    no_trade_weight_band: float | None = None,
 ) -> CostAwareOptimizerConfig:
     effective_turnover_cap = (
         params.policy_max_gross_turnover_per_rebalance
@@ -1172,8 +1293,16 @@ def _cost_aware_optimizer_config(
         estimated_cost_bps=params.policy_estimated_cost_bps,
         risk_penalty_multiplier=params.optimizer_risk_penalty_multiplier,
         target_cap_mode=params.optimizer_target_cap_mode,  # type: ignore[arg-type]
-        no_trade_weight_band=params.policy_no_trade_weight_band,
-        partial_rebalance_rate=params.policy_partial_rebalance_rate,
+        no_trade_weight_band=(
+            params.policy_no_trade_weight_band
+            if no_trade_weight_band is None
+            else no_trade_weight_band
+        ),
+        partial_rebalance_rate=(
+            params.policy_partial_rebalance_rate
+            if partial_rebalance_rate is None
+            else partial_rebalance_rate
+        ),
         max_gross_turnover_per_rebalance=effective_turnover_cap,
         max_gross_exposure_increase_per_rebalance=(
             params.optimizer_max_gross_exposure_increase_per_rebalance
@@ -1444,6 +1573,7 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             "turnover_budget_period_count": 0,
             "turnover_path_budget_remaining": 0.0,
             "source_change_reset_count": 0,
+            "source_transition_forced_exit_count": 0,
         }
     target_gross = (
         diagnostics["target_gross_exposure"]
@@ -1596,6 +1726,12 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             .astype(bool)
             .sum()
         ),
+        "source_transition_forced_exit_count": int(
+            diagnostics.get(
+                "source_transition_forced_exit_count",
+                pd.Series(dtype=float),
+            ).sum()
+        ),
     }
 
 
@@ -1657,6 +1793,10 @@ def _summary_payload(
                 params.policy_cost_pressure_max_gross_turnover_per_rebalance
             ),
             "policy_reset_on_source_change": params.policy_reset_on_source_change,
+            "policy_force_source_transition_exits": (
+                params.policy_force_source_transition_exits
+            ),
+            "policy_source_transition_exit_rate": params.policy_source_transition_exit_rate,
             "policy_source_column": params.policy_source_column,
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
@@ -2026,6 +2166,15 @@ def _parse_args() -> TreeScoreBacktestParams:
         action="store_true",
         help="Reset policy-held target state when the per-timestamp signal source changes.",
     )
+    parser.add_argument(
+        "--policy-force-source-transition-exits",
+        action="store_true",
+        help=(
+            "Force held names from a previous signal source to leave through "
+            "normal capped exits when the current signal source changes."
+        ),
+    )
+    parser.add_argument("--policy-source-transition-exit-rate", type=float, default=1.0)
     parser.add_argument("--policy-source-column", default="signal_source")
     parser.add_argument("--optimizer-candidate-rank", type=int)
     parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
@@ -2178,8 +2327,14 @@ def _parse_args() -> TreeScoreBacktestParams:
         and not 0 < args.max_bar_turnover_participation <= 1
     ):
         raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
-    if args.policy_reset_on_source_change and not args.policy_source_column:
-        raise ValueError("--policy-source-column must be non-empty when reset is enabled")
+    if (
+        args.policy_reset_on_source_change or args.policy_force_source_transition_exits
+    ) and not args.policy_source_column:
+        raise ValueError(
+            "--policy-source-column must be non-empty when source transition handling is enabled"
+        )
+    if not 0 < args.policy_source_transition_exit_rate <= 1:
+        raise ValueError("--policy-source-transition-exit-rate must be in (0, 1]")
     if args.streaming_chunk_padding_days < 0:
         raise ValueError("--streaming-chunk-padding-days must be non-negative")
     return TreeScoreBacktestParams(
@@ -2224,6 +2379,8 @@ def _parse_args() -> TreeScoreBacktestParams:
             args.policy_cost_pressure_max_gross_turnover_per_rebalance
         ),
         policy_reset_on_source_change=args.policy_reset_on_source_change,
+        policy_force_source_transition_exits=args.policy_force_source_transition_exits,
+        policy_source_transition_exit_rate=args.policy_source_transition_exit_rate,
         policy_source_column=args.policy_source_column,
         optimizer_candidate_rank=args.optimizer_candidate_rank,
         optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,

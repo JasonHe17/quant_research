@@ -254,10 +254,61 @@ Current daily switch read:
 | Source reset, 2024 | -0.38% | -30.86% | 109.18 | Weak year remains weak |
 | Source reset, 2025 | 55.69% | -13.08% | 108.05 | Most of the improvement is concentrated in 2025 |
 
-Conclusion: the daily observable gate is useful, but the hard source reset is
-too aggressive to promote directly because it bypasses the intended slow
-rank-buffer migration and materially raises turnover. The next validation step
-should test a softer source-transition policy: force held names from the old
-source through normal capped exits, or add a turnover budget specifically on
-source-change days, before comparing against `primary_w050` and the absorption
-baseline.
+Soft source-transition validation:
+
+`run_tree_score_backtest.py` supports
+`--policy-force-source-transition-exits` for state-switch score streams. This
+keeps policy state intact, but records the source that introduced each held
+name. When the current signal source changes, held names from another source
+are removed from the current forecast so the rank-buffer policy treats them as
+exit candidates. The transition still respects `--policy-max-exits-per-rebalance`.
+Use `--policy-source-transition-exit-rate 1.0` so selected transition exits do
+not remain as tiny residual policy positions and block new entries.
+
+```bash
+conda run -n quant python examples/run_tree_score_backtest.py \
+  --predictions-path 'runs/ml_factor_challenger/primary_w050_downside_state_switch_2026_05_29/scores/downside_q33_lag1_switch/score_*.parquet' \
+  --start 2024-01-01T00:00:00+08:00 \
+  --end 2025-12-31T23:59:59+08:00 \
+  --top-n 50 \
+  --trade-policy rank_buffer_drop \
+  --rebalance-every-n-bars 48 \
+  --policy-entry-rank 50 \
+  --policy-exit-rank 150 \
+  --policy-max-entries-per-rebalance 10 \
+  --policy-max-exits-per-rebalance 10 \
+  --policy-no-trade-weight-band 0.002 \
+  --policy-partial-rebalance-rate 0.5 \
+  --policy-force-source-transition-exits \
+  --policy-source-transition-exit-rate 1.0 \
+  --commission-bps 3.0 \
+  --slippage-bps 1.0 \
+  --sell-stamp-tax-bps 5.0 \
+  --min-commission 5.0 \
+  --min-trade-weight 0.0005 \
+  --exclude-st \
+  --limit-up-bps 980.0 \
+  --limit-down-bps 980.0 \
+  --data-access-mode fast_parquet \
+  --streaming-chunk month \
+  --streaming-chunk-padding-days 10 \
+  --output-dir runs/ml_factor_challenger/primary_w050_downside_state_switch_2026_05_29/backtests/downside_q33_lag1_switch/full_standard_constraints_source_soft_exit_v2
+```
+
+Updated read:
+
+| Scenario | Total return | Max drawdown | Gross turnover | Notes |
+| --- | ---: | ---: | ---: | --- |
+| No source reset | 22.42% | -29.77% | 75.95 | Path-dependent; legacy holdings remain inside the broad exit buffer |
+| Hard source reset | 53.72% | -30.86% | 217.35 | Too aggressive; bypasses normal migration |
+| Soft source transition | 67.44% | -28.72% | 132.12 | Preferred validation path so far |
+| Soft transition, doubled cost | 54.86% | -30.03% | 132.20 | Cost stress remains strong |
+| Soft transition, 5% capacity | 76.41% | -26.66% | 128.61 | Capacity stress remains strong; same-bar volume assumption applies |
+| Soft transition, 2024 | 7.25% | -28.72% | 68.52 | Fixes hard-reset 2024 weakness |
+| Soft transition, 2025 | 56.67% | -18.08% | 65.80 | Keeps most of the 2025 upside |
+
+Conclusion: the daily observable gate plus soft source transition is now a
+serious challenger to both always-on `primary_w050` and the absorption baseline.
+It still needs a parameter sweep on activation quantile, transition exit rate,
+and source-change turnover budget before promotion, because turnover is higher
+than the baseline even though drawdown and stressed returns improved.

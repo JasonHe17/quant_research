@@ -933,6 +933,50 @@ def test_tree_score_target_builder_can_reset_on_signal_source_change(tmp_path) -
     assert result.source_state == "challenger"
 
 
+def test_tree_score_target_builder_can_force_old_source_holdings_to_exit(tmp_path) -> None:
+    ranked = pd.DataFrame(
+        [
+            {
+                "signal_time": "t0",
+                "instrument_id": "inst-old",
+                "score": 0.9,
+                "rank": 1,
+                "signal_source": "baseline",
+            },
+            {
+                "signal_time": "t1",
+                "instrument_id": "inst-new",
+                "score": 0.95,
+                "rank": 1,
+                "signal_source": "challenger",
+            },
+            {
+                "signal_time": "t1",
+                "instrument_id": "inst-old",
+                "score": 0.8,
+                "rank": 2,
+                "signal_source": "challenger",
+            },
+        ]
+    )
+    params = replace(
+        _tree_score_params(tmp_path),
+        policy_partial_rebalance_rate=0.5,
+        policy_no_trade_weight_band=0.002,
+        policy_force_source_transition_exits=True,
+    )
+
+    result = _build_target_weights(ranked, params)
+
+    by_time = {
+        time: group["instrument_id"].tolist()
+        for time, group in result.target_weights.groupby("signal_time", sort=True)
+    }
+    assert by_time == {"t0": ["inst-old"], "t1": ["inst-new"]}
+    assert result.diagnostics["source_transition_forced_exit_count"].tolist() == [0, 1]
+    assert result.source_by_instrument == {"inst-new": "challenger"}
+
+
 def test_tree_score_target_builder_forwards_dynamic_target_weight_cap(
     tmp_path,
 ) -> None:
@@ -1614,6 +1658,8 @@ def _tree_score_params(tmp_path) -> TreeScoreBacktestParams:
         policy_cost_pressure_reduced_scale=0.7,
         policy_cost_pressure_max_gross_turnover_per_rebalance=None,
         policy_reset_on_source_change=False,
+        policy_force_source_transition_exits=False,
+        policy_source_transition_exit_rate=1.0,
         policy_source_column="signal_source",
         optimizer_candidate_rank=None,
         optimizer_score_to_edge_bps=100.0,
