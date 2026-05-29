@@ -172,3 +172,19 @@ repair space and falls below baseline; rank200 remains acceptable but dilutes
 the edge. The challenger improves the weak 2024 slice and high-cost robustness,
 but gives up part of the strong 2025 baseline upside, so promotion should still
 include regime and capacity checks.
+
+Capacity stress for `primary_w050`:
+
+| Scenario | Method | Total return | Max drawdown | Unfilled / traded | Unfilled / desired |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 5% bar participation | Baseline absorption | 23.80% | -29.12% | 1.34% | 62.99% |
+| 5% bar participation | Primary-pool blend | 27.30% | -27.00% | 0.95% | 54.10% |
+| 2% bar participation | Baseline absorption | 24.00% | -28.84% | 3.43% | 58.23% |
+| 2% bar participation | Primary-pool blend | 27.71% | -26.77% | 2.73% | 55.67% |
+
+The capacity check does not show hidden fragility. Under both 5% and 2%
+same-bar participation assumptions, `primary_w050` keeps higher return, lower
+drawdown, and lower unfilled/traded notional than the absorption baseline. The
+2% unfilled/traded ratio remains below the 5% monitoring warning threshold.
+Detailed rows are stored in
+`runs/ml_factor_challenger/primary_w050_capacity_2026_05_29.csv`.
