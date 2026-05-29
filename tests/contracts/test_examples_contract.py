@@ -137,6 +137,22 @@ def test_state_conditioned_score_switch_example_has_cli_help() -> None:
     assert "--activation-quantile" in result.stdout
 
 
+def test_state_switch_validation_report_example_has_cli_help() -> None:
+    script = Path("examples/build_state_switch_validation_report.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--baseline-backtest-dir" in result.stdout
+    assert "--challenger-backtest-dir" in result.stdout
+    assert "--scenario-summary" in result.stdout
+
+
 def test_candidate_policy_validation_example_has_cli_help() -> None:
     script = Path("examples/run_candidate_policy_validation.py")
 

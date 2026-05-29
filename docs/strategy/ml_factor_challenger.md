@@ -334,6 +334,38 @@ q50 stress validation:
 | 2024 standard | 9.08% | -27.02% | 68.99 |
 | 2025 standard | 57.17% | -16.88% | 55.71 |
 
+Frozen-configuration validation report:
+
+```bash
+conda run -n quant python examples/build_state_switch_validation_report.py \
+  --baseline-backtest-dir runs/ml_factor_challenger/baselines/absorption_core_2024_2025_partial_rebalance_daily_standard_constraints \
+  --challenger-backtest-dir runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/backtests/downside_q50_lag1_switch/full_standard_constraints_source_soft_exit_v2 \
+  --schedule-path runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/state_switch_schedule.csv \
+  --output-dir runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/validation_report \
+  --scenario-summary standard=runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/backtests/downside_q50_lag1_switch/full_standard_constraints_source_soft_exit_v2/summary.json \
+  --scenario-summary high_cost=runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/backtests/downside_q50_lag1_switch/full_high_cost_source_soft_exit_v2/summary.json \
+  --scenario-summary capacity_5pct=runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/backtests/downside_q50_lag1_switch/capacity_5pct_source_soft_exit_v2/summary.json \
+  --scenario-summary year_2024=runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/backtests/downside_q50_lag1_switch/year_2024_source_soft_exit_v2/summary.json \
+  --scenario-summary year_2025=runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/backtests/downside_q50_lag1_switch/year_2025_source_soft_exit_v2/summary.json
+```
+
+Report outputs are under
+`runs/ml_factor_challenger/primary_w050_downside_state_switch_q50_2026_05_29/validation_report`.
+The frozen q50 challenger beats the absorption baseline in 19 of 24 months and
+6 of 8 quarters. The weak relative periods are mainly 2024-05, 2024-10,
+2024-12, and 2025-02. The trade profile shows the expected cost of the stronger
+result: gross notional rises from `75.46M` to `138.87M`, average daily gross
+notional rises from `169k` to `311k`, and the traded instrument count expands
+from `60` to `549`. This remains acceptable under the 5% capacity stress, but
+it should be monitored as a deployment constraint.
+
+Earlier-year independent validation is not yet complete because the current
+primary-pool ML score stream only covers 2024-2025, while the baseline and
+dataset extend back to 2023. A true 2023 out-of-window test requires rerunning
+the ML challenger score generation for 2023 with a valid purged training setup,
+then rebuilding the same q50 state-switch stream without changing the frozen
+parameters.
+
 Conclusion: the daily observable gate plus soft source transition is now a
 serious challenger to both always-on `primary_w050` and the absorption baseline.
 The current preferred configuration is q50 downside-state activation,
