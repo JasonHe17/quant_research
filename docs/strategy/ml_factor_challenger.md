@@ -220,3 +220,44 @@ third of observations. In-sample compound return rises to `31.20%`, versus
 yet production evidence: it has only 23 lagged monthly decisions and must be
 converted to a daily observable gate before validation. Attribution outputs are
 stored in `runs/ml_factor_challenger/primary_w050_attribution_2026_05_29`.
+
+Daily state switch validation:
+
+```bash
+conda run -n quant python examples/build_state_conditioned_score_switch.py \
+  --baseline-score-dir runs/candidate_factor_portfolios/legacy_top2_alpha_rank_rank_standard_2026_05_29/scores/decorrelated \
+  --challenger-score-dir runs/ml_factor_challenger/primary_pool_blend_grid_2026_05_29/scores/primary_w050 \
+  --dataset-dir runs/legacy_factor_revalidation/role_aware_alpha_rank_top5_standard_2026_05_29/shared_benchmark/alpha_dataset \
+  --output-dir runs/ml_factor_challenger/primary_w050_downside_state_switch_2026_05_29 \
+  --method-name downside_q33_lag1_switch \
+  --state-column market_state_downside_mean_5m_w48 \
+  --activation-quantile 0.33 \
+  --min-history-days 20 \
+  --active-when gte \
+  --start 2024-01-01T00:00:00+08:00 \
+  --end 2025-12-31T23:59:59+08:00
+```
+
+The switch uses only lagged daily state: each trading day is gated by the prior
+day's state value against an expanding quantile threshold. The generated score
+files also include `signal_source`, so `run_tree_score_backtest.py` can test a
+hard migration mode with `--policy-reset-on-source-change`.
+
+Current daily switch read:
+
+| Scenario | Total return | Max drawdown | Gross turnover | Notes |
+| --- | ---: | ---: | ---: | --- |
+| No source reset | 22.42% | -29.77% | 75.95 | Path-dependent; legacy holdings remain inside the broad exit buffer, so it reproduces baseline |
+| Source reset, standard cost | 53.72% | -30.86% | 217.35 | 126 source switches; strong but high-turnover diagnostic |
+| Source reset, doubled cost | 34.63% | -32.72% | 217.23 | Survives higher cost but drawdown worsens |
+| Source reset, 5% capacity | 70.28% | -25.30% | 193.80 | Capacity cap changes execution path; treat as stress evidence, not promotion proof |
+| Source reset, 2024 | -0.38% | -30.86% | 109.18 | Weak year remains weak |
+| Source reset, 2025 | 55.69% | -13.08% | 108.05 | Most of the improvement is concentrated in 2025 |
+
+Conclusion: the daily observable gate is useful, but the hard source reset is
+too aggressive to promote directly because it bypasses the intended slow
+rank-buffer migration and materially raises turnover. The next validation step
+should test a softer source-transition policy: force held names from the old
+source through normal capped exits, or add a turnover budget specifically on
+source-change days, before comparing against `primary_w050` and the absorption
+baseline.

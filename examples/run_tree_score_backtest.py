@@ -84,6 +84,8 @@ class TreeScoreBacktestParams:
     policy_cost_pressure_threshold_bps: float | None
     policy_cost_pressure_reduced_scale: float
     policy_cost_pressure_max_gross_turnover_per_rebalance: float | None
+    policy_reset_on_source_change: bool
+    policy_source_column: str
     optimizer_candidate_rank: int | None
     optimizer_score_to_edge_bps: float
     optimizer_min_net_edge_bps: float
@@ -120,6 +122,7 @@ class TargetWeightBuildResult:
     policy_state: pd.DataFrame
     budget_state: PolicyBudgetState
     diagnostics: pd.DataFrame
+    source_state: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,12 +262,14 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
             "policy_cost_pressure_max_gross_turnover_per_rebalance": (
                 params.policy_cost_pressure_max_gross_turnover_per_rebalance
             ),
+            "policy_reset_on_source_change": params.policy_reset_on_source_change,
+            "policy_source_column": params.policy_source_column,
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
-        "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
-        "optimizer_risk_penalty_multiplier": params.optimizer_risk_penalty_multiplier,
-        "optimizer_target_cap_mode": params.optimizer_target_cap_mode,
-        "optimizer_weighting": params.optimizer_weighting,
+            "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
+            "optimizer_risk_penalty_multiplier": params.optimizer_risk_penalty_multiplier,
+            "optimizer_target_cap_mode": params.optimizer_target_cap_mode,
+            "optimizer_weighting": params.optimizer_weighting,
             "optimizer_max_name_weight": params.optimizer_max_name_weight,
             "optimizer_max_gross_exposure_increase_per_rebalance": (
                 params.optimizer_max_gross_exposure_increase_per_rebalance
@@ -325,6 +330,7 @@ def _run_tree_score_backtest_streaming(
     total_executions = 0
     instruments: set[str] = set()
     policy_state = empty_portfolio_state()
+    policy_source_state: str | None = None
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
     for work_unit in _streaming_work_units(backtest_params):
@@ -355,9 +361,11 @@ def _run_tree_score_backtest_streaming(
             params,
             policy_state=policy_state,
             budget_state=budget_state,
+            source_state=policy_source_state,
         )
         signals = target_build.target_weights
         policy_state = target_build.policy_state
+        policy_source_state = target_build.source_state
         budget_state = target_build.budget_state
         if not target_build.diagnostics.empty:
             policy_diagnostics.append(target_build.diagnostics)
@@ -446,6 +454,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
     total_executions = 0
     instruments: set[str] = set()
     policy_state = empty_portfolio_state()
+    policy_source_state: str | None = None
     budget_state = _initial_policy_budget_state(params)
     policy_diagnostics: list[pd.DataFrame] = []
     peak_equity = float(params.initial_cash)
@@ -548,6 +557,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
                 params,
                 policy_state=policy_state,
                 budget_state=budget_state,
+                source_state=policy_source_state,
                 gross_exposure_scale_cap=gross_exposure_scale_cap,
                 scale_by_timestamp=scale_by_timestamp,
                 drawdown_brake_scale=drawdown_brake_scale,
@@ -557,6 +567,7 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
             )
             signals = target_build.target_weights
             policy_state = target_build.policy_state
+            policy_source_state = target_build.source_state
             budget_state = target_build.budget_state
             if not target_build.diagnostics.empty:
                 policy_diagnostics.append(target_build.diagnostics)
@@ -645,6 +656,11 @@ def _load_ranked_score_signals(
             )
             if column in available_columns
         ]
+        if (
+            params.policy_source_column in available_columns
+            and params.policy_source_column not in forecast_columns
+        ):
+            forecast_columns.append(params.policy_source_column)
         ranked_select_columns = "".join(
             f",\n                    p.{column}" for column in forecast_columns
         )
@@ -748,6 +764,7 @@ def _build_target_weights(
     *,
     policy_state: pd.DataFrame | None = None,
     budget_state: PolicyBudgetState | None = None,
+    source_state: str | None = None,
     gross_exposure_scale_cap: float | None = None,
     scale_by_timestamp: dict[str, float] | None = None,
     drawdown_brake_scale: float | None = None,
@@ -778,6 +795,7 @@ def _build_target_weights(
     diagnostics: list[pd.DataFrame] = []
     targets: list[pd.DataFrame] = []
     state = policy_state if policy_state is not None else empty_portfolio_state()
+    current_source_state = source_state
     grouped_signals, group_count = _signal_groups(ranked_signals)
     current_budget_state = (
         budget_state if budget_state is not None else _initial_policy_budget_state(params)
@@ -846,12 +864,28 @@ def _build_target_weights(
                 "target_weight_cap",
                 "optimizer_max_target_weight",
                 "entry_eligible",
+                params.policy_source_column,
             )
             if column in group.columns
         ]
         forecasts = group.loc[:, forecast_columns].rename(
             columns={"signal_time": "timestamp"}
         )
+        signal_source = _signal_source_for_group(
+            group,
+            params.policy_source_column,
+        )
+        source_change_reset = False
+        if (
+            params.policy_reset_on_source_change
+            and signal_source is not None
+            and current_source_state is not None
+            and signal_source != current_source_state
+        ):
+            state = empty_portfolio_state()
+            source_change_reset = True
+        if signal_source is not None:
+            current_source_state = signal_source
         result = policy.decide(forecasts, state)
         if path_turnover_cap is not None:
             result = _enforce_path_turnover_cap(result, path_turnover_cap)
@@ -890,6 +924,9 @@ def _build_target_weights(
             diagnostics_frame["cost_pressure_turnover_active"] = True
         if realized_cost_bps is not None:
             diagnostics_frame["realized_cost_bps"] = float(realized_cost_bps)
+        if signal_source is not None:
+            diagnostics_frame["signal_source"] = signal_source
+        diagnostics_frame["source_change_reset"] = bool(source_change_reset)
         diagnostics.append(diagnostics_frame)
         target = result.portfolio_intent.loc[
             result.portfolio_intent["policy_target_weight"].astype(float) > 0,
@@ -935,6 +972,7 @@ def _build_target_weights(
             budget_period_key,
         ),
         diagnostics=_concat_policy_diagnostics(diagnostics),
+        source_state=current_source_state,
     )
 
 
@@ -948,6 +986,19 @@ def _signal_groups(
         return [(signal_times[0], ranked_signals)], 1
     groups = list(ranked_signals.groupby("signal_time", sort=True))
     return groups, len(groups)
+
+
+def _signal_source_for_group(group: pd.DataFrame, column: str) -> str | None:
+    if not column or column not in group.columns:
+        return None
+    values = group[column].dropna().astype(str).unique().tolist()
+    if not values:
+        return None
+    if len(values) > 1:
+        raise ValueError(
+            f"signal source column {column!r} has multiple values for one timestamp"
+        )
+    return values[0]
 
 
 def _effective_gross_exposure_scale(
@@ -1392,6 +1443,7 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
             "max_realized_cost_bps": 0.0,
             "turnover_budget_period_count": 0,
             "turnover_path_budget_remaining": 0.0,
+            "source_change_reset_count": 0,
         }
     target_gross = (
         diagnostics["target_gross_exposure"]
@@ -1538,6 +1590,12 @@ def _summarize_policy_diagnostics(diagnostics: pd.DataFrame) -> dict[str, float 
         "turnover_path_budget_remaining": (
             float(path_budget_after.iloc[-1]) if not path_budget_after.empty else 0.0
         ),
+        "source_change_reset_count": int(
+            diagnostics.get("source_change_reset", pd.Series(dtype=bool))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        ),
     }
 
 
@@ -1598,6 +1656,8 @@ def _summary_payload(
             "policy_cost_pressure_max_gross_turnover_per_rebalance": (
                 params.policy_cost_pressure_max_gross_turnover_per_rebalance
             ),
+            "policy_reset_on_source_change": params.policy_reset_on_source_change,
+            "policy_source_column": params.policy_source_column,
             "optimizer_candidate_rank": params.optimizer_candidate_rank,
             "optimizer_score_to_edge_bps": params.optimizer_score_to_edge_bps,
             "optimizer_min_net_edge_bps": params.optimizer_min_net_edge_bps,
@@ -1961,6 +2021,12 @@ def _parse_args() -> TreeScoreBacktestParams:
     parser.add_argument("--policy-cost-pressure-threshold-bps", type=float)
     parser.add_argument("--policy-cost-pressure-reduced-scale", type=float, default=0.7)
     parser.add_argument("--policy-cost-pressure-max-gross-turnover-per-rebalance", type=float)
+    parser.add_argument(
+        "--policy-reset-on-source-change",
+        action="store_true",
+        help="Reset policy-held target state when the per-timestamp signal source changes.",
+    )
+    parser.add_argument("--policy-source-column", default="signal_source")
     parser.add_argument("--optimizer-candidate-rank", type=int)
     parser.add_argument("--optimizer-score-to-edge-bps", type=float, default=100.0)
     parser.add_argument("--optimizer-min-net-edge-bps", type=float, default=0.0)
@@ -2112,6 +2178,8 @@ def _parse_args() -> TreeScoreBacktestParams:
         and not 0 < args.max_bar_turnover_participation <= 1
     ):
         raise ValueError("--max-bar-turnover-participation must be in (0, 1]")
+    if args.policy_reset_on_source_change and not args.policy_source_column:
+        raise ValueError("--policy-source-column must be non-empty when reset is enabled")
     if args.streaming_chunk_padding_days < 0:
         raise ValueError("--streaming-chunk-padding-days must be non-negative")
     return TreeScoreBacktestParams(
@@ -2155,6 +2223,8 @@ def _parse_args() -> TreeScoreBacktestParams:
         policy_cost_pressure_max_gross_turnover_per_rebalance=(
             args.policy_cost_pressure_max_gross_turnover_per_rebalance
         ),
+        policy_reset_on_source_change=args.policy_reset_on_source_change,
+        policy_source_column=args.policy_source_column,
         optimizer_candidate_rank=args.optimizer_candidate_rank,
         optimizer_score_to_edge_bps=args.optimizer_score_to_edge_bps,
         optimizer_min_net_edge_bps=args.optimizer_min_net_edge_bps,
