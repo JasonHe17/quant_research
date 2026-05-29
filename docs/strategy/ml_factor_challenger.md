@@ -120,6 +120,19 @@ conda run -n quant python examples/build_primary_pool_score_blends.py \
   --primary-blend-weights 0.5 0.6 0.7 0.8 0.9
 ```
 
+To derive a stricter pool from an existing wider ML pool, add
+`--primary-pool-rank`; for example, rank100 can be derived from rank150 scores
+without retraining:
+
+```bash
+conda run -n quant python examples/build_primary_pool_score_blends.py \
+  --primary-score-dir runs/candidate_factor_portfolios/legacy_top2_alpha_rank_rank_standard_2026_05_29/scores/decorrelated \
+  --ml-pool-score-dir runs/ml_factor_challenger/compact_core_lightgbm_primary_pool_rerank_2026_05_29/scores/lightgbm \
+  --output-dir runs/ml_factor_challenger/primary_pool_rank100_blend050_2026_05_29 \
+  --primary-blend-weights 0.5 \
+  --primary-pool-rank 100
+```
+
 Current 2024-2025 standard-constraint sweep:
 
 | Method | Primary weight | Total return | Max drawdown |
@@ -137,3 +150,25 @@ The current best challenger is `primary_w050`, stored under
 `runs/ml_factor_challenger/primary_pool_blend_grid_2026_05_29`.  Treat it as a
 candidate for stress validation, not as promoted production logic, until annual
 slices, high-cost stress, and pool-rank sensitivity are reviewed.
+
+Stability validation for `primary_w050`:
+
+| Scenario | Method | Pool rank | Total return | Max drawdown |
+| --- | --- | ---: | ---: | ---: |
+| Full standard | Baseline absorption | - | 22.42% | -29.77% |
+| Full standard | Primary-pool blend | 150 | 26.94% | -27.30% |
+| 2024 standard | Baseline absorption | - | 3.68% | -29.77% |
+| 2024 standard | Primary-pool blend | 150 | 4.99% | -27.30% |
+| 2025 standard | Baseline absorption | - | 61.20% | -16.72% |
+| 2025 standard | Primary-pool blend | 150 | 49.03% | -15.57% |
+| Full doubled-cost | Baseline absorption | - | 18.91% | -30.32% |
+| Full doubled-cost | Primary-pool blend | 150 | 23.18% | -27.90% |
+| Pool sensitivity | Primary-pool blend | 100 | 21.49% | -28.60% |
+| Pool sensitivity | Primary-pool blend | 150 | 26.94% | -27.30% |
+| Pool sensitivity | Primary-pool blend | 200 | 23.84% | -27.74% |
+
+Read: rank150 is the current sweet spot. Rank100 cuts off too much of the ML
+repair space and falls below baseline; rank200 remains acceptable but dilutes
+the edge. The challenger improves the weak 2024 slice and high-cost robustness,
+but gives up part of the strong 2025 baseline upside, so promotion should still
+include regime and capacity checks.

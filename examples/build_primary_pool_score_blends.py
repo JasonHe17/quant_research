@@ -33,6 +33,7 @@ def build_primary_pool_score_blends(args: argparse.Namespace) -> dict[str, Any]:
             primary_path,
             ml_path,
             primary_blend_weights=weights,
+            primary_pool_rank=args.primary_pool_rank,
         )
         for weight, blended in blended_by_weight.items():
             label = _weight_label(weight)
@@ -48,6 +49,7 @@ def build_primary_pool_score_blends(args: argparse.Namespace) -> dict[str, Any]:
             "ml_pool_score_dir": str(ml_pool_dir),
             "output_dir": str(output_dir),
             "primary_blend_weights": list(weights),
+            "primary_pool_rank": args.primary_pool_rank,
         },
         "methods": {
             label: {
@@ -71,6 +73,7 @@ def _blend_partition(
     ml_pool_path: Path,
     *,
     primary_blend_weights: tuple[float, ...],
+    primary_pool_rank: int | None = None,
 ) -> dict[float, pd.DataFrame]:
     if not primary_path.exists():
         raise FileNotFoundError(f"primary score partition not found: {primary_path}")
@@ -93,6 +96,8 @@ def _blend_partition(
     if frame["primary_score"].isna().any():
         missing = int(frame["primary_score"].isna().sum())
         raise ValueError(f"{ml_pool_path} has {missing} rows missing primary scores")
+    if primary_pool_rank is not None:
+        frame = _filter_primary_pool_rank(frame, primary_pool_rank=primary_pool_rank)
     frame["primary_rank_score"] = frame.groupby("timestamp", sort=False)[
         "primary_score"
     ].rank(pct=True, method="average")
@@ -112,6 +117,21 @@ def _blend_partition(
             ascending=[True, False, True],
         ).reset_index(drop=True)
     return outputs
+
+
+def _filter_primary_pool_rank(
+    frame: pd.DataFrame,
+    *,
+    primary_pool_rank: int,
+) -> pd.DataFrame:
+    ranked = frame.sort_values(
+        ["timestamp", "primary_score", "instrument_id"],
+        ascending=[True, False, True],
+    ).copy()
+    ranked["primary_rank"] = ranked.groupby("timestamp", sort=False).cumcount() + 1
+    return ranked.loc[ranked["primary_rank"] <= primary_pool_rank].drop(
+        columns=["primary_rank"]
+    )
 
 
 def _weight_label(weight: float) -> str:
@@ -136,6 +156,14 @@ def _parse_args() -> argparse.Namespace:
         type=float,
         required=True,
     )
+    parser.add_argument(
+        "--primary-pool-rank",
+        type=int,
+        help=(
+            "optional stricter primary rank cutoff applied inside the existing "
+            "ML pool; useful for deriving rank100 from rank150 ML pool scores"
+        ),
+    )
     args = parser.parse_args()
     _validate_args(args)
     return args
@@ -151,6 +179,8 @@ def _validate_args(args: argparse.Namespace) -> None:
     for weight in args.primary_blend_weights:
         if not 0 <= weight <= 1:
             raise ValueError("--primary-blend-weights values must be in [0, 1]")
+    if args.primary_pool_rank is not None and args.primary_pool_rank <= 0:
+        raise ValueError("--primary-pool-rank must be positive")
 
 
 if __name__ == "__main__":
