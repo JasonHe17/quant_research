@@ -32,6 +32,9 @@ def test_legacy_factor_revalidation_dry_run_plans_shared_and_factor_jobs(
     commands = json.loads((output_dir / "commands.json").read_text())
     assert "run_framework_v1_benchmark.py" in commands["shared_benchmark"][1]
     assert "--auto-factor-admission" in commands["shared_benchmark"]
+    assert commands["shared_benchmark"][
+        commands["shared_benchmark"].index("--factor-registry") + 1
+    ] == str(registry_path)
     assert set(commands["factor_revalidations"]) == {"alpha_a", "alpha_b"}
     alpha_command = commands["factor_revalidations"]["alpha_a"]
     assert "run_candidate_policy_validation.py" in alpha_command[1]
@@ -42,9 +45,15 @@ def test_legacy_factor_revalidation_dry_run_plans_shared_and_factor_jobs(
     ] == ["candidate", "promoted"]
     assert alpha_command[
         alpha_command.index("--admission-statuses") + 1 : alpha_command.index(
-            "--output-dir"
+            "--evaluation-roles"
         )
     ] == ["candidate", "watchlist"]
+    assert alpha_command[
+        alpha_command.index("--evaluation-roles") + 1 : alpha_command.index(
+            "--output-dir"
+        )
+    ] == ["alpha_rank"]
+    assert alpha_command[alpha_command.index("--score-transform") + 1] == "rank"
     assert alpha_command[
         alpha_command.index("--factor-health-mode") + 1 : alpha_command.index(
             "--include-features"
@@ -56,6 +65,9 @@ def test_legacy_factor_revalidation_dry_run_plans_shared_and_factor_jobs(
     assert alpha_command[
         alpha_command.index("--backtest-policies") + 1 : alpha_command.index("--resume-existing")
     ] == ["partial_rebalance_daily", "cost_aware_optimizer_daily"]
+    assert alpha_command[
+        alpha_command.index("--years") + 1 : alpha_command.index("--backtest-policies")
+    ] == ["2024"]
     assert "--backtest-memory-estimate-gb" not in alpha_command
     assert alpha_command[alpha_command.index("--full-backtest-memory-gb") + 1] == "5.0"
     assert alpha_command[alpha_command.index("--yearly-backtest-memory-gb") + 1] == "5.0"
@@ -72,6 +84,19 @@ def test_legacy_factor_revalidation_filters_status_and_factor_ids(tmp_path: Path
     factors = _selected_factors(args)
 
     assert [factor.factor_id for factor in factors] == ["alpha_b"]
+
+
+def test_legacy_factor_revalidation_filters_evaluation_roles(tmp_path: Path) -> None:
+    registry_path = _registry_path(tmp_path)
+    args = _args(
+        registry=str(registry_path),
+        statuses=["candidate", "promoted"],
+        evaluation_roles=["risk_penalty"],
+    )
+
+    factors = _selected_factors(args)
+
+    assert [factor.factor_id for factor in factors] == ["risk_a"]
 
 
 def test_legacy_factor_revalidation_primary_label_uses_first_horizon() -> None:
@@ -157,6 +182,12 @@ def _registry_path(tmp_path: Path) -> Path:
         "entries": [
             _entry("alpha_a", "alpha_a_feature", "candidate"),
             _entry("alpha_b", "alpha_b_feature", "promoted"),
+            _entry(
+                "risk_a",
+                "risk_a_feature",
+                "candidate",
+                evaluation_role="risk_penalty",
+            ),
             _entry("alpha_old", "alpha_old_feature", "deprecated"),
         ],
     }
@@ -164,12 +195,19 @@ def _registry_path(tmp_path: Path) -> Path:
     return path
 
 
-def _entry(factor_id: str, feature: str, status: str) -> dict[str, object]:
+def _entry(
+    factor_id: str,
+    feature: str,
+    status: str,
+    *,
+    evaluation_role: str = "alpha_rank",
+) -> dict[str, object]:
     return {
         "factor_id": factor_id,
         "display_name": factor_id,
         "family": "momentum",
         "status": status,
+        "evaluation_role": evaluation_role,
         "expected_direction": "long",
         "feature_columns": [feature],
         "required_inputs": ["close_price"],
@@ -194,6 +232,7 @@ def _args(**overrides: object) -> object:
         "output_dir": "runs/legacy_factor_revalidation/current",
         "statuses": ["candidate", "promoted"],
         "admission_statuses": ["candidate", "watchlist"],
+        "evaluation_roles": ["alpha_rank"],
         "factor_ids": None,
         "max_factors": None,
         "profile": "quick",
@@ -202,8 +241,10 @@ def _args(**overrides: object) -> object:
         "catalog_path": None,
         "data_snapshot": "2026-05-09",
         "max_symbols": 2,
+        "years": [2024],
         "label_horizon_bars": [48, 240],
         "methods": ["decorrelated", "equal"],
+        "score_transform": "rank",
         "backtest_policies": [
             "partial_rebalance_daily",
             "cost_aware_optimizer_daily",

@@ -15,7 +15,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from quant_research.factors import FactorRegistryEntry, load_factor_registry
+from quant_research.factors import (
+    FACTOR_EVALUATION_ROLES,
+    FactorRegistryEntry,
+    load_factor_registry,
+)
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parent
@@ -92,11 +96,14 @@ def run_legacy_factor_revalidation(args: argparse.Namespace) -> dict[str, Any]:
 def _selected_factors(args: argparse.Namespace) -> list[FactorRegistryEntry]:
     registry = load_factor_registry(Path(args.registry))
     statuses = set(args.statuses)
+    evaluation_roles = set(args.evaluation_roles)
     factor_ids = set(args.factor_ids or [])
     factors = [
         entry
         for entry in registry.entries
-        if entry.status in statuses and (not factor_ids or entry.factor_id in factor_ids)
+        if entry.status in statuses
+        and entry.evaluation_role in evaluation_roles
+        and (not factor_ids or entry.factor_id in factor_ids)
     ]
     if args.max_factors is not None:
         factors = factors[: args.max_factors]
@@ -117,6 +124,8 @@ def _shared_benchmark_command(args: argparse.Namespace) -> list[str]:
         args.end,
         "--profile",
         args.profile,
+        "--factor-registry",
+        args.registry,
         "--label-horizon-bars",
         *[str(value) for value in args.label_horizon_bars],
         "--auto-factor-admission",
@@ -212,12 +221,16 @@ def _factor_revalidation_command(
         *args.statuses,
         "--admission-statuses",
         *args.admission_statuses,
+        "--evaluation-roles",
+        *args.evaluation_roles,
         "--output-dir",
         str(output_dir),
         "--profile",
         args.profile,
         "--methods",
         *args.methods,
+        "--score-transform",
+        args.score_transform,
         "--primary-method",
         args.methods[0],
         "--policy",
@@ -251,6 +264,8 @@ def _factor_revalidation_command(
         "--streaming-chunk-padding-days",
         str(args.streaming_chunk_padding_days),
     ]
+    if args.years:
+        command.extend(["--years", *[str(year) for year in args.years]])
     if args.backtest_policies:
         command.extend(["--backtest-policies", *args.backtest_policies])
     if args.resume_existing:
@@ -381,6 +396,7 @@ def _collect_factor_results(
                 "factor_id": entry.factor_id,
                 "feature_columns": list(entry.feature_columns),
                 "legacy_status": entry.status,
+                "evaluation_role": entry.evaluation_role,
                 "legacy_admission_status": entry.evaluation.get("admission_status"),
                 "new_admission_status": new_status,
                 "new_admission_rows": new_rows,
@@ -460,10 +476,13 @@ def _summary_payload(
             "registry": args.registry,
             "statuses": args.statuses,
             "admission_statuses": args.admission_statuses,
+            "evaluation_roles": args.evaluation_roles,
             "factor_ids": args.factor_ids,
             "profile": args.profile,
+            "years": args.years,
             "label_horizon_bars": args.label_horizon_bars,
             "methods": args.methods,
+            "score_transform": args.score_transform,
             "backtest_policies": args.backtest_policies,
             "factor_health_mode": args.factor_health_mode,
             "factor_workers": args.factor_workers,
@@ -579,6 +598,16 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         default=["candidate", "watchlist"],
     )
+    parser.add_argument(
+        "--evaluation-roles",
+        nargs="+",
+        choices=sorted(FACTOR_EVALUATION_ROLES),
+        default=["alpha_rank"],
+        help=(
+            "registry evaluation roles to revalidate through this ordinary "
+            "candidate-policy path"
+        ),
+    )
     parser.add_argument("--factor-ids", nargs="+")
     parser.add_argument("--max-factors", type=int)
     parser.add_argument(
@@ -591,12 +620,24 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--catalog-path")
     parser.add_argument("--data-snapshot", default="2026-05-09")
     parser.add_argument("--max-symbols", type=int)
+    parser.add_argument(
+        "--years",
+        nargs="+",
+        type=int,
+        help="calendar years passed to per-factor candidate policy validation",
+    )
     parser.add_argument("--label-horizon-bars", type=int, nargs="+", default=[48, 240, 960])
     parser.add_argument(
         "--methods",
         nargs="+",
         choices=("equal", "ic_weighted", "decorrelated"),
         default=["decorrelated", "equal", "ic_weighted"],
+    )
+    parser.add_argument(
+        "--score-transform",
+        choices=("rank", "zscore"),
+        default="rank",
+        help="candidate score transform passed to run_candidate_policy_validation.py",
     )
     parser.add_argument(
         "--backtest-policies",
