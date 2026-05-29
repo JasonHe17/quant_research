@@ -60,6 +60,7 @@ def build_backtest_adaptive_state_switch(args: argparse.Namespace) -> dict[str, 
         drawdown_penalty=args.drawdown_penalty,
         turnover_penalty=args.turnover_penalty,
         cost_penalty=args.cost_penalty,
+        switch_penalty=args.switch_penalty,
         fallback_to_baseline=not args.no_baseline_fallback,
     )
     schedule = _daily_schedule(selector, start=args.start, end=args.end)
@@ -98,6 +99,7 @@ def build_backtest_adaptive_state_switch(args: argparse.Namespace) -> dict[str, 
             "drawdown_penalty": args.drawdown_penalty,
             "turnover_penalty": args.turnover_penalty,
             "cost_penalty": args.cost_penalty,
+            "switch_penalty": args.switch_penalty,
             "baseline_fallback": not args.no_baseline_fallback,
         },
         "selection": {
@@ -163,10 +165,12 @@ def _selection_schedule(
     drawdown_penalty: float,
     turnover_penalty: float,
     cost_penalty: float,
+    switch_penalty: float,
     fallback_to_baseline: bool,
 ) -> pd.DataFrame:
     periods = _selection_periods(start=start, end=end, frequency=frequency)
     rows: list[dict[str, Any]] = []
+    previous_selected_method = "baseline"
     for period_start, period_end in periods:
         cutoff = (period_start - pd.Timedelta(days=embargo_days)).date()
         lookback_start = (
@@ -188,20 +192,26 @@ def _selection_schedule(
         baseline = metrics["baseline"]
         selected_method = "baseline"
         selected_metrics = baseline
+        selected_adjusted_objective = baseline.get("objective")
         for name in candidates:
             candidate_metrics = metrics[name]
             if candidate_metrics["valid"] is not True:
                 continue
+            adjusted_objective = candidate_metrics["objective"] - (
+                switch_penalty if name != previous_selected_method else 0.0
+            )
             if fallback_to_baseline and baseline["valid"] is True:
-                edge = candidate_metrics["objective"] - baseline["objective"]
+                edge = adjusted_objective - baseline["objective"]
                 if edge <= min_objective_edge:
                     continue
             if (
                 selected_metrics["valid"] is not True
-                or candidate_metrics["objective"] > selected_metrics["objective"]
+                or selected_adjusted_objective is None
+                or adjusted_objective > selected_adjusted_objective
             ):
                 selected_method = name
                 selected_metrics = candidate_metrics
+                selected_adjusted_objective = adjusted_objective
         baseline_objective = baseline.get("objective")
         selected_objective = selected_metrics.get("objective")
         row = {
@@ -210,12 +220,17 @@ def _selection_schedule(
             "selection_cutoff": str(cutoff),
             "lookback_start": str(lookback_start),
             "selected_method": selected_method,
+            "previous_selected_method": previous_selected_method,
+            "switch_penalty_applied": (
+                switch_penalty if selected_method != previous_selected_method else 0.0
+            ),
             "baseline_fallback": selected_method == "baseline",
             "baseline_objective": baseline_objective,
             "selected_objective": selected_objective,
+            "selected_adjusted_objective": selected_adjusted_objective,
             "selected_objective_edge": (
-                selected_objective - baseline_objective
-                if selected_objective is not None and baseline_objective is not None
+                selected_adjusted_objective - baseline_objective
+                if selected_adjusted_objective is not None and baseline_objective is not None
                 else None
             ),
         }
@@ -224,6 +239,7 @@ def _selection_schedule(
             for key, value in payload.items():
                 row[f"{prefix}_{key}"] = value
         rows.append(row)
+        previous_selected_method = selected_method
     return pd.DataFrame(rows)
 
 
@@ -483,6 +499,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--drawdown-penalty", type=float, default=0.5)
     parser.add_argument("--turnover-penalty", type=float, default=0.001)
     parser.add_argument("--cost-penalty", type=float, default=0.0)
+    parser.add_argument(
+        "--switch-penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "objective penalty applied when the selected method differs from "
+            "the previous selected method"
+        ),
+    )
     parser.add_argument("--no-baseline-fallback", action="store_true")
     parser.add_argument("--resume-existing", action="store_true")
     args = parser.parse_args()
@@ -519,6 +544,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--turnover-penalty must be non-negative")
     if args.cost_penalty < 0:
         raise ValueError("--cost-penalty must be non-negative")
+    if args.switch_penalty < 0:
+        raise ValueError("--switch-penalty must be non-negative")
 
 
 if __name__ == "__main__":

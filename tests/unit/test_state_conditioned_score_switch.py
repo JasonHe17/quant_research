@@ -43,6 +43,7 @@ def test_daily_state_schedule_uses_lagged_expanding_threshold(tmp_path) -> None:
         activation_quantile=0.5,
         min_history_days=2,
         active_when="gte",
+        history_start="2024-01-01T00:00:00+08:00",
         start="2024-01-01T00:00:00+08:00",
         end="2024-01-31T23:59:59+08:00",
     )
