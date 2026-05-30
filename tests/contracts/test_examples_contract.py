@@ -85,6 +85,24 @@ def test_ml_factor_challenger_example_has_cli_help() -> None:
     assert "--admission-report" in result.stdout
     assert "--fold" in result.stdout
     assert "--redundancy-sample-rows" in result.stdout
+    assert "--allow-label-derived-features" in result.stdout
+
+
+def test_ml_challenger_standard_workflow_example_has_cli_help() -> None:
+    script = Path("examples/run_ml_challenger_standard_workflow.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--baseline-backtest-dir" in result.stdout
+    assert "--live-end" in result.stdout
+    assert "--execute" in result.stdout
+    assert "--allow-label-derived-features" not in result.stdout
 
 
 def test_primary_pool_score_blends_example_has_cli_help() -> None:

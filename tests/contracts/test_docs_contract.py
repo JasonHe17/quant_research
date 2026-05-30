@@ -54,6 +54,7 @@ def test_readme_links_factor_development_standard_document() -> None:
     text = doc.read_text(encoding="utf-8")
     assert "Factor Development Standard" in text
     assert "Unified Candidate Review Format" in text
+    assert "run_ml_challenger_standard_workflow.py" in text
 
 
 def test_readme_links_candidate_factor_portfolio_document() -> None:
@@ -65,3 +66,14 @@ def test_readme_links_candidate_factor_portfolio_document() -> None:
     text = doc.read_text(encoding="utf-8")
     assert "Candidate Factor Portfolio Experiments" in text
     assert "Score Construction" in text
+
+
+def test_readme_links_ml_factor_challenger_document() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    doc = Path("docs/strategy/ml_factor_challenger.md")
+
+    assert "docs/strategy/ml_factor_challenger.md" in readme
+    assert doc.exists()
+    text = doc.read_text(encoding="utf-8")
+    assert "ML Factor Challenger" in text
+    assert "Standard No-Leak Workflow" in text

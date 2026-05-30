@@ -267,6 +267,37 @@ The validator treats missing active-factor safety metadata as a hard error.
    `--factor-risk-gate-dataset-dir` to point the gate builder at the matching
    factor dataset while keeping the portfolio alpha dataset fixed.
 
+   LightGBM or primary-pool rerank experiments have an additional standard
+   wrapper and must not be run as loose one-off commands when they are used for
+   candidate promotion evidence:
+
+   ```bash
+   conda run -n quant python examples/run_ml_challenger_standard_workflow.py \
+     --dataset-dir runs/ml_factor_challenger/<alpha_dataset> \
+     --admission-report runs/legacy_factor_revalidation/role_aware_alpha_rank_top5_standard_2026_05_29/shared_benchmark/factor_admission/factor_admission_report.json \
+     --primary-score-dir runs/ml_factor_challenger/baselines/legacy_top2_2023_2026_live_like_scores_2026_05_29/scores/decorrelated \
+     --baseline-backtest-dir runs/ml_factor_challenger/backtest_adaptive_inputs_2025_2026_2026_05_30/baseline \
+     --output-dir runs/ml_factor_challenger/<run_id> \
+     --include-features <feature_1> <feature_2> ... \
+     --train-start 2023-01-01T00:00:00+08:00 \
+     --history-train-end 2024-12-31T23:59:59+08:00 \
+     --history-test-start 2025-01-01T00:00:00+08:00 \
+     --history-test-end 2025-12-31T23:59:59+08:00 \
+     --live-train-end 2025-12-31T23:59:59+08:00 \
+     --live-start 2026-01-01T00:00:00+08:00 \
+     --live-end <latest_available_timestamp>
+   ```
+
+   The wrapper first writes a dry-run plan. Use `--execute` only after checking
+   the plan. Standard ML challenger evidence must include the fixed blend
+   backtests, the full walk-forward span, and adaptive source-switch backtests.
+   The standard wrapper intentionally does not expose
+   `--allow-label-derived-features`; label-derived columns, entry metadata, exit
+   metadata, and missing partition columns are hard blockers for promotion
+   evidence. If an adaptive score source changes, the live adaptive backtest
+   must use source-transition exits so the selected score source can actually
+   affect holdings.
+
 7. Promote, watchlist, or reject with evidence.
    Promotion requires the registry entry, candidate review, admission report,
    and portfolio validation summary to be linked from the entry before default

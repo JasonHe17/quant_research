@@ -9,6 +9,55 @@ The entrypoint is:
 conda run -n quant python examples/run_ml_factor_challenger.py
 ```
 
+## Standard No-Leak Workflow
+
+New LightGBM factor-pool or primary-pool rerank experiments must use the
+standard workflow wrapper unless the task is explicitly a low-level debugging
+run:
+
+```bash
+conda run -n quant python examples/run_ml_challenger_standard_workflow.py \
+  --dataset-dir runs/ml_factor_challenger/alpha_dataset_2023_2026_candidate27_48b_live_like_2026_05_30 \
+  --admission-report runs/legacy_factor_revalidation/role_aware_alpha_rank_top5_standard_2026_05_29/shared_benchmark/factor_admission/factor_admission_report.json \
+  --primary-score-dir runs/ml_factor_challenger/baselines/legacy_top2_2023_2026_live_like_scores_2026_05_29/scores/decorrelated \
+  --baseline-backtest-dir runs/ml_factor_challenger/backtest_adaptive_inputs_2025_2026_2026_05_30/baseline \
+  --output-dir runs/ml_factor_challenger/<run_id> \
+  --include-features <feature_1> <feature_2> ... \
+  --train-start 2023-01-01T00:00:00+08:00 \
+  --history-train-end 2024-12-31T23:59:59+08:00 \
+  --history-test-start 2025-01-01T00:00:00+08:00 \
+  --history-test-end 2025-12-31T23:59:59+08:00 \
+  --live-train-end 2025-12-31T23:59:59+08:00 \
+  --live-start 2026-01-01T00:00:00+08:00 \
+  --live-end 2026-05-15T15:00:00+08:00
+```
+
+Without `--execute`, the wrapper writes
+`standard_workflow_plan.json` and exits. Review the plan first; then rerun with
+`--execute` to run every stage in order. Logs are written under
+`<output-dir>/logs/`.
+
+The wrapper is the standard path because it enforces all required stages:
+
+- train two explicit walk-forward folds, normally `2023-2024 -> 2025` and
+  `2023-2025 -> current 2026`;
+- use `run_ml_factor_challenger.py`, which blocks label/entry/exit-derived
+  features by default and validates required columns in every dataset
+  partition before training;
+- build primary/ML blend scores from one ML-only primary-pool rerank score set;
+- run fixed-candidate backtests on both the full walk-forward span and the live
+  window with production-like CN A-share costs and constraints;
+- build adaptive score switches from prior backtest performance only;
+- backtest adaptive score streams with source-transition exits enabled, so a
+  source switch can actually enter the portfolio instead of silently retaining
+  the old score source through the exit buffer.
+
+Do not add `--allow-label-derived-features` to standard runs. That switch is
+reserved only for controlled leakage diagnostics and is intentionally not
+exposed by the standard workflow wrapper. Do not promote a fixed blend from a
+single live-like window unless the walk-forward span and adaptive selector are
+also reported.
+
 It trains purged walk-forward LightGBM regressors on selected alpha-rank
 features, writes OOS prediction scores under `scores/lightgbm/score_*.parquet`,
 and emits diagnostics for feature importance, SVD redundancy, high-correlation

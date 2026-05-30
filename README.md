@@ -56,6 +56,7 @@ it does not load large market data or write cache artifacts.
 - [Factor Development Standard](docs/validation/factor_development_standard.md)
 - [Factor Admission Plan](docs/validation/factor_admission.md)
 - [Candidate Factor Portfolio Experiments](docs/strategy/candidate_factor_portfolios.md)
+- [ML Factor Challenger](docs/strategy/ml_factor_challenger.md)
 
 ## Framework v1 Acceptance
 
