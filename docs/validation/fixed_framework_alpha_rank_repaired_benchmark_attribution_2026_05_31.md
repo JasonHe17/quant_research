@@ -26,6 +26,8 @@ improved, and why the full-window max drawdown still worsened.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/attribution_2024/comparison_to_alpha_only_v66/monthly_attribution_comparison.csv`
 - Full-path monthly comparison to alpha-only v66:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/attribution_2024_full_path/comparison_to_alpha_only_v66/monthly_full_path_comparison.csv`
+- 2025 degradation attribution follow-up:
+  `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_2025_degradation_attribution_2026_05_31.md`
 
 All comparisons use `decorrelated`, `partial_rebalance_daily`, the fixed
 standard dataset, and `factor_health_mode=off`. The promoted benchmark uses an
@@ -121,7 +123,9 @@ January is almost flat versus baseline (`+0.03pp`), but in the full path it is
 schedule-history effect, not a contradiction in the attribution.
 
 The repair also gives back return in 2025-10 and 2025-08, while gaining in
-2025-12, 2025-02, 2024-03, 2025-07, and 2023-05. The full-window return still
+2025-12, 2025-02, 2024-03, 2025-07, and 2023-05. Follow-up attribution shows
+that the 2025 giveback is opportunity cost from suppressing profitable
+overnight exposure, not a loss-month failure. The full-window return still
 improves because the gains exceed these givebacks, but the equity path reaches
 a worse trough.
 
@@ -136,11 +140,8 @@ framework. The max drawdown tradeoff remains an explicit open item.
 
 ## Next Tests
 
-1. Run attribution on the full-path degradation months, especially 2025-10 and
-   2025-08, to determine whether they share the same weak-tape residual mode or
-   a different state.
-2. Test a small drawdown-control overlay against the promoted benchmark, not
+1. Test a small drawdown-control overlay against the promoted benchmark, not
    against the superseded alpha-only baseline.
-3. Explore a weak-tape state rule only if it uses an observable state distinct
+2. Explore a weak-tape state rule only if it uses an observable state distinct
    from the overnight health gate and can beat the promoted benchmark after
    costs.

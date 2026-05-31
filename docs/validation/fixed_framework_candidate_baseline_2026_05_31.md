@@ -17,6 +17,8 @@ the fixed-framework priority revalidation.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/validation_summary.json`
 - Repaired benchmark attribution:
   `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_attribution_2026_05_31.md`
+- Repaired benchmark 2025 degradation attribution:
+  `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_2025_degradation_attribution_2026_05_31.md`
 
 All runs use:
 
@@ -118,9 +120,7 @@ through a separate default-change review.
 
 ## Next Steps
 
-1. Run attribution on the full-path degradation months, especially 2025-10 and
-   2025-08, to check whether they share the same residual weak-tape mode.
-2. Test whether a small drawdown-control overlay can reduce the drawdown
+1. Test whether a small drawdown-control overlay can reduce the drawdown
    tradeoff without losing the repaired 2024 slice.
-3. Use the repaired benchmark, not alpha-only v66 or alpha+EOD, as the frontier
+2. Use the repaired benchmark, not alpha-only v66 or alpha+EOD, as the frontier
    comparison for the next incremental alpha-rank factor tests.
