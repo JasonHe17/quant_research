@@ -15,6 +15,8 @@ the fixed-framework priority revalidation.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_plus_eod_lb1_v66_nohealth_2026_05_31_standard/validation_summary.json`
 - Repaired alpha-rank research benchmark:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/validation_summary.json`
+- Repaired benchmark attribution:
+  `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_attribution_2026_05_31.md`
 
 All runs use:
 
@@ -82,6 +84,9 @@ the 2024 yearly slice while improving full-window and high-cost returns:
 
 The drawdown tradeoff should be monitored, but the repaired benchmark clears
 the standard validation gates and removes the 2024 stability blocker.
+Attribution shows that the repair works by suppressing the overnight-gap leg
+and lowering row contribution concentration, while the remaining weak months
+are dominated by `intraday_weak_tape_gap_up_risk_5m_w48`.
 
 ## Candidate Weights
 
@@ -113,8 +118,8 @@ through a separate default-change review.
 
 ## Next Steps
 
-1. Run attribution on the repaired benchmark, focusing on January, June,
-   September, and the higher full-window drawdown.
+1. Run attribution on the full-path degradation months, especially 2025-10 and
+   2025-08, to check whether they share the same residual weak-tape mode.
 2. Test whether a small drawdown-control overlay can reduce the drawdown
    tradeoff without losing the repaired 2024 slice.
 3. Use the repaired benchmark, not alpha-only v66 or alpha+EOD, as the frontier

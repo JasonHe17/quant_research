@@ -37,6 +37,8 @@ of the alpha-only v66 candidate baseline.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2024_slice/validation_summary.json`
 - Targeted gate deep25 overnight-only plus contribution-cap standard validation:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/validation_summary.json`
+- Promoted benchmark attribution:
+  `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_attribution_2026_05_31.md`
 - Conservative top-score-loss gate screen:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_top_score_loss_gate_conservative_2024_screen/validation_summary.json`
 - Targeted gap/tape factor scale schedule:
@@ -224,8 +226,8 @@ portfolio work. The next tests should focus on whether the full-base drawdown
 increase is acceptable or can be reduced without giving back the repaired 2024
 slice:
 
-1. run monthly attribution on the promoted variant, with special focus on
-   January, June, and September 2024;
+1. run attribution on full-path degradation months, especially 2025-10 and
+   2025-08;
 2. test a small drawdown-control overlay only against this promoted variant;
 3. require future factor additions to beat both the old alpha-only v66 baseline
    and this promoted research benchmark after costs.
