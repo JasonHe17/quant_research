@@ -21,6 +21,14 @@ of the alpha-only v66 candidate baseline.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_contrib_cap25_2024_screen/validation_summary.json`
 - Targeted gate with January protection screen:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_jan_protect_2024_screen/validation_summary.json`
+- Targeted gate floor50 screen:
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_floor50_2024_screen/validation_summary.json`
+- Targeted gate blend50 screen:
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_blend50_2024_screen/validation_summary.json`
+- Targeted gate deep25 screen:
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_2024_screen/validation_summary.json`
+- Targeted gate deep25 standard validation:
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_2026_05_31_standard/validation_summary.json`
 - Conservative top-score-loss gate screen:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_top_score_loss_gate_conservative_2024_screen/validation_summary.json`
 - Targeted gap/tape factor scale schedule:
@@ -29,6 +37,8 @@ of the alpha-only v66 candidate baseline.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_top_score_loss_gate_conservative_2024_screen/schedules/factor_weight_scale_schedule.csv`
 - January-protected factor scale schedule:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_jan_protect_2024_screen/schedules/gap_tape_factor_weight_scale_schedule.csv`
+- Deep25 standard factor scale schedule:
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_2026_05_31_standard/schedules/gap_tape_factor_weight_scale_schedule.csv`
 - Comparison CSV:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_v66_2024_repair_screen_year2024_comparison.csv`
 
@@ -47,6 +57,9 @@ profile is a screen, not a replacement validation.
 | no gap/tape | exclude `intraday_overnight_gap_5m` and `intraday_weak_tape_gap_up_risk_5m_w48` |
 | targeted gate | apply lagged factor-health scale only to the two gap/tape factors |
 | targeted gate + January protection | targeted gate, but force both target factor scales to `1.0` during 2024-01 |
+| targeted gate floor50 | targeted gate, but raise minimum scale to `0.50` |
+| targeted gate blend50 | targeted gate, but blend scale halfway back to `1.0` |
+| targeted gate deep25 | targeted gate, but map original `0.25..1.00` scale to `0.00..1.00` |
 | targeted gate + contribution cap 25% | targeted gate plus `--factor-max-contribution-share 0.25` |
 | conservative top-score-loss gate | scale the two gap/tape factors from lagged composite top-score basket loss |
 
@@ -77,6 +90,9 @@ rolling, with `lookback_windows=96`, `min_periods=48`,
 | no gap/tape | -1.64% | 2024-01 | -12.60% | -9.13% | 16.48% | 7.10% | 53,970 | 8,177 |
 | targeted gate | -1.11% | 2024-01 | -12.01% | -9.81% | 17.84% | 5.02% | 54,360 | 8,217 |
 | targeted gate + January protection | -5.06% | 2024-01 | -11.50% | -9.99% | 18.28% | 4.31% | 54,120 | 8,188 |
+| targeted gate floor50 | -2.84% | 2024-01 | -11.63% | -9.63% | 18.28% | 4.35% | 54,464 | 8,237 |
+| targeted gate blend50 | -4.38% | 2024-01 | -11.33% | -10.14% | 18.35% | 4.33% | 54,235 | 8,194 |
+| targeted gate deep25 | 2.33% | 2024-01 | -12.42% | -8.89% | 18.12% | 5.11% | 55,401 | 8,375 |
 | targeted gate + contribution cap 25% | -3.19% | 2024-01 | -11.44% | -9.77% | 17.19% | 5.76% | 54,221 | 8,205 |
 | conservative top-score-loss gate | -4.37% | 2024-01 | -11.87% | -10.08% | 18.09% | 4.51% | 54,311 | 8,224 |
 
@@ -112,10 +128,41 @@ Combining the targeted gate with contribution capping is worse than the targeted
 gate alone (`-3.19%` versus `-1.11%`). The two controls are not additive in this
 configuration; capping appears to distort the already-shrunk score mix.
 
+Less aggressive path-continuous refinements also fail. `floor50` improves on
+baseline but is worse than the original targeted gate (`-2.84%` versus
+`-1.11%`), while `blend50` nearly reverts to baseline (`-4.38%`). The repair is
+not coming from mild de-concentration; it requires strong state-dependent
+suppression of the two gap/tape legs.
+
+The stronger `deep25` transform is the first 2024-only screen that turns the
+year positive (`2.33%` base, `0.71%` high-cost). Its benefit comes mainly from
+June and late-year path repair, but it worsens January to `-12.42%` and raises
+trade count/cost modestly.
+
 The conservative top-score-loss gate is also not enough. It leaves the 2024
 result close to baseline (`-4.37%` versus `-4.59%`) and does not materially
 repair January or June. Composite top-score loss appears too delayed or too
 coarse to control the gap/tape failure by itself.
+
+## Promotion Check
+
+Because `deep25` passed the 2024-only screen, it was rebuilt as a full
+2023-2025 lagged schedule and tested under the standard validation profile. The
+promotion check does not pass:
+
+| variant | full base | high cost | 2023 | 2024 | 2025 | status |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| baseline | 27.00% | 21.19% | 1.45% | -4.59% | 18.09% | fail: 2024 negative |
+| deep25 standard | 23.28% | 17.53% | 1.00% | -1.22% | 18.35% | warn: 2024 negative |
+
+The full-window `deep25` schedule still improves 2024 materially
+(`-4.59%` to `-1.22%`), but it gives back too much full-window return and does
+not clear the yearly stability requirement. The difference versus the
+2024-only `deep25` screen is path dependent: the full schedule enters January
+with matured 2023 health history, especially lower scale on
+`intraday_weak_tape_gap_up_risk_5m_w48`, while the 2024-only screen starts with
+fresh warmup state. Therefore the full-window result is the controlling
+evidence.
 
 ## Non-Result
 
@@ -130,7 +177,8 @@ Do not use it as evidence until the associated score/backtest run completes.
 
 No screened variant is eligible to replace the alpha-only v66 baseline:
 
-- none restores 2024 to positive;
+- `deep25` restores 2024 to positive only in the 2024-only screen, but fails
+  the full-window promotion check;
 - static capping is worse than baseline;
 - contribution capping helps but is insufficient;
 - removing the two factors helps the year but worsens January and loses
@@ -153,10 +201,12 @@ full 2023-2025 standard profile.
 Refine the targeted weight-scale schedule for the two gap/tape factors:
 
 1. keep the factor-leg health gate as the primary direction, because it is the
-   only screen that moves 2024 close to flat;
-2. avoid blunt calendar protection; refine the gate at the signal-state level
-   instead, for example by changing health-score floors or transition
-   confirmation while keeping path continuity;
-3. screen on 2024 against the same baseline;
-4. promote to full standard validation only if 2024 turns positive without
-   materially reducing the 2023-2025 full/high-cost edge.
+   only screen family that materially repairs 2024;
+2. stop relying on 2024-only warmup behavior for promotion decisions; build the
+   candidate schedule over the full 2023-2025 window before making replacement
+   claims;
+3. refine the adverse-state entry/exit rule, not just the scale floor. The next
+   useful test should reduce January damage without giving back the June and
+   late-year repair;
+4. promote only if the full standard profile has positive 2024 and does not
+   materially reduce the 2023-2025 full/high-cost edge.
