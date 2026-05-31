@@ -36,13 +36,15 @@ def main() -> None:
 def analyze_candidate_policy_regime(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    score_scenario = args.score_scenario or args.scenario
+    weights_scenario = args.weights_scenario or args.scenario
     candidates = load_candidate_factors(
         Path(args.admission_report),
         include_features=tuple(args.include_features),
     )
     weights = _load_method_weights(
         Path(args.validation_dir),
-        scenario=args.scenario,
+        scenario=weights_scenario,
         method=args.method,
     )
     pnl_rows = _load_monthly_pnl(
@@ -54,7 +56,7 @@ def analyze_candidate_policy_regime(args: argparse.Namespace) -> dict[str, Any]:
     diagnostics = [
         _diagnose_month(
             dataset_path,
-            score_path=_score_path(args, dataset_path),
+            score_path=_score_path(args, dataset_path, score_scenario=score_scenario),
             candidates=candidates,
             weights=weights,
             top_n=args.top_n,
@@ -94,6 +96,8 @@ def analyze_candidate_policy_regime(args: argparse.Namespace) -> dict[str, Any]:
             "dataset_dir": args.dataset_dir,
             "validation_dir": args.validation_dir,
             "scenario": args.scenario,
+            "score_scenario": score_scenario,
+            "weights_scenario": weights_scenario,
             "method": args.method,
             "policy": args.policy,
             "year": args.year,
@@ -131,11 +135,16 @@ def _dataset_paths(args: argparse.Namespace) -> list[Path]:
     return paths
 
 
-def _score_path(args: argparse.Namespace, dataset_path: Path) -> Path:
+def _score_path(
+    args: argparse.Namespace,
+    dataset_path: Path,
+    *,
+    score_scenario: str,
+) -> Path:
     partition = dataset_path.stem.removeprefix("dataset_")
     path = (
         Path(args.validation_dir)
-        / args.scenario
+        / score_scenario
         / "scores"
         / args.method
         / f"score_{partition}.parquet"
@@ -429,6 +438,8 @@ def _build_report(
         "# Candidate Policy Regime Diagnostic",
         "",
         f"- Scenario: `{args.scenario}`",
+        f"- Score scenario: `{args.score_scenario or args.scenario}`",
+        f"- Weights scenario: `{args.weights_scenario or args.scenario}`",
         f"- Method: `{args.method}`",
         f"- Policy: `{args.policy}`",
         f"- Year: `{args.year}`",
@@ -550,6 +561,14 @@ def _parse_args() -> argparse.Namespace:
         default="runs/candidate_factor_portfolios/partial_rebalance_validation_standard/regime_diagnostics_2024",
     )
     parser.add_argument("--scenario", default="year_2024_base")
+    parser.add_argument(
+        "--score-scenario",
+        help="scenario directory that contains score partitions; defaults to --scenario",
+    )
+    parser.add_argument(
+        "--weights-scenario",
+        help="scenario summary that contains method weights; defaults to --scenario",
+    )
     parser.add_argument("--method", default="decorrelated")
     parser.add_argument("--policy", default="partial_rebalance_daily")
     parser.add_argument("--year", type=int, default=2024)
