@@ -33,6 +33,11 @@ Latest legacy-factor revalidation:
   records the priority retest after the framework-v1 leakage and governance
   fixes. Use it as the current source for the retested priority factors before
   using older legacy validation decisions.
+- `docs/validation/fixed_framework_candidate_baseline_2026_05_31.md`
+  records the rebuilt candidate portfolio baseline after registry v66. Use the
+  alpha-only v66 run as the current baseline for incremental factor tests; keep
+  EOD lb1 outside the default alpha pool pending a dedicated event-overlay
+  test.
 - `docs/validation/legacy_factor_revalidation_2026_05_20.md` records the first
   full revalidation run under factor-health monitor mode. Use it for legacy
   factors that have not yet been retested under the fixed framework.
