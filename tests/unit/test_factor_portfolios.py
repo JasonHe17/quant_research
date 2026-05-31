@@ -235,6 +235,11 @@ def test_factor_combination_weights_support_methods() -> None:
 
     equal = factor_combination_weights(factors, method="equal")
     ic_weighted = factor_combination_weights(factors, method="ic_weighted")
+    equal_evidence = factor_combination_weights(
+        factors,
+        method="ic_weighted",
+        base_weight_mode="equal",
+    )
     decorrelated = factor_combination_weights(
         factors,
         method="decorrelated",
@@ -243,6 +248,7 @@ def test_factor_combination_weights_support_methods() -> None:
 
     assert equal == {"alpha_a": 0.5, "alpha_b": 0.5}
     assert ic_weighted["alpha_a"] == pytest.approx(2 / 3)
+    assert equal_evidence == {"alpha_a": 0.5, "alpha_b": 0.5}
     assert sum(decorrelated.values()) == pytest.approx(1.0)
 
 
@@ -1354,8 +1360,8 @@ def test_candidate_factor_summary_params_record_backtest_policy_set() -> None:
 
 
 def test_candidate_factor_default_label_lag_follows_horizon_suffix() -> None:
-    assert _default_label_lag_windows("forward_return") == 48
-    assert _default_label_lag_windows("forward_return_240b") == 240
+    assert _default_label_lag_windows("forward_return") == 49
+    assert _default_label_lag_windows("forward_return_240b") == 241
 
 
 def test_parse_factor_health_ensemble_lookbacks() -> None:
@@ -1385,13 +1391,14 @@ def _portfolio_args(**overrides: object) -> object:
         "output_dir": "runs",
         "factor_max_weight": None,
         "factor_max_contribution_share": None,
+        "weight_evidence_mode": "equal",
         "score_transform": "rank",
         "factor_health_mode": "off",
         "factor_health_lookback_windows": 20,
         "factor_health_ensemble_lookbacks": None,
         "factor_health_ensemble_combine_mode": "mean",
         "factor_health_min_periods": 5,
-        "factor_health_label_lag_windows": 48,
+        "factor_health_label_lag_windows": 49,
         "factor_health_min_scale": 0.25,
         "factor_health_max_scale": 1.0,
         "factor_health_stress_lookback_windows": None,
@@ -1411,7 +1418,7 @@ def _portfolio_args(**overrides: object) -> object:
         "forecast_calibration_mode": "off",
         "forecast_calibration_lookback_windows": 20,
         "forecast_calibration_min_periods": 5,
-        "forecast_calibration_label_lag_windows": 48,
+        "forecast_calibration_label_lag_windows": 49,
         "forecast_calibration_bucket_count": 5,
         "forecast_calibration_risk_multiplier": 1.0,
         "forecast_calibration_max_abs_edge_bps": None,

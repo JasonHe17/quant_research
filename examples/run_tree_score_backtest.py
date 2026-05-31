@@ -228,7 +228,15 @@ def run_tree_score_backtest(params: TreeScoreBacktestParams) -> dict[str, object
         raise ValueError("no bars loaded for requested period")
     executions = _build_tree_score_executions(bars, signals)
     if executions.empty:
-        raise ValueError("no executable tree score signals after next-bar shift")
+        return _empty_tree_score_backtest_result(
+            params,
+            bar_count=len(bars),
+            signal_count=len(signals),
+            execution_row_count=0,
+            execution_constraint_counts=_empty_execution_constraint_counts(),
+            instrument_count=int(bars["instrument_id"].nunique()),
+            policy_diagnostics=_summarize_policy_diagnostics(target_build.diagnostics),
+        )
     execution_constraint_counts = _execution_constraint_counts(executions)
     execution_events: list[dict[str, object]] = []
     trades, equity_curve, _, state = _simulate(
@@ -464,7 +472,17 @@ def _run_tree_score_backtest_streaming(
             _append_frame_csv(period_equity, params.output_dir / "equity_curve.csv")
         del bars, ranked_signals, signals, executions, period_trades, period_equity
     if len(equity_values) == 1:
-        raise ValueError("no executable score signals after next-bar shift")
+        return _empty_tree_score_backtest_result(
+            params,
+            bar_count=total_bars,
+            signal_count=total_signals,
+            execution_row_count=total_executions,
+            execution_constraint_counts=execution_constraint_counts,
+            instrument_count=len(instruments),
+            policy_diagnostics=_summarize_policy_diagnostics(
+                _concat_policy_diagnostics(policy_diagnostics)
+            ),
+        )
     final_positions = _final_positions(state.lots)
     final_positions.to_csv(params.output_dir / "final_positions.csv", index=False)
     metrics = {
@@ -660,7 +678,17 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
         del bars, ranked_signals
 
     if len(equity_values) == 1:
-        raise ValueError("no executable score signals after next-bar shift")
+        return _empty_tree_score_backtest_result(
+            params,
+            bar_count=total_bars,
+            signal_count=total_signals,
+            execution_row_count=total_executions,
+            execution_constraint_counts=execution_constraint_counts,
+            instrument_count=len(instruments),
+            policy_diagnostics=_summarize_policy_diagnostics(
+                _concat_policy_diagnostics(policy_diagnostics)
+            ),
+        )
     final_positions = _final_positions(state.lots)
     final_positions.to_csv(params.output_dir / "final_positions.csv", index=False)
     metrics = {
@@ -687,6 +715,78 @@ def _run_tree_score_backtest_streaming_rebalance_drawdown(
         "metrics": metrics,
         "trades": pd.DataFrame(),
         "equity_curve": pd.DataFrame(),
+        "final_positions": final_positions,
+    }
+
+
+def _empty_tree_score_backtest_result(
+    params: TreeScoreBacktestParams,
+    *,
+    bar_count: int,
+    signal_count: int,
+    execution_row_count: int,
+    execution_constraint_counts: dict[str, int],
+    instrument_count: int,
+    policy_diagnostics: dict[str, float | int],
+) -> dict[str, object]:
+    final_positions = _final_positions({})
+    final_positions.to_csv(params.output_dir / "final_positions.csv", index=False)
+    trades = pd.DataFrame(
+        columns=[
+            "timestamp",
+            "instrument_id",
+            "side",
+            "shares",
+            "price",
+            "reference_price",
+            "commission",
+            "stamp_tax",
+            "slippage_cost",
+            "total_cost",
+            "notional",
+            "reference_notional",
+        ]
+    )
+    trades.to_csv(params.output_dir / "trades.csv", index=False)
+    equity_curve = pd.DataFrame(
+        [
+            {
+                "timestamp": params.start,
+                "cash": float(params.initial_cash),
+                "positions_value": 0.0,
+                "equity": float(params.initial_cash),
+            }
+        ]
+    )
+    equity_curve.to_csv(params.output_dir / "equity_curve.csv", index=False)
+    metrics = {
+        "total_return": 0.0,
+        "max_drawdown": 0.0,
+        "trade_count": 0.0,
+        "final_equity": float(params.initial_cash),
+    }
+    metrics.update(
+        _trade_metrics_from_totals(
+            _empty_trade_metric_totals(),
+            [params.initial_cash],
+        )
+    )
+    summary = _summary_payload(
+        params,
+        bar_count=bar_count,
+        signal_count=signal_count,
+        execution_row_count=execution_row_count,
+        execution_constraint_counts=execution_constraint_counts,
+        instrument_count=instrument_count,
+        policy_diagnostics=policy_diagnostics,
+        metrics=metrics,
+    )
+    summary["no_executable_signals"] = True
+    return {
+        "summary": summary,
+        "metrics": metrics,
+        "trades": trades,
+        "equity_curve": equity_curve,
         "final_positions": final_positions,
     }
 

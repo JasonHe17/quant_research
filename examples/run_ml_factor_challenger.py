@@ -90,6 +90,7 @@ def run_ml_factor_challenger(args: argparse.Namespace) -> dict[str, Any]:
     )
     feature_columns = tuple(factor.feature for factor in candidates)
     directions = {factor.feature: factor.direction for factor in candidates}
+    label_end_column = _label_exit_timestamp_column(args.label_column)
     dataset_paths = _dataset_paths(args)
     _validate_dataset_columns(
         dataset_paths,
@@ -97,6 +98,7 @@ def run_ml_factor_challenger(args: argparse.Namespace) -> dict[str, Any]:
             "timestamp",
             "instrument_id",
             args.label_column,
+            label_end_column,
             *feature_columns,
         ),
     )
@@ -205,16 +207,28 @@ def _run_fold(
     directions: dict[str, int],
     score_dir: Path,
 ) -> dict[str, Any]:
+    label_end_column = _label_exit_timestamp_column(args.label_column)
     train = _load_window(
         dataset_paths,
         start=fold.train_start,
         end=fold.train_end,
-        columns=("timestamp", "instrument_id", args.label_column, *feature_columns),
+        columns=(
+            "timestamp",
+            "instrument_id",
+            args.label_column,
+            label_end_column,
+            *feature_columns,
+        ),
         max_rows=args.max_train_rows,
         seed=args.seed,
     )
     eval_start = _timestamp(fold.valid_start or fold.test_start)
-    train = _purge_train(train, eval_start=eval_start, embargo=args.embargo)
+    train = _purge_train(
+        train,
+        eval_start=eval_start,
+        embargo=args.embargo,
+        label_end_column=label_end_column,
+    )
     if args.max_train_rows is not None:
         train = _sample_rows(train, max_rows=args.max_train_rows, seed=args.seed)
     valid = (
@@ -222,7 +236,13 @@ def _run_fold(
             dataset_paths,
             start=fold.valid_start,
             end=fold.valid_end,
-            columns=("timestamp", "instrument_id", args.label_column, *feature_columns),
+            columns=(
+                "timestamp",
+                "instrument_id",
+                args.label_column,
+                label_end_column,
+                *feature_columns,
+            ),
             max_rows=args.max_valid_rows,
             seed=args.seed + 17,
         )
@@ -624,12 +644,16 @@ def _purge_train(
     *,
     eval_start: pd.Timestamp,
     embargo: str | None,
+    label_end_column: str,
 ) -> pd.DataFrame:
     if frame.empty:
         return frame
+    _require_columns(frame, ("timestamp", label_end_column))
     timestamp = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+    label_end = pd.to_datetime(frame[label_end_column], utc=True, errors="coerce")
     cutoff = eval_start - (pd.Timedelta(embargo) if embargo else pd.Timedelta(0))
-    return frame.loc[timestamp < cutoff].copy().reset_index(drop=True)
+    mask = (timestamp < eval_start) & (label_end < cutoff)
+    return frame.loc[mask].copy().reset_index(drop=True)
 
 
 def _write_prediction_partitions(predictions: pd.DataFrame, *, score_dir: Path) -> None:
@@ -1073,6 +1097,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, Any]:
         "include_features": args.include_features,
         "allow_label_derived_features": args.allow_label_derived_features,
         "label_column": args.label_column,
+        "label_exit_timestamp_column": _label_exit_timestamp_column(args.label_column),
         "score_transform": args.score_transform,
         "score_mode": args.score_mode,
         "primary_score_dir": args.primary_score_dir,
@@ -1157,6 +1182,12 @@ def _timestamp(value: str) -> pd.Timestamp:
     if timestamp.tzinfo is None:
         return timestamp.tz_localize("UTC")
     return timestamp.tz_convert("UTC")
+
+
+def _label_exit_timestamp_column(label_column: str) -> str:
+    if label_column == "forward_return":
+        return "exit_timestamp"
+    return f"{label_column}_exit_timestamp"
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

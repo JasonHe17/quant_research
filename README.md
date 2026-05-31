@@ -53,8 +53,10 @@ it does not load large market data or write cache artifacts.
 - [Framework Pipeline v0](docs/architecture/framework_pipeline.md)
 - [Production Strategy Framework and Roadmap](docs/architecture/production_strategy_framework.md)
 - [Framework v1 Acceptance Plan](docs/validation/framework_v1_acceptance.md)
+- [Framework v1 Benchmark Replacement 2026-05-31](docs/validation/framework_v1_benchmark_replacement_2026_05_31.md)
 - [Factor Development Standard](docs/validation/factor_development_standard.md)
 - [Factor Admission Plan](docs/validation/factor_admission.md)
+- [Factor Registry Admission Audit 2026-05-31](docs/validation/factor_registry_admission_audit_2026_05_31.md)
 - [Candidate Factor Portfolio Experiments](docs/strategy/candidate_factor_portfolios.md)
 - [ML Factor Challenger](docs/strategy/ml_factor_challenger.md)
 

@@ -118,15 +118,21 @@ def factor_combination_weights(
     method: str,
     correlation: pd.DataFrame | None = None,
     ridge: float = 0.05,
+    base_weight_mode: str = "ic_magnitude",
 ) -> dict[str, float]:
     """Compute non-negative combination weights for candidate factors."""
 
     if method == "equal":
         return _normalize({factor.feature: 1.0 for factor in candidates})
-    base = {
-        factor.feature: max(abs(float(factor.rank_ic_mean)), 1e-12)
-        for factor in candidates
-    }
+    if base_weight_mode == "equal":
+        base = {factor.feature: 1.0 for factor in candidates}
+    elif base_weight_mode == "ic_magnitude":
+        base = {
+            factor.feature: max(abs(float(factor.rank_ic_mean)), 1e-12)
+            for factor in candidates
+        }
+    else:
+        raise ValueError("base_weight_mode must be equal or ic_magnitude")
     if method == "ic_weighted":
         return _normalize(base)
     if method != "decorrelated":

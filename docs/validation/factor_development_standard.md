@@ -159,6 +159,12 @@ The validator treats missing active-factor safety metadata as a hard error.
    This keeps admission evidence focused on the new hypotheses and prevents
    full-feature memory growth from slowing every iteration.
 
+   Standard datasets use one-bar delayed `open_price` entry and `open_price`
+   exit labels. They filter non-tradable entry bars, entry limit-up bars,
+   non-tradable exit bars, and exit limit-down bars. Do not compare new
+   admission evidence against pre-2026-05-31 reports without calling out the
+   label and exit-filter difference.
+
    A new-factor-only dataset command should name the new groups explicitly:
 
    ```bash
@@ -224,6 +230,11 @@ The validator treats missing active-factor safety metadata as a hard error.
    can be reviewed without manually joining score diagnostics, health schedules,
    and backtest equity curves.
 
+   Rolling factor health and forecast calibration must use matured labels.
+   For a 48-bar forward-return label, the default lag is `49` windows: the label
+   horizon plus the one-bar execution lag. A lower lag is a look-ahead-prone
+   experiment and is not admissible promotion evidence.
+
    Before running portfolio validation, identify the baseline stack for the
    research family:
 
@@ -267,6 +278,11 @@ The validator treats missing active-factor safety metadata as a hard error.
    `--factor-risk-gate-dataset-dir` to point the gate builder at the matching
    factor dataset while keeping the portfolio alpha dataset fixed.
 
+   Candidate factor combination should keep `--weight-evidence-mode equal`
+   unless the experiment is explicitly testing evidence-weighted sizing.
+   `admission_ic` reuses single-factor admission evidence for weights and must
+   be reported as a separate sizing variant.
+
    LightGBM or primary-pool rerank experiments have an additional standard
    wrapper and must not be run as loose one-off commands when they are used for
    candidate promotion evidence:
@@ -297,6 +313,10 @@ The validator treats missing active-factor safety metadata as a hard error.
    evidence. If an adaptive score source changes, the live adaptive backtest
    must use source-transition exits so the selected score source can actually
    affect holdings.
+
+   ML challenger splits must purge training rows by label maturity, not only by
+   feature timestamp. Any row whose forward-return label ends inside or after
+   the validation interval is ineligible for that validation fold.
 
 7. Promote, watchlist, or reject with evidence.
    Promotion requires the registry entry, candidate review, admission report,

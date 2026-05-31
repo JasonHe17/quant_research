@@ -66,11 +66,15 @@ def build_factor_admission_report(
     by_timestamp: pd.DataFrame,
     thresholds: FactorAdmissionThresholds | None = None,
     feature_roles: dict[str, str] | None = None,
+    feature_expected_directions: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build a machine-readable factor admission report."""
 
     thresholds = thresholds or FactorAdmissionThresholds()
     feature_roles = _normalize_feature_roles(feature_roles)
+    feature_expected_directions = _normalize_feature_expected_directions(
+        feature_expected_directions
+    )
     _require_columns(factor_summary, ("feature",))
     _require_columns(
         by_timestamp,
@@ -98,6 +102,7 @@ def build_factor_admission_report(
             summary=summary_by_feature.get(str(feature), {}),
             thresholds=thresholds,
             evaluation_role=feature_roles.get(str(feature), "alpha_rank"),
+            expected_direction=feature_expected_directions.get(str(feature)),
         )
         for feature, group in by_timestamp.groupby("feature", sort=True)
     ]
@@ -168,10 +173,17 @@ def _factor_admission_row(
     summary: dict[str, Any],
     thresholds: FactorAdmissionThresholds,
     evaluation_role: str,
+    expected_direction: str | None,
 ) -> dict[str, Any]:
     rank_ic = pd.to_numeric(group["spearman_rank_ic"], errors="coerce").dropna()
     rank_ic_mean = _mean(rank_ic)
-    direction = 1.0 if (rank_ic_mean or 0.0) >= 0 else -1.0
+    prior_direction = _expected_direction_sign(expected_direction)
+    if prior_direction is None:
+        direction = 1.0 if (rank_ic_mean or 0.0) >= 0 else -1.0
+        direction_source = "sample_rank_ic_sign"
+    else:
+        direction = prior_direction
+        direction_source = "registry_expected_direction"
     direction_label = "long" if direction > 0 else "invert"
     rank_ic_std = _std(rank_ic)
     rank_ic_se = rank_ic_std / math.sqrt(len(rank_ic)) if rank_ic_std and len(rank_ic) else None
@@ -231,6 +243,8 @@ def _factor_admission_row(
         "evaluation_role": evaluation_role,
         "admission_status": admission_status,
         "direction": direction_label,
+        "expected_direction": expected_direction,
+        "direction_source": direction_source,
         "sample_count": int(summary.get("sample_count") or group["sample_count"].sum()),
         "coverage": _coverage(summary, group),
         "timestamp_count": int(summary.get("timestamp_count") or group["timestamp"].nunique()),
@@ -372,6 +386,32 @@ def _normalize_feature_roles(feature_roles: dict[str, str] | None) -> dict[str, 
             )
         normalized[str(feature)] = str(role)
     return normalized
+
+
+def _normalize_feature_expected_directions(
+    feature_expected_directions: dict[str, str] | None,
+) -> dict[str, str]:
+    if not feature_expected_directions:
+        return {}
+    allowed = {"long", "invert", "neutral", "mixed"}
+    normalized = {}
+    for feature, direction in feature_expected_directions.items():
+        direction = str(direction)
+        if direction not in allowed:
+            raise ValueError(
+                f"unknown expected direction for {feature}: {direction}; "
+                f"expected one of {sorted(allowed)}"
+            )
+        normalized[str(feature)] = direction
+    return normalized
+
+
+def _expected_direction_sign(expected_direction: str | None) -> float | None:
+    if expected_direction == "long":
+        return 1.0
+    if expected_direction == "invert":
+        return -1.0
+    return None
 
 
 def _role_check_severity(evaluation_role: str) -> dict[str, str]:

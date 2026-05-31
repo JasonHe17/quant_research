@@ -14,8 +14,11 @@ from quant_research.backtest import (
 )
 from examples.build_baseline_a_alpha_dataset import (
     _add_entry_execution_columns,
+    _add_exit_execution_columns,
     _entry_execution_filter_counts,
+    _exit_execution_filter_counts,
     _filter_entry_execution_constraints,
+    _filter_exit_execution_constraints,
 )
 from examples.run_baseline_a_real_backtest import (
     BacktestParams,
@@ -754,6 +757,69 @@ def test_entry_execution_filter_removes_unbuyable_training_labels() -> None:
     assert counts["entry_non_tradable_label_count"] == 1
     assert counts["entry_limit_up_label_count"] == 1
     assert filtered["instrument_id"].tolist() == ["buyable"]
+
+
+def test_exit_execution_filter_removes_unsellable_training_labels() -> None:
+    labels = pd.DataFrame(
+        [
+            {
+                "timestamp": "t0",
+                "instrument_id": "sellable",
+                "exit_timestamp": "t2",
+                "forward_return": 0.01,
+            },
+            {
+                "timestamp": "t0",
+                "instrument_id": "limit-down",
+                "exit_timestamp": "t2",
+                "forward_return": 0.10,
+            },
+            {
+                "timestamp": "t0",
+                "instrument_id": "halted",
+                "exit_timestamp": "t2",
+                "forward_return": 0.20,
+            },
+        ]
+    )
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "sellable",
+                "bar_end_time": "t2",
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+            {
+                "instrument_id": "limit-down",
+                "bar_end_time": "t2",
+                "tradable_bar": True,
+                "limit_up_open": False,
+                "limit_down_open": True,
+            },
+            {
+                "instrument_id": "halted",
+                "bar_end_time": "t2",
+                "tradable_bar": False,
+                "limit_up_open": False,
+                "limit_down_open": False,
+            },
+        ]
+    )
+    label_configs = (SimpleNamespace(name="forward_return"),)
+
+    enriched = _add_exit_execution_columns(labels, bars, label_configs)
+    counts = _exit_execution_filter_counts(enriched, label_configs)
+    filtered = _filter_exit_execution_constraints(
+        enriched,
+        SimpleNamespace(filter_exit_tradable=True, filter_exit_limit_down=True),
+        label_configs,
+    )
+
+    assert counts["forward_return_exit_non_tradable_label_count"] == 1
+    assert counts["forward_return_exit_limit_down_label_count"] == 1
+    assert filtered["instrument_id"].tolist() == ["sellable"]
 
 
 def test_minute_bar_files_include_baostock_update_for_2026(

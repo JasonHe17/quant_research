@@ -50,6 +50,13 @@ matching rank columns. This lets evaluation compare short, medium, and long
 holding periods before deciding whether a signal belongs in a fast or slow
 policy.
 
+Standard forward-return labels are execution-aligned: the entry and exit legs
+use `open_price` on the executable grid, with one-bar delayed entry. Dataset
+construction records entry and exit tradability diagnostics and filters
+non-tradable entries, entry limit-up bars, non-tradable exits, and exit
+limit-down bars by default. This keeps single-factor evaluation aligned with the
+prices a long-only next-bar strategy can actually use.
+
 ## Framework Benchmark And Policy Validation
 
 `examples/run_framework_v1_benchmark.py` still keeps the original Baseline A
@@ -86,6 +93,10 @@ The policy validation stage writes
 families across produced scenarios, so the framework can choose between slower
 holding policies and faster cost-aware optimizers from measured return, cost,
 and risk tradeoffs instead of from a fixed manual holding period.
+
+Candidate policy validation uses equal admission-evidence weights by default.
+IC-magnitude weighting from the same admission report is available only as an
+explicit sizing experiment.
 
 ## Pipeline Shape
 

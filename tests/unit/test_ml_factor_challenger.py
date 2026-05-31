@@ -177,6 +177,7 @@ def test_validate_dataset_columns_reports_missing_partition_columns(tmp_path) ->
                 "timestamp": "2024-01-01T09:35:00+08:00",
                 "instrument_id": "a",
                 "forward_return_48b": 0.01,
+                "forward_return_48b_exit_timestamp": "2024-01-03T09:35:00+08:00",
                 "alpha": 1.0,
             }
         ]
@@ -187,6 +188,7 @@ def test_validate_dataset_columns_reports_missing_partition_columns(tmp_path) ->
                 "timestamp": "2024-02-01T09:35:00+08:00",
                 "instrument_id": "a",
                 "forward_return_48b": 0.01,
+                "forward_return_48b_exit_timestamp": "2024-02-03T09:35:00+08:00",
             }
         ]
     ).to_parquet(bad, index=False)
@@ -198,9 +200,52 @@ def test_validate_dataset_columns_reports_missing_partition_columns(tmp_path) ->
                 "timestamp",
                 "instrument_id",
                 "forward_return_48b",
+                "forward_return_48b_exit_timestamp",
                 "alpha",
             ),
         )
+
+
+def test_purge_train_uses_label_maturity_not_signal_timestamp() -> None:
+    module = _load_module()
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": "2024-01-01T09:35:00+08:00",
+                "forward_return_48b_exit_timestamp": "2024-01-03T09:35:00+08:00",
+                "instrument_id": "a",
+            },
+            {
+                "timestamp": "2024-01-02T09:35:00+08:00",
+                "forward_return_48b_exit_timestamp": "2024-01-04T00:00:00+08:00",
+                "instrument_id": "b",
+            },
+            {
+                "timestamp": "2024-01-03T09:35:00+08:00",
+                "forward_return_48b_exit_timestamp": "2024-01-06T09:35:00+08:00",
+                "instrument_id": "c",
+            },
+        ]
+    )
+
+    purged = module._purge_train(
+        frame,
+        eval_start=pd.Timestamp("2024-01-05T00:00:00+08:00"),
+        embargo="1D",
+        label_end_column="forward_return_48b_exit_timestamp",
+    )
+
+    assert purged["instrument_id"].tolist() == ["a"]
+
+
+def test_label_exit_timestamp_column_matches_dataset_conventions() -> None:
+    module = _load_module()
+
+    assert module._label_exit_timestamp_column("forward_return") == "exit_timestamp"
+    assert (
+        module._label_exit_timestamp_column("forward_return_48b")
+        == "forward_return_48b_exit_timestamp"
+    )
 
 
 def test_primary_pool_rerank_keeps_only_primary_top_ranked_names(tmp_path) -> None:

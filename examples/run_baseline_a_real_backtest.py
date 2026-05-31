@@ -314,7 +314,7 @@ def _main_board_symbols_from_data_portal(
     instruments = data.list_instruments(
         market="CN",
         asset_type="equity",
-        as_of=params.end[:10],
+        as_of=params.start[:10],
         cache=False,
     )
     if instruments.empty:

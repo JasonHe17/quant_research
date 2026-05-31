@@ -385,6 +385,9 @@ def _label_metadata_columns(label_columns: tuple[str, ...]) -> tuple[str, ...]:
                 f"{label_column}_rank",
                 f"{label_column}_exit_timestamp",
                 f"{label_column}_exit_price",
+                f"{label_column}_exit_tradable_bar",
+                f"{label_column}_exit_limit_up_open",
+                f"{label_column}_exit_limit_down_open",
             ]
         )
     return tuple(dict.fromkeys(columns))

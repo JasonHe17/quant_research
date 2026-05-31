@@ -108,12 +108,18 @@ def main() -> None:
         registry_filter = _registry_filter_summary(args, candidates)
         candidates = registry_filter["candidates"]
         correlation = _load_correlation(Path(args.factor_correlation))
+        base_weight_mode = (
+            "ic_magnitude"
+            if args.weight_evidence_mode == "admission_ic"
+            else "equal"
+        )
         weights_by_method = {
             method: factor_combination_weights(
                 candidates,
                 method=method,
                 correlation=correlation,
                 ridge=args.decorrelation_ridge,
+                base_weight_mode=base_weight_mode,
             )
             for method in args.methods
         }
@@ -254,6 +260,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
         "run_backtests": args.run_backtests,
         "factor_max_weight": args.factor_max_weight,
         "factor_max_contribution_share": args.factor_max_contribution_share,
+        "weight_evidence_mode": args.weight_evidence_mode,
         "score_transform": args.score_transform,
         "factor_health_mode": args.factor_health_mode,
         "factor_health_lookback_windows": args.factor_health_lookback_windows,
@@ -1298,6 +1305,15 @@ def _parse_args() -> argparse.Namespace:
         choices=("equal", "ic_weighted", "decorrelated"),
         default=["equal", "ic_weighted", "decorrelated"],
     )
+    parser.add_argument(
+        "--weight-evidence-mode",
+        choices=("equal", "admission_ic"),
+        default="equal",
+        help=(
+            "base evidence used by ic_weighted/decorrelated weights; equal avoids "
+            "using full-sample admission IC magnitude as a static portfolio weight"
+        ),
+    )
     parser.add_argument("--statuses", nargs="+", default=["candidate"])
     parser.add_argument(
         "--evaluation-roles",
@@ -1815,8 +1831,8 @@ def _parse_args() -> argparse.Namespace:
 def _default_label_lag_windows(label_column: str) -> int:
     suffix = label_column.rsplit("_", 1)[-1]
     if suffix.endswith("b") and suffix[:-1].isdigit():
-        return int(suffix[:-1])
-    return 48
+        return int(suffix[:-1]) + 1
+    return 49
 
 
 if __name__ == "__main__":

@@ -14,15 +14,18 @@ from quant_research.factors import FactorResult
 class ForwardReturnLabelConfig:
     """Configuration for signal-time aligned forward return labels.
 
-    A label at timestamp ``t`` uses the price after ``entry_lag_bars`` as entry
-    and the price after ``entry_lag_bars + horizon_bars`` as exit. For CN A-share
-    T+1 research, use a horizon that reaches at least the next trading day.
+    A label at timestamp ``t`` uses the configured entry price after
+    ``entry_lag_bars`` as entry and the configured exit price after
+    ``entry_lag_bars + horizon_bars`` as exit. For CN A-share T+1 research, use
+    a horizon that reaches at least the next trading day.
     """
 
     name: str = "forward_return"
     horizon_bars: int = 48
     entry_lag_bars: int = 1
     price_column: str = "close_price"
+    entry_price_column: str | None = None
+    exit_price_column: str | None = None
     timestamp_column: str = "bar_end_time"
 
     def __post_init__(self) -> None:
@@ -34,6 +37,10 @@ class ForwardReturnLabelConfig:
             raise ValueError("entry_lag_bars must be non-negative")
         if not self.price_column:
             raise ValueError("price_column must be non-empty")
+        if self.entry_price_column is not None and not self.entry_price_column:
+            raise ValueError("entry_price_column must be non-empty")
+        if self.exit_price_column is not None and not self.exit_price_column:
+            raise ValueError("exit_price_column must be non-empty")
         if not self.timestamp_column:
             raise ValueError("timestamp_column must be non-empty")
 
@@ -79,7 +86,18 @@ def build_forward_return_labels(
 ) -> pd.DataFrame:
     """Build forward return labels aligned to the original bar timestamp."""
 
-    required = ("instrument_id", config.timestamp_column, config.price_column)
+    entry_price_column = config.entry_price_column or config.price_column
+    exit_price_column = config.exit_price_column or config.price_column
+    required = tuple(
+        dict.fromkeys(
+            (
+                "instrument_id",
+                config.timestamp_column,
+                entry_price_column,
+                exit_price_column,
+            )
+        )
+    )
     _require_columns(bars, required)
     if bars.empty:
         return pd.DataFrame(
@@ -95,7 +113,8 @@ def build_forward_return_labels(
         )
     frame = bars.loc[:, list(required)].copy()
     frame = frame.sort_values(["instrument_id", config.timestamp_column])
-    frame[config.price_column] = frame[config.price_column].astype(float)
+    frame[entry_price_column] = frame[entry_price_column].astype(float)
+    frame[exit_price_column] = frame[exit_price_column].astype(float)
     grouped = frame.groupby("instrument_id", sort=False)
     entry_shift = -config.entry_lag_bars
     exit_shift = -(config.entry_lag_bars + config.horizon_bars)
@@ -103,8 +122,8 @@ def build_forward_return_labels(
         periods=entry_shift
     )
     frame["exit_timestamp"] = grouped[config.timestamp_column].shift(periods=exit_shift)
-    frame["entry_price"] = grouped[config.price_column].shift(periods=entry_shift)
-    frame["exit_price"] = grouped[config.price_column].shift(periods=exit_shift)
+    frame["entry_price"] = grouped[entry_price_column].shift(periods=entry_shift)
+    frame["exit_price"] = grouped[exit_price_column].shift(periods=exit_shift)
     frame[config.name] = frame["exit_price"] / frame["entry_price"] - 1.0
     frame["timestamp"] = frame[config.timestamp_column]
     output = frame.loc[
@@ -128,8 +147,9 @@ def build_multi_horizon_forward_return_labels(
 ) -> pd.DataFrame:
     """Build one label table containing multiple aligned forward-return horizons.
 
-    All horizons must share the same entry lag, timestamp column, and price column
-    so they represent alternative exit choices from the same signal-time entry.
+    All horizons must share the same entry lag, timestamp column, entry price
+    column, and exit price column so they represent alternative exit choices
+    from the same signal-time entry.
     For a single config this is equivalent to ``build_forward_return_labels``.
     """
 
@@ -142,8 +162,10 @@ def build_multi_horizon_forward_return_labels(
     for config in config_list[1:]:
         if config.entry_lag_bars != first.entry_lag_bars:
             raise ValueError("all label configs must share entry_lag_bars")
-        if config.price_column != first.price_column:
-            raise ValueError("all label configs must share price_column")
+        if _effective_entry_price_column(config) != _effective_entry_price_column(first):
+            raise ValueError("all label configs must share entry_price_column")
+        if _effective_exit_price_column(config) != _effective_exit_price_column(first):
+            raise ValueError("all label configs must share exit_price_column")
         if config.timestamp_column != first.timestamp_column:
             raise ValueError("all label configs must share timestamp_column")
     if len(config_list) == 1:
@@ -229,6 +251,14 @@ def _normalize_factor_frame(
     required = ("factor_name", "timestamp", "instrument_id", value_column)
     _require_columns(frame, required)
     return frame.loc[:, list(required)].copy()
+
+
+def _effective_entry_price_column(config: ForwardReturnLabelConfig) -> str:
+    return config.entry_price_column or config.price_column
+
+
+def _effective_exit_price_column(config: ForwardReturnLabelConfig) -> str:
+    return config.exit_price_column or config.price_column
 
 
 def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

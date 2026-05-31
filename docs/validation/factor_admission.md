@@ -29,6 +29,8 @@ The analysis reads:
 - `factor_evaluation/summary.json` for feature coverage and row counts.
 - `factor_evaluation/single_factor_by_timestamp.csv` for timestamp-level IC,
   top-minus-bottom spread, and turnover stability.
+- `configs/factors/factor_registry.json`, when supplied, for
+  `evaluation_role` and expected direction metadata.
 
 ## Default Gates
 
@@ -91,8 +93,16 @@ as a rank alpha for the experiment.
 - `reject`: fails at least one hard statistical or coverage gate. Keep only for
   diagnostics or redesign.
 
-Negative-IC factors are not automatically rejected. The report marks them as
-`invert` when the inverse direction passes the same directional checks.
+Negative-IC factors are not automatically rejected, but the standard
+registry-aware path no longer infers production direction from the same
+evaluation run. Admission first uses `expected_direction` from the registry.
+When no registry direction exists, the report may still identify an inferred
+diagnostic direction, but that is not enough for promotion. Add or review the
+registry direction before portfolio validation.
+
+The report records `expected_direction` and `direction_source` per factor. A
+candidate whose expected direction conflicts with the economic hypothesis should
+be corrected in the registry and rerun, not manually promoted from the table.
 
 ## Outputs
 
@@ -104,3 +114,15 @@ The report directory contains:
 
 Use `--enforce-candidates` in automation when the pipeline should fail if no
 factor reaches `candidate` status.
+
+## Current Standard Report
+
+The current standard report is generated from the 2026-05-31 framework-fixed
+benchmark:
+
+- `runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json`
+- `runs/framework_v1_acceptance/standard/benchmark_summary.json`
+
+Legacy reports generated before the exit-tradability, label-maturity, and
+registry-direction fixes are retained for comparison only. Do not use their
+candidate/watchlist/reject labels as current admission evidence.

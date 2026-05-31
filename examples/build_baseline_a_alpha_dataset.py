@@ -38,6 +38,60 @@ from run_baseline_a_real_backtest import (
     _minute_bar_files,
 )
 
+ALL_FACTOR_GROUPS = (
+    "reversal",
+    "cross_sectional_reversal",
+    "conditional_reversal",
+    "eod_reversal",
+    "momentum",
+    "volatility",
+    "volatility_state_change",
+    "price_position",
+    "range_volatility",
+    "efficiency",
+    "volume",
+    "volume_distribution_shape",
+    "turnover",
+    "turnover_stability",
+    "liquidity_reliability",
+    "liquidity_reliability_recovery",
+    "liquidity_reliability_recovery_balance",
+    "bar_return",
+    "liquidity_impact",
+    "vwap_deviation",
+    "downside_volatility",
+    "return_skewness",
+    "lottery_max",
+    "money_flow",
+    "signed_turnover_imbalance",
+    "order_flow_toxicity",
+    "intraday_quality",
+    "risk_adjusted_momentum",
+    "volume_confirmed_momentum",
+    "intraday_gap",
+    "market_state",
+    "market_downside_beta",
+    "breadth_resilience",
+    "breadth_shock_residual_resilience",
+    "limit_pressure_resilience",
+    "regime_conditioned",
+    "return_turnover_correlation",
+    "negative_return_persistence",
+    "sell_pressure_absorption",
+    "downside_turnover_decay",
+    "sell_pressure_recovery",
+    "sell_pressure_exhaustion",
+    "sell_pressure_exhaustion_persistence",
+    "microstructure_exhaustion_alert",
+    "microstructure_recovery_speed",
+    "same_slot_intraday_memory",
+    "overnight_intraday_tug_of_war",
+    "weak_tape_overnight_gap",
+    "sell_pressure_quality_state",
+    "event_shock_proxy",
+    "daily_moving_average",
+)
+
 
 def main() -> None:
     args = _parse_args()
@@ -159,126 +213,22 @@ def _build_partition_dataset(
         f"core={_format_timestamp(core_start)}..{_format_timestamp(core_end)}",
         flush=True,
     )
-    features = build_intraday_feature_matrix(
+    features = _build_intraday_features(
         bars,
-        IntradayFeatureConfig(
-            factor_groups=tuple(args.factor_groups),
-            reversal_lookback_bars=tuple(args.lookback_bars),
-            cross_sectional_reversal_lookback_bars=tuple(
-                args.cross_sectional_reversal_lookback_bars
-            ),
-            conditional_reversal_lookback_bars=tuple(
-                args.conditional_reversal_lookback_bars
-            ),
-            conditional_reversal_state_windows=tuple(
-                args.conditional_reversal_state_windows
-            ),
-            conditional_reversal_low_vol_quantile=(
-                args.conditional_reversal_low_vol_quantile
-            ),
-            conditional_reversal_min_volume_ratio=(
-                args.conditional_reversal_min_volume_ratio
-            ),
-            eod_reversal_lookback_bars=tuple(args.eod_reversal_lookback_bars),
-            eod_reversal_tail_bars=args.eod_reversal_tail_bars,
-            eod_reversal_weight=args.eod_reversal_weight,
-            momentum_lookback_bars=tuple(args.momentum_lookback_bars),
-            volatility_windows=tuple(args.volatility_windows),
-            volatility_state_change_specs=tuple(args.volatility_state_change_specs),
-            price_position_windows=tuple(args.price_position_windows),
-            range_volatility_windows=tuple(args.range_volatility_windows),
-            efficiency_windows=tuple(args.efficiency_windows),
-            volume_windows=tuple(args.volume_windows),
-            volume_distribution_windows=tuple(args.volume_distribution_windows),
-            turnover_windows=tuple(args.turnover_windows),
-            vwap_deviation_windows=tuple(args.vwap_deviation_windows),
-            downside_volatility_windows=tuple(args.downside_volatility_windows),
-            return_skewness_windows=tuple(args.return_skewness_windows),
-            lottery_max_windows=tuple(args.lottery_max_windows),
-            money_flow_windows=tuple(args.money_flow_windows),
-            signed_turnover_imbalance_windows=tuple(
-                args.signed_turnover_imbalance_windows
-            ),
-            order_flow_toxicity_windows=tuple(args.order_flow_toxicity_windows),
-            intraday_quality_halflives=tuple(args.intraday_quality_halflives),
-            intraday_quality_large_trade_windows=tuple(
-                args.intraday_quality_large_trade_windows
-            ),
-            intraday_quality_large_trade_quantile=(
-                args.intraday_quality_large_trade_quantile
-            ),
-            risk_adjusted_momentum_windows=tuple(args.risk_adjusted_momentum_windows),
-            volume_confirmed_momentum_windows=tuple(
-                args.volume_confirmed_momentum_windows
-            ),
-            turnover_stability_windows=tuple(args.turnover_stability_windows),
-            liquidity_reliability_windows=tuple(args.liquidity_reliability_windows),
-            liquidity_reliability_recovery_specs=tuple(
-                args.liquidity_reliability_recovery_specs
-            ),
-            liquidity_reliability_recovery_balance_specs=tuple(
-                args.liquidity_reliability_recovery_balance_specs
-            ),
-            return_turnover_correlation_windows=tuple(
-                args.return_turnover_correlation_windows
-            ),
-            negative_return_persistence_windows=tuple(
-                args.negative_return_persistence_windows
-            ),
-            sell_pressure_absorption_windows=tuple(
-                args.sell_pressure_absorption_windows
-            ),
-            downside_turnover_decay_windows=tuple(
-                args.downside_turnover_decay_windows
-            ),
-            sell_pressure_recovery_windows=tuple(
-                args.sell_pressure_recovery_windows
-            ),
-            sell_pressure_exhaustion_windows=tuple(
-                args.sell_pressure_exhaustion_windows
-            ),
-            sell_pressure_exhaustion_persistence_specs=tuple(
-                args.sell_pressure_exhaustion_persistence_specs
-            ),
-            microstructure_recovery_windows=tuple(
-                args.microstructure_recovery_windows
-            ),
-            microstructure_exhaustion_windows=tuple(
-                args.microstructure_exhaustion_windows
-            ),
-            microstructure_recovery_acceleration_specs=tuple(
-                args.microstructure_recovery_acceleration_specs
-            ),
-            same_slot_memory_windows=tuple(args.same_slot_memory_windows),
-            weak_tape_gap_windows=tuple(args.weak_tape_gap_windows),
-            sell_pressure_quality_windows=tuple(args.sell_pressure_quality_windows),
-            event_shock_windows=tuple(args.event_shock_windows),
-            daily_moving_average_windows=tuple(args.daily_moving_average_windows),
-            daily_moving_average_pairs=tuple(args.daily_moving_average_pairs),
-            market_downside_beta_windows=tuple(args.market_downside_beta_windows),
-            market_state_windows=tuple(args.market_state_windows),
-            breadth_resilience_windows=tuple(args.breadth_resilience_windows),
-            breadth_shock_residual_resilience_windows=tuple(
-                args.breadth_shock_residual_resilience_windows
-            ),
-            limit_pressure_resilience_windows=tuple(
-                args.limit_pressure_resilience_windows
-            ),
-            regime_conditioned_lookback_bars=tuple(
-                args.regime_conditioned_lookback_bars
-            ),
-            regime_conditioned_state_windows=tuple(
-                args.regime_conditioned_state_windows
-            ),
-        ),
+        args,
+        partition_name=partition_name,
     )
     features = _filter_core_window(features, core_start=core_start, core_end=core_end)
     labels = build_multi_horizon_forward_return_labels(bars, label_configs)
     labels = _filter_core_window(labels, core_start=core_start, core_end=core_end)
     labels = _add_entry_execution_columns(labels, bars)
+    labels = _add_exit_execution_columns(labels, bars, label_configs)
     label_row_count_before_entry_filter = len(labels)
     entry_filter_counts = _entry_execution_filter_counts(labels)
+    exit_filter_counts = _exit_execution_filter_counts(labels, label_configs)
     labels = _filter_entry_execution_constraints(labels, args)
+    label_row_count_before_exit_filter = len(labels)
+    labels = _filter_exit_execution_constraints(labels, args, label_configs)
     for label_config in label_configs:
         labels = add_cross_sectional_label_rank(
             labels,
@@ -325,10 +275,12 @@ def _build_partition_dataset(
         "bar_count": len(bars),
         "feature_row_count": len(features),
         "label_row_count_before_entry_filter": label_row_count_before_entry_filter,
+        "label_row_count_before_exit_filter": label_row_count_before_exit_filter,
         "label_row_count": len(labels),
         "dataset_row_count": len(dataset),
         "instrument_count": int(bars["instrument_id"].nunique()),
         **entry_filter_counts,
+        **exit_filter_counts,
         "dataset_path": str(dataset_path),
         "manifest_path": str(manifest_path),
         "features_path": str(feature_path) if feature_path is not None else None,
@@ -337,6 +289,156 @@ def _build_partition_dataset(
     del bars, features, labels, dataset
     gc.collect()
     return row
+
+
+def _build_intraday_features(
+    bars: pd.DataFrame,
+    args: argparse.Namespace,
+    *,
+    partition_name: str,
+) -> pd.DataFrame:
+    groups = _expanded_factor_groups(tuple(args.factor_groups))
+    if len(groups) <= 1:
+        return build_intraday_feature_matrix(
+            bars,
+            _intraday_feature_config(args, factor_groups=groups),
+        )
+    output: pd.DataFrame | None = None
+    seen_features: set[str] = set()
+    batch_size = max(int(args.feature_group_batch_size), 1)
+    for batch in _chunks(groups, batch_size):
+        current = build_intraday_feature_matrix(
+            bars,
+            _intraday_feature_config(args, factor_groups=batch),
+        )
+        feature_columns = [
+            column
+            for column in current.columns
+            if column not in {"timestamp", "instrument_id"}
+        ]
+        duplicates = sorted(seen_features.intersection(feature_columns))
+        if duplicates:
+            raise ValueError(
+                f"duplicate feature columns from {','.join(batch)}: {duplicates[:5]}"
+            )
+        seen_features.update(feature_columns)
+        print(
+            f"built {partition_name}: factor_groups={','.join(batch)} "
+            f"feature_count={len(feature_columns)}",
+            flush=True,
+        )
+        if output is None:
+            output = current
+        else:
+            output = output.merge(
+                current,
+                on=["timestamp", "instrument_id"],
+                how="inner",
+            )
+            del current
+        gc.collect()
+    if output is None:
+        raise ValueError("no factor groups configured")
+    return output
+
+
+def _expanded_factor_groups(groups: tuple[str, ...]) -> tuple[str, ...]:
+    if "all" in groups:
+        return ALL_FACTOR_GROUPS
+    return tuple(dict.fromkeys(groups))
+
+
+def _chunks(values: tuple[str, ...], size: int) -> tuple[tuple[str, ...], ...]:
+    return tuple(values[index : index + size] for index in range(0, len(values), size))
+
+
+def _intraday_feature_config(
+    args: argparse.Namespace,
+    *,
+    factor_groups: tuple[str, ...],
+) -> IntradayFeatureConfig:
+    return IntradayFeatureConfig(
+        factor_groups=factor_groups,
+        reversal_lookback_bars=tuple(args.lookback_bars),
+        cross_sectional_reversal_lookback_bars=tuple(
+            args.cross_sectional_reversal_lookback_bars
+        ),
+        conditional_reversal_lookback_bars=tuple(
+            args.conditional_reversal_lookback_bars
+        ),
+        conditional_reversal_state_windows=tuple(
+            args.conditional_reversal_state_windows
+        ),
+        conditional_reversal_low_vol_quantile=args.conditional_reversal_low_vol_quantile,
+        conditional_reversal_min_volume_ratio=args.conditional_reversal_min_volume_ratio,
+        eod_reversal_lookback_bars=tuple(args.eod_reversal_lookback_bars),
+        eod_reversal_tail_bars=args.eod_reversal_tail_bars,
+        eod_reversal_weight=args.eod_reversal_weight,
+        momentum_lookback_bars=tuple(args.momentum_lookback_bars),
+        volatility_windows=tuple(args.volatility_windows),
+        volatility_state_change_specs=tuple(args.volatility_state_change_specs),
+        price_position_windows=tuple(args.price_position_windows),
+        range_volatility_windows=tuple(args.range_volatility_windows),
+        efficiency_windows=tuple(args.efficiency_windows),
+        volume_windows=tuple(args.volume_windows),
+        volume_distribution_windows=tuple(args.volume_distribution_windows),
+        turnover_windows=tuple(args.turnover_windows),
+        vwap_deviation_windows=tuple(args.vwap_deviation_windows),
+        downside_volatility_windows=tuple(args.downside_volatility_windows),
+        return_skewness_windows=tuple(args.return_skewness_windows),
+        lottery_max_windows=tuple(args.lottery_max_windows),
+        money_flow_windows=tuple(args.money_flow_windows),
+        signed_turnover_imbalance_windows=tuple(args.signed_turnover_imbalance_windows),
+        order_flow_toxicity_windows=tuple(args.order_flow_toxicity_windows),
+        intraday_quality_halflives=tuple(args.intraday_quality_halflives),
+        intraday_quality_large_trade_windows=tuple(
+            args.intraday_quality_large_trade_windows
+        ),
+        intraday_quality_large_trade_quantile=args.intraday_quality_large_trade_quantile,
+        risk_adjusted_momentum_windows=tuple(args.risk_adjusted_momentum_windows),
+        volume_confirmed_momentum_windows=tuple(args.volume_confirmed_momentum_windows),
+        turnover_stability_windows=tuple(args.turnover_stability_windows),
+        liquidity_reliability_windows=tuple(args.liquidity_reliability_windows),
+        liquidity_reliability_recovery_specs=tuple(
+            args.liquidity_reliability_recovery_specs
+        ),
+        liquidity_reliability_recovery_balance_specs=tuple(
+            args.liquidity_reliability_recovery_balance_specs
+        ),
+        return_turnover_correlation_windows=tuple(
+            args.return_turnover_correlation_windows
+        ),
+        negative_return_persistence_windows=tuple(
+            args.negative_return_persistence_windows
+        ),
+        sell_pressure_absorption_windows=tuple(args.sell_pressure_absorption_windows),
+        downside_turnover_decay_windows=tuple(args.downside_turnover_decay_windows),
+        sell_pressure_recovery_windows=tuple(args.sell_pressure_recovery_windows),
+        sell_pressure_exhaustion_windows=tuple(args.sell_pressure_exhaustion_windows),
+        sell_pressure_exhaustion_persistence_specs=tuple(
+            args.sell_pressure_exhaustion_persistence_specs
+        ),
+        microstructure_recovery_windows=tuple(args.microstructure_recovery_windows),
+        microstructure_exhaustion_windows=tuple(args.microstructure_exhaustion_windows),
+        microstructure_recovery_acceleration_specs=tuple(
+            args.microstructure_recovery_acceleration_specs
+        ),
+        same_slot_memory_windows=tuple(args.same_slot_memory_windows),
+        weak_tape_gap_windows=tuple(args.weak_tape_gap_windows),
+        sell_pressure_quality_windows=tuple(args.sell_pressure_quality_windows),
+        event_shock_windows=tuple(args.event_shock_windows),
+        daily_moving_average_windows=tuple(args.daily_moving_average_windows),
+        daily_moving_average_pairs=tuple(args.daily_moving_average_pairs),
+        market_downside_beta_windows=tuple(args.market_downside_beta_windows),
+        market_state_windows=tuple(args.market_state_windows),
+        breadth_resilience_windows=tuple(args.breadth_resilience_windows),
+        breadth_shock_residual_resilience_windows=tuple(
+            args.breadth_shock_residual_resilience_windows
+        ),
+        limit_pressure_resilience_windows=tuple(args.limit_pressure_resilience_windows),
+        regime_conditioned_lookback_bars=tuple(args.regime_conditioned_lookback_bars),
+        regime_conditioned_state_windows=tuple(args.regime_conditioned_state_windows),
+    )
 
 
 def _time_chunks(
@@ -426,6 +528,73 @@ def _add_entry_execution_columns(labels: pd.DataFrame, bars: pd.DataFrame) -> pd
     return enriched
 
 
+def _add_exit_execution_columns(
+    labels: pd.DataFrame,
+    bars: pd.DataFrame,
+    label_configs: tuple[ForwardReturnLabelConfig, ...],
+) -> pd.DataFrame:
+    if labels.empty:
+        additions: dict[str, pd.Series] = {}
+        for config in label_configs:
+            additions[f"{config.name}_exit_tradable_bar"] = pd.Series(dtype=bool)
+            additions[f"{config.name}_exit_limit_up_open"] = pd.Series(dtype=bool)
+            additions[f"{config.name}_exit_limit_down_open"] = pd.Series(dtype=bool)
+        return labels.assign(**additions)
+    execution_columns = [
+        "instrument_id",
+        "bar_end_time",
+        "tradable_bar",
+        "limit_up_open",
+        "limit_down_open",
+    ]
+    missing = [column for column in execution_columns if column not in bars.columns]
+    if missing:
+        raise ValueError(f"bars missing execution columns: {missing}")
+    exit_execution = bars.loc[:, execution_columns].rename(
+        columns={
+            "bar_end_time": "exit_timestamp",
+            "tradable_bar": "exit_tradable_bar",
+            "limit_up_open": "exit_limit_up_open",
+            "limit_down_open": "exit_limit_down_open",
+        }
+    )
+    enriched = labels.copy()
+    for config in label_configs:
+        exit_timestamp_column = _label_exit_timestamp_column(enriched, config)
+        renamed = exit_execution.rename(
+            columns={
+                "exit_timestamp": exit_timestamp_column,
+                "exit_tradable_bar": f"{config.name}_exit_tradable_bar",
+                "exit_limit_up_open": f"{config.name}_exit_limit_up_open",
+                "exit_limit_down_open": f"{config.name}_exit_limit_down_open",
+            }
+        )
+        enriched = enriched.merge(
+            renamed,
+            on=["instrument_id", exit_timestamp_column],
+            how="left",
+        )
+        for column in (
+            f"{config.name}_exit_tradable_bar",
+            f"{config.name}_exit_limit_up_open",
+            f"{config.name}_exit_limit_down_open",
+        ):
+            enriched[column] = enriched[column].fillna(False).astype(bool)
+    return enriched
+
+
+def _label_exit_timestamp_column(
+    labels: pd.DataFrame,
+    config: ForwardReturnLabelConfig,
+) -> str:
+    named_column = f"{config.name}_exit_timestamp"
+    if named_column in labels.columns:
+        return named_column
+    if "exit_timestamp" in labels.columns:
+        return "exit_timestamp"
+    raise ValueError(f"labels missing exit timestamp column for {config.name}")
+
+
 def _entry_execution_filter_counts(labels: pd.DataFrame) -> dict[str, int]:
     if labels.empty:
         return {
@@ -444,6 +613,29 @@ def _entry_execution_filter_counts(labels: pd.DataFrame) -> dict[str, int]:
     }
 
 
+def _exit_execution_filter_counts(
+    labels: pd.DataFrame,
+    label_configs: tuple[ForwardReturnLabelConfig, ...],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for config in label_configs:
+        if labels.empty:
+            counts[f"{config.name}_exit_non_tradable_label_count"] = 0
+            counts[f"{config.name}_exit_limit_up_label_count"] = 0
+            counts[f"{config.name}_exit_limit_down_label_count"] = 0
+            continue
+        counts[f"{config.name}_exit_non_tradable_label_count"] = int(
+            (~labels[f"{config.name}_exit_tradable_bar"].astype(bool)).sum()
+        )
+        counts[f"{config.name}_exit_limit_up_label_count"] = int(
+            labels[f"{config.name}_exit_limit_up_open"].astype(bool).sum()
+        )
+        counts[f"{config.name}_exit_limit_down_label_count"] = int(
+            labels[f"{config.name}_exit_limit_down_open"].astype(bool).sum()
+        )
+    return counts
+
+
 def _filter_entry_execution_constraints(
     labels: pd.DataFrame,
     args: argparse.Namespace,
@@ -455,6 +647,22 @@ def _filter_entry_execution_constraints(
         mask = mask & labels["entry_tradable_bar"].astype(bool)
     if args.filter_entry_limit_up:
         mask = mask & ~labels["entry_limit_up_open"].astype(bool)
+    return labels.loc[mask].reset_index(drop=True)
+
+
+def _filter_exit_execution_constraints(
+    labels: pd.DataFrame,
+    args: argparse.Namespace,
+    label_configs: tuple[ForwardReturnLabelConfig, ...],
+) -> pd.DataFrame:
+    if labels.empty:
+        return labels.reset_index(drop=True)
+    mask = pd.Series(True, index=labels.index)
+    for config in label_configs:
+        if args.filter_exit_tradable:
+            mask = mask & labels[f"{config.name}_exit_tradable_bar"].astype(bool)
+        if args.filter_exit_limit_down:
+            mask = mask & ~labels[f"{config.name}_exit_limit_down_open"].astype(bool)
     return labels.loc[mask].reset_index(drop=True)
 
 
@@ -478,6 +686,7 @@ def _write_summary(
             "start": args.start,
             "end": args.end,
             "factor_groups": args.factor_groups,
+            "feature_group_batch_size": args.feature_group_batch_size,
             "lookback_bars": args.lookback_bars,
             "cross_sectional_reversal_lookback_bars": (
                 args.cross_sectional_reversal_lookback_bars
@@ -572,12 +781,16 @@ def _write_summary(
             "horizon_bars": args.horizon_bars,
             "label_columns": _label_column_names(args),
             "entry_lag_bars": args.entry_lag_bars,
+            "label_entry_price_column": args.label_entry_price_column,
+            "label_exit_price_column": args.label_exit_price_column,
             "research_grid": _research_grid(args),
             "exclude_st": args.exclude_st,
             "limit_up_bps": args.limit_up_bps,
             "limit_down_bps": args.limit_down_bps,
             "filter_entry_tradable": args.filter_entry_tradable,
             "filter_entry_limit_up": args.filter_entry_limit_up,
+            "filter_exit_tradable": args.filter_exit_tradable,
+            "filter_exit_limit_down": args.filter_exit_limit_down,
             "max_symbols": args.max_symbols,
             "write_components": args.write_components,
             "partition": args.partition,
@@ -660,6 +873,15 @@ def _parse_args() -> argparse.Namespace:
             "sell_pressure_quality_state",
             "event_shock_proxy",
             "daily_moving_average",
+        ),
+    )
+    parser.add_argument(
+        "--feature-group-batch-size",
+        type=int,
+        default=8,
+        help=(
+            "number of factor groups to build per pass when multiple groups are "
+            "requested; lower values reduce peak memory"
         ),
     )
     parser.add_argument("--lookback-bars", type=int, nargs="+", default=[1, 6, 12, 24])
@@ -913,6 +1135,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--label-name", default="forward_return")
     parser.add_argument("--horizon-bars", type=int, nargs="+", default=[48])
     parser.add_argument("--entry-lag-bars", type=int, default=1)
+    parser.add_argument(
+        "--label-entry-price-column",
+        default="open_price",
+        help="bar price column used for label entry; defaults to next-bar open execution",
+    )
+    parser.add_argument(
+        "--label-exit-price-column",
+        default="open_price",
+        help="bar price column used for label exit; defaults to open execution",
+    )
     parser.add_argument("--exclude-st", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--limit-up-bps", type=float, default=980.0)
     parser.add_argument("--limit-down-bps", type=float, default=980.0)
@@ -923,6 +1155,16 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--filter-entry-limit-up",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--filter-exit-tradable",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--filter-exit-limit-down",
         action=argparse.BooleanOptionalAction,
         default=True,
     )
@@ -950,6 +1192,8 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if any(value <= 0 for value in args.lookback_bars):
         raise ValueError("--lookback-bars values must be positive")
+    if args.feature_group_batch_size <= 0:
+        raise ValueError("--feature-group-batch-size must be positive")
     if any(value <= 0 for value in args.cross_sectional_reversal_lookback_bars):
         raise ValueError(
             "--cross-sectional-reversal-lookback-bars values must be positive"
@@ -1132,6 +1376,7 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "start": args.start,
         "end": args.end,
         "factor_groups": list(args.factor_groups),
+        "feature_group_batch_size": args.feature_group_batch_size,
         "lookback_bars": list(args.lookback_bars),
         "cross_sectional_reversal_lookback_bars": list(
             args.cross_sectional_reversal_lookback_bars
@@ -1237,12 +1482,16 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "horizon_bars": list(args.horizon_bars),
         "label_columns": _label_column_names(args),
         "entry_lag_bars": args.entry_lag_bars,
+        "label_entry_price_column": args.label_entry_price_column,
+        "label_exit_price_column": args.label_exit_price_column,
         "research_grid": _research_grid(args),
         "exclude_st": args.exclude_st,
         "limit_up_bps": args.limit_up_bps,
         "limit_down_bps": args.limit_down_bps,
         "filter_entry_tradable": args.filter_entry_tradable,
         "filter_entry_limit_up": args.filter_entry_limit_up,
+        "filter_exit_tradable": args.filter_exit_tradable,
+        "filter_exit_limit_down": args.filter_exit_limit_down,
         "max_symbols": args.max_symbols,
         "universe": {
             "market": "CN",
@@ -1335,8 +1584,16 @@ def _manifest_parameters(args: argparse.Namespace) -> dict[str, object]:
         "entry_exit_assumption": {
             "entry_lag_bars": args.entry_lag_bars,
             "horizon_bars": list(args.horizon_bars),
-            "entry_price": "close_price",
-            "exit_price": "close_price",
+            "entry_price": args.label_entry_price_column,
+            "exit_price": args.label_exit_price_column,
+            "entry_constraints": {
+                "filter_tradable": args.filter_entry_tradable,
+                "filter_limit_up_open": args.filter_entry_limit_up,
+            },
+            "exit_constraints": {
+                "filter_tradable": args.filter_exit_tradable,
+                "filter_limit_down_open": args.filter_exit_limit_down,
+            },
         },
     }
 
@@ -1352,6 +1609,8 @@ def _label_configs(args: argparse.Namespace) -> tuple[ForwardReturnLabelConfig, 
             name=name,
             horizon_bars=horizon,
             entry_lag_bars=args.entry_lag_bars,
+            entry_price_column=args.label_entry_price_column,
+            exit_price_column=args.label_exit_price_column,
         )
         for name, horizon in zip(names, horizons, strict=True)
     )
@@ -1430,6 +1689,9 @@ def _feature_columns(
                 f"{config.name}_rank",
                 f"{config.name}_exit_timestamp",
                 f"{config.name}_exit_price",
+                f"{config.name}_exit_tradable_bar",
+                f"{config.name}_exit_limit_up_open",
+                f"{config.name}_exit_limit_down_open",
             ]
         )
     return infer_feature_columns(

@@ -290,6 +290,8 @@ def _scenario_command(
         *args.methods,
         "--score-transform",
         args.score_transform,
+        "--weight-evidence-mode",
+        args.weight_evidence_mode,
         "--partition-start",
         scenario.partition_start,
         "--partition-end",
@@ -1406,6 +1408,7 @@ def _validation_summary(
             ),
             "factor_max_weight": args.factor_max_weight,
             "factor_max_contribution_share": args.factor_max_contribution_share,
+            "weight_evidence_mode": args.weight_evidence_mode,
             "factor_health_mode": args.factor_health_mode,
             "factor_health_lookback_windows": args.factor_health_lookback_windows,
             "factor_health_min_periods": args.factor_health_min_periods,
@@ -1824,6 +1827,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "cross-sectional transform for candidate-factor score construction; "
             "rank preserves historical behavior"
+        ),
+    )
+    parser.add_argument(
+        "--weight-evidence-mode",
+        choices=("equal", "admission_ic"),
+        default="equal",
+        help=(
+            "base evidence passed to candidate-factor portfolio weights; equal "
+            "avoids full-sample admission IC magnitude as static evidence"
         ),
     )
     parser.add_argument("--primary-method", default="decorrelated")
@@ -2320,8 +2332,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _default_label_lag_windows(label_column: str) -> int:
     suffix = label_column.rsplit("_", 1)[-1]
     if suffix.endswith("b") and suffix[:-1].isdigit():
-        return int(suffix[:-1])
-    return 48
+        return int(suffix[:-1]) + 1
+    return 49
 
 
 if __name__ == "__main__":

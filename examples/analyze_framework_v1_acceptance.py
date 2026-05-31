@@ -41,12 +41,14 @@ def main() -> None:
         max_top_n_turnover=args.max_top_n_turnover,
         cost_bps=args.cost_bps,
     )
+    registry_metadata = _feature_metadata_from_registry(args)
     report = build_factor_admission_report(
         benchmark_summary=benchmark_summary,
         factor_summary=factor_summary,
         by_timestamp=by_timestamp,
         thresholds=thresholds,
-        feature_roles=_feature_roles_from_registry(args),
+        feature_roles=registry_metadata["roles"],
+        feature_expected_directions=registry_metadata["expected_directions"],
     )
     artifacts = write_factor_admission_outputs(
         report,
@@ -125,15 +127,19 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _feature_roles_from_registry(args: argparse.Namespace) -> dict[str, str]:
+def _feature_metadata_from_registry(
+    args: argparse.Namespace,
+) -> dict[str, dict[str, str]]:
     if not args.factor_registry:
-        return {}
+        return {"roles": {}, "expected_directions": {}}
     registry = load_factor_registry(Path(args.factor_registry))
     roles: dict[str, str] = {}
+    expected_directions: dict[str, str] = {}
     for entry in registry.entries:
         for feature in entry.feature_columns:
             roles[feature] = entry.evaluation_role
-    return roles
+            expected_directions[feature] = entry.expected_direction
+    return {"roles": roles, "expected_directions": expected_directions}
 
 
 if __name__ == "__main__":

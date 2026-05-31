@@ -52,7 +52,7 @@ def _members_from_spec(spec: UniverseSpec, *, data: object | None) -> pd.DataFra
         listed = data.list_instruments(
             market=spec.market,
             asset_type=spec.asset_type,
-            as_of=spec.end or spec.start,
+            as_of=spec.start or spec.end,
         )
         _require_columns(
             listed,

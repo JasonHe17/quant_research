@@ -102,6 +102,33 @@ def test_build_forward_return_labels_uses_entry_lag_and_horizon() -> None:
     assert labels.loc[0, "fwd_ret_2b"] == pytest.approx(13.0 / 11.0 - 1.0)
 
 
+def test_build_forward_return_labels_can_use_execution_price_columns() -> None:
+    bars = pd.DataFrame(
+        [
+            {
+                "instrument_id": "inst-1",
+                "bar_end_time": f"t{i}",
+                "open_price": float(100 + i),
+                "close_price": float(10 + i),
+            }
+            for i in range(5)
+        ]
+    )
+    config = ForwardReturnLabelConfig(
+        name="fwd_ret_2b",
+        entry_lag_bars=1,
+        horizon_bars=2,
+        entry_price_column="open_price",
+        exit_price_column="open_price",
+    )
+
+    labels = build_forward_return_labels(bars, config)
+
+    assert labels.loc[0, "entry_price"] == pytest.approx(101.0)
+    assert labels.loc[0, "exit_price"] == pytest.approx(103.0)
+    assert labels.loc[0, "fwd_ret_2b"] == pytest.approx(103.0 / 101.0 - 1.0)
+
+
 def test_build_multi_horizon_forward_return_labels_shares_entry() -> None:
     bars = pd.DataFrame(
         [

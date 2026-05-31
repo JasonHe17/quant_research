@@ -71,6 +71,9 @@ def infer_feature_columns(
         f"{label_column}_exit_timestamp",
         f"{label_column}_entry_price",
         f"{label_column}_exit_price",
+        f"{label_column}_exit_tradable_bar",
+        f"{label_column}_exit_limit_up_open",
+        f"{label_column}_exit_limit_down_open",
         "entry_timestamp",
         "exit_timestamp",
         "entry_price",
@@ -78,6 +81,9 @@ def infer_feature_columns(
         "entry_tradable_bar",
         "entry_limit_up_open",
         "entry_limit_down_open",
+        "exit_tradable_bar",
+        "exit_limit_up_open",
+        "exit_limit_down_open",
         "tradable_bar",
         "buyable_bar",
         "sellable_bar",
@@ -95,6 +101,14 @@ def infer_feature_columns(
     features: list[str] = []
     for column in frame.columns:
         if column in blocked:
+            continue
+        if column.endswith(
+            (
+                "_exit_tradable_bar",
+                "_exit_limit_up_open",
+                "_exit_limit_down_open",
+            )
+        ):
             continue
         if pd.api.types.is_numeric_dtype(frame[column]):
             features.append(column)

@@ -43,6 +43,7 @@ def main() -> None:
         workers=args.workers,
         backend=args.backend,
         skip_feature_correlation=args.skip_feature_correlation,
+        correlation_sample_rows=args.correlation_sample_rows or None,
     )
     summary_path = output_dir / "single_factor_summary.csv"
     by_timestamp_path = output_dir / "single_factor_by_timestamp.csv"
@@ -62,6 +63,7 @@ def main() -> None:
             "quantiles": args.quantiles,
             "correlation_method": args.correlation_method,
             "skip_feature_correlation": args.skip_feature_correlation,
+            "correlation_sample_rows": args.correlation_sample_rows,
             "workers": args.workers,
             "backend": args.backend,
         },
@@ -99,6 +101,7 @@ def _evaluate_dataset_paths(
     workers: int,
     backend: str,
     skip_feature_correlation: bool,
+    correlation_sample_rows: int | None,
 ) -> SingleFactorEvaluationResult:
     feature_columns = config.feature_columns or _infer_feature_columns_from_path(
         dataset_paths[0],
@@ -123,6 +126,7 @@ def _evaluate_dataset_paths(
                 partition_config,
                 partition_dir=partition_dir,
                 skip_feature_correlation=skip_feature_correlation,
+                correlation_sample_rows=correlation_sample_rows,
             )
             for path in dataset_paths
         )
@@ -142,6 +146,7 @@ def _evaluate_dataset_paths(
                     partition_config,
                     partition_dir=partition_dir,
                     skip_feature_correlation=skip_feature_correlation,
+                    correlation_sample_rows=correlation_sample_rows,
                 )
                 for path in dataset_paths
             ]
@@ -211,6 +216,9 @@ def _infer_feature_columns_from_path(
                     f"{column}_entry_price",
                     f"{column}_exit_timestamp",
                     f"{column}_exit_price",
+                    f"{column}_exit_tradable_bar",
+                    f"{column}_exit_limit_up_open",
+                    f"{column}_exit_limit_down_open",
                 ]
             )
         return infer_feature_columns(
@@ -228,6 +236,7 @@ def _evaluate_dataset_path(
     *,
     partition_dir: Path,
     skip_feature_correlation: bool,
+    correlation_sample_rows: int | None = None,
 ) -> _PartitionEvaluation:
     frame = pd.read_parquet(path)
     print(f"evaluating {path.name}: rows={len(frame)}", flush=True)
@@ -238,11 +247,19 @@ def _evaluate_dataset_path(
     result.quantile_by_timestamp.to_parquet(quantile_by_timestamp_path, index=False)
     corr_stats = None
     if not skip_feature_correlation:
+        correlation_frame = frame
+        weight_scale = 1.0
+        if correlation_sample_rows is not None and len(frame) > correlation_sample_rows:
+            correlation_frame = frame.sample(
+                n=correlation_sample_rows,
+                random_state=0,
+            )
+            weight_scale = len(frame) / correlation_sample_rows
         corr_stats = _CorrelationStats(
             config.feature_columns,
             method=config.correlation_method,
         )
-        corr_stats.update(frame)
+        corr_stats.update(correlation_frame, weight_scale=weight_scale)
     row_count = len(frame)
     del frame
     del result
@@ -328,27 +345,14 @@ class _CorrelationStats:
                     "weight": 0.0,
                 }
 
-    def update(self, frame: pd.DataFrame) -> None:
+    def update(self, frame: pd.DataFrame, *, weight_scale: float = 1.0) -> None:
+        if self.method == "spearman":
+            self._update_spearman(frame, weight_scale=weight_scale)
+            return
         for left_index, left in enumerate(self.feature_columns):
             for right in self.feature_columns[left_index:]:
                 pair = frame.loc[:, [left, right]].dropna()
                 if pair.empty:
-                    continue
-                if self.method == "spearman":
-                    corr = (
-                        1.0
-                        if left == right
-                        else pair[left].corr(pair[right], method="spearman")
-                    )
-                    if pd.notna(corr):
-                        self._add_symmetric(
-                            left,
-                            right,
-                            {
-                                "weighted_corr": float(corr) * len(pair),
-                                "weight": float(len(pair)),
-                            },
-                        )
                     continue
                 x = pair.iloc[:, 0].astype(float)
                 y = pair.iloc[:, 1].astype(float)
@@ -363,18 +367,40 @@ class _CorrelationStats:
                         "sum_y2": float((y * y).sum()),
                         "sum_xy": float((x * y).sum()),
                     },
+                    weight_scale=weight_scale,
                 )
+
+    def _update_spearman(self, frame: pd.DataFrame, *, weight_scale: float) -> None:
+        data = frame.loc[:, list(self.feature_columns)].apply(
+            pd.to_numeric,
+            errors="coerce",
+        )
+        valid = data.notna().astype("int64")
+        counts = valid.T.dot(valid)
+        correlations = data.corr(method="spearman")
+        for left in self.feature_columns:
+            for right in self.feature_columns:
+                weight = float(counts.loc[left, right]) * weight_scale
+                if weight == 0:
+                    continue
+                corr = 1.0 if left == right else correlations.loc[left, right]
+                if pd.isna(corr):
+                    continue
+                self.values[(left, right)]["weighted_corr"] += float(corr) * weight
+                self.values[(left, right)]["weight"] += float(weight)
 
     def _add_symmetric(
         self,
         left: str,
         right: str,
         updates: dict[str, float],
+        *,
+        weight_scale: float = 1.0,
     ) -> None:
         for key in ((left, right),) if left == right else ((left, right), (right, left)):
             stats = self.values[key]
             for name, value in updates.items():
-                stats[name] += value
+                stats[name] += value * weight_scale
 
     def merge(self, other: "_CorrelationStats") -> None:
         if self.feature_columns != other.feature_columns:
@@ -445,6 +471,15 @@ def _parse_args() -> argparse.Namespace:
         default="spearman",
     )
     parser.add_argument("--skip-feature-correlation", action="store_true")
+    parser.add_argument(
+        "--correlation-sample-rows",
+        type=int,
+        default=0,
+        help=(
+            "maximum rows per dataset partition used for feature-correlation "
+            "estimation; 0 uses all rows"
+        ),
+    )
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument(
         "--backend",
@@ -457,6 +492,8 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("provide exactly one of --dataset-dir or --dataset-paths")
     if args.workers <= 0:
         raise ValueError("--workers must be positive")
+    if args.correlation_sample_rows < 0:
+        raise ValueError("--correlation-sample-rows must be non-negative")
     return args
 
 

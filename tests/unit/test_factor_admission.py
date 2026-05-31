@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from quant_research.validation import (
     FactorAdmissionThresholds,
@@ -89,6 +90,36 @@ def test_factor_admission_supports_inverted_direction() -> None:
     row = report["factors"][0]
     assert row["direction"] == "invert"
     assert row["admission_status"] == "candidate"
+
+
+def test_factor_admission_uses_registry_expected_direction_when_available() -> None:
+    factor_summary = pd.DataFrame(
+        [{"feature": "alpha_prior", "coverage": 1.0, "timestamp_count": 6, "sample_count": 600}]
+    )
+    by_timestamp = pd.DataFrame(
+        _rows("alpha_prior", [-0.03, -0.02, -0.04, -0.03, -0.02, -0.04], -0.003, 0.10)
+    )
+
+    report = build_factor_admission_report(
+        benchmark_summary={"status": "completed", "acceptance": {}, "backtests": {}},
+        factor_summary=factor_summary,
+        by_timestamp=by_timestamp,
+        thresholds=FactorAdmissionThresholds(
+            min_timestamp_count=6,
+            min_years_observed=3,
+            min_stable_years=2,
+            min_abs_rank_ic_t_stat=1.0,
+            min_directional_ic_hit_rate=0.5,
+        ),
+        feature_expected_directions={"alpha_prior": "long"},
+    )
+
+    row = report["factors"][0]
+    assert row["direction"] == "long"
+    assert row["expected_direction"] == "long"
+    assert row["direction_source"] == "registry_expected_direction"
+    assert row["directional_ic_hit_rate"] == pytest.approx(0.0)
+    assert row["admission_status"] == "reject"
 
 
 def test_factor_admission_allows_sparse_event_overlay_role() -> None:

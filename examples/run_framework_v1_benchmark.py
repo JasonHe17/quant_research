@@ -53,6 +53,7 @@ class FrameworkV1BenchmarkConfig:
     evaluation_workers: int
     evaluation_backend: str
     skip_feature_correlation: bool
+    correlation_sample_rows: int
     partition: str
     padding_days: int
     cost_stress_multiplier: float
@@ -223,6 +224,8 @@ def _benchmark_commands(
         str(config.evaluation_workers),
         "--backend",
         config.evaluation_backend,
+        "--correlation-sample-rows",
+        str(config.correlation_sample_rows),
     ]
     horizon_labels = _horizon_label_columns(config)
     if horizon_labels:
@@ -833,16 +836,12 @@ def _acceptance_checks(
         details={"feature_count": factor_evaluation.get("feature_count", 0)},
     )
     if config.auto_factor_admission:
-        admission_factors = (
-            factor_admission.get("factors", [])
-            if isinstance(factor_admission, dict)
-            else []
-        )
+        admission_factor_count = _admission_factor_count(factor_admission)
         _add_check(
             checks,
             name="factor_admission_present",
-            status="pass" if len(admission_factors) > 0 else "fail",
-            details={"factor_count": len(admission_factors)},
+            status="pass" if admission_factor_count > 0 else "fail",
+            details={"factor_count": admission_factor_count},
         )
     _add_check(
         checks,
@@ -969,6 +968,21 @@ def _acceptance_checks(
 
 def _expected_scenario_names(config: FrameworkV1BenchmarkConfig) -> list[str]:
     return [scenario.name for scenario in _backtest_scenarios(config)]
+
+
+def _admission_factor_count(factor_admission: dict[str, Any] | None) -> int:
+    if not isinstance(factor_admission, dict):
+        return 0
+    factors = factor_admission.get("factors")
+    if isinstance(factors, list):
+        return len(factors)
+    summary = factor_admission.get("summary_metrics")
+    if isinstance(summary, dict):
+        try:
+            return int(summary.get("factor_count", 0))
+        except (TypeError, ValueError):
+            return 0
+    return 0
 
 
 def _add_check(
@@ -1150,6 +1164,7 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
         evaluation_workers=args.evaluation_workers,
         evaluation_backend=args.evaluation_backend,
         skip_feature_correlation=args.skip_feature_correlation,
+        correlation_sample_rows=args.correlation_sample_rows,
         partition=args.partition,
         padding_days=args.padding_days,
         cost_stress_multiplier=args.cost_stress_multiplier,
@@ -1261,6 +1276,15 @@ def _parse_args() -> argparse.Namespace:
         default="process",
     )
     parser.add_argument("--skip-feature-correlation", action="store_true")
+    parser.add_argument(
+        "--correlation-sample-rows",
+        type=int,
+        default=100_000,
+        help=(
+            "maximum rows per dataset partition used for feature-correlation "
+            "estimation; 0 uses all rows"
+        ),
+    )
     parser.add_argument("--partition", choices=("monthly", "yearly"), default="monthly")
     parser.add_argument("--padding-days", type=int, default=30)
     parser.add_argument("--cost-stress-multiplier", type=float, default=2.0)
@@ -1376,6 +1400,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--padding-days must be non-negative")
     if args.streaming_chunk_padding_days < 0:
         raise ValueError("--streaming-chunk-padding-days must be non-negative")
+    if args.correlation_sample_rows < 0:
+        raise ValueError("--correlation-sample-rows must be non-negative")
     if args.cost_stress_multiplier < 1:
         raise ValueError("--cost-stress-multiplier must be at least 1")
     if (

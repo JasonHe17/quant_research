@@ -42,13 +42,21 @@ Default settings:
 - Dataset partitioning: monthly, with 30 calendar days of warmup padding.
 - Factors: all currently implemented intraday factor groups.
 - Labels: one-bar delayed entry. The benchmark default is a 48 five-minute-bar
-  forward return for backward compatibility. Multi-horizon research runs should
-  pass `--label-horizon-bars 48 240 960`; when multiple horizons are supplied,
+  forward return for backward compatibility. Standard runs price both the entry
+  and exit legs from `open_price` so the evaluated return matches the next-bar
+  executable grid. The dataset filters non-tradable entry bars, entry limit-up
+  bars, non-tradable exit bars, and exit limit-down bars by default; exit
+  limit-up bars are recorded for diagnostics but are not filtered from long-only
+  forward returns. Multi-horizon research runs should pass
+  `--label-horizon-bars 48 240 960`; when multiple horizons are supplied,
   labels are written as `forward_return_48b`, `forward_return_240b`, and
   `forward_return_960b`, and the current single-factor gates use the first
   horizon as the primary label.
 - Factor evaluation: six worker processes by default; reduce with
-  `--evaluation-workers` on memory-constrained machines.
+  `--evaluation-workers` on memory-constrained machines. Single-factor IC,
+  bucket returns, and turnover use the full evaluated rows. Feature-correlation
+  estimation uses `--correlation-sample-rows` by default so the standard
+  all-factor benchmark remains reproducible on research workstations.
 - Backtest streaming: fast parquet runs use monthly chunks by default, with
   10 calendar days of boundary padding for lookback and next-bar continuity.
   Increase memory headroom before switching `--streaming-chunk year`.
@@ -110,6 +118,10 @@ This wrapper keeps scenario construction serial by default
 `--backtest-workers 6 --backtest-memory-budget-gb 30.0`. The primary gate is
 currently `decorrelated + partial_rebalance_daily`; the leaderboard should still
 be reviewed because higher-return policies can be less cost-robust.
+Combination weights default to equal admission evidence. Using admission IC
+magnitude as a weight source is an explicit experiment (`--weight-evidence-mode
+admission_ic`) because it reuses the same single-factor evidence for both
+selection and sizing.
 
 For factor-promotion work, use the baseline hierarchy in
 `docs/validation/factor_development_standard.md` rather than comparing only to a
@@ -140,6 +152,12 @@ The benchmark writes:
 Interrupted runs can continue with `--resume-existing`; completed stages are
 detected by their summary JSON files and skipped.
 
+The current standard replacement report is
+`runs/framework_v1_acceptance/standard/benchmark_summary.json`, generated after
+the 2026-05-31 evaluation-framework fixes. Pre-fix reports are historical
+references only and must not be used for new admission or promotion decisions
+unless a task explicitly requests a legacy comparison.
+
 ## Failure Gates
 
 The suite fails when:
@@ -168,7 +186,8 @@ default standard profile without `--max-symbols`.
 Do not promote a new factor or framework change from a single aggregate return.
 Review at least:
 
-- Dataset coverage and entry-tradability filter counts.
+- Dataset coverage, entry-tradability filter counts, and exit-tradability
+  filter counts.
 - Feature count and top factor IC summaries.
 - Full-window and yearly backtest metrics.
 - Execution constraint counts: non-tradable rows, limit blocks, positive targets,

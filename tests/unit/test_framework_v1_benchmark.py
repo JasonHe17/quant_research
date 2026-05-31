@@ -11,6 +11,7 @@ import pandas as pd
 from examples.evaluate_alpha_dataset import _CorrelationStats
 from examples.run_framework_v1_benchmark import (
     BacktestJob,
+    _admission_factor_count,
     _can_launch_backtest_job,
     _run_command,
 )
@@ -199,6 +200,12 @@ def test_framework_v1_benchmark_can_plan_auto_factor_admission(
     assert summary["config"]["effective_candidate_admission_report"] == str(
         admission_path
     )
+
+
+def test_admission_factor_count_reads_collected_summary_metrics() -> None:
+    assert _admission_factor_count({"summary_metrics": {"factor_count": 148}}) == 148
+    assert _admission_factor_count({"factors": [{"feature": "alpha_a"}]}) == 1
+    assert _admission_factor_count({"summary_metrics": {"factor_count": "bad"}}) == 0
 
 
 def test_factor_correlation_stats_match_pandas_pairwise_corr() -> None:
