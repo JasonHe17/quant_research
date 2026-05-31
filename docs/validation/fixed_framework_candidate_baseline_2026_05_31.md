@@ -13,6 +13,8 @@ the fixed-framework priority revalidation.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_nohealth_2026_05_31_standard/validation_summary.json`
 - Alpha plus EOD lb1 overlay:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_plus_eod_lb1_v66_nohealth_2026_05_31_standard/validation_summary.json`
+- Repaired alpha-rank research benchmark:
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/validation_summary.json`
 
 All runs use:
 
@@ -28,10 +30,11 @@ All runs use:
 - registry status: `candidate`
 - profile: `standard`
 
-The two full candidate-pool runs use `factor_health_mode=off`. The previous
-monitor mode is diagnostic only and does not change scores; disabling it avoids
+The full candidate-pool runs use `factor_health_mode=off`. The previous monitor
+mode is diagnostic only and does not change scores; disabling it avoids
 rebuilding a large diagnostic schedule while preserving the portfolio score and
-backtest policy.
+backtest policy. The repaired benchmark uses an external lagged factor-weight
+schedule for `intraday_overnight_gap_5m` plus a row contribution cap.
 
 ## Result Table
 
@@ -39,8 +42,9 @@ backtest policy.
 |---|---:|---|---:|---:|---:|---:|---:|---|
 | previous standard benchmark | 24 | pass | 25.23% | 19.65% | 1.00% | -29.96% | 73.09 | superseded by registry v66 |
 | seed: Amihud + EOD lb1 | 2 | warn | 54.39% | 47.60% | -1.79% | -34.07% | 71.95 | useful reference, but too concentrated |
-| alpha-only v66 | 20 | warn | 27.00% | 21.19% | -4.59% | -29.52% | 73.61 | new candidate baseline |
+| alpha-only v66 | 20 | warn | 27.00% | 21.19% | -4.59% | -29.52% | 73.61 | superseded by repaired research benchmark |
 | alpha + EOD lb1 v66 | 21 | warn | 25.91% | 20.08% | -4.63% | -28.71% | 73.90 | do not use as default baseline |
+| overnight-gap gate + contribution cap25 | 20 | pass | 27.97% | 22.15% | 0.90% | -31.70% | 73.23 | current alpha-rank research benchmark |
 
 ## Readout
 
@@ -66,6 +70,19 @@ improve the baseline:
 Therefore EOD lb1 should remain a candidate for a dedicated event-overlay test,
 not a default member of the ordinary alpha-rank pool.
 
+The repaired alpha-rank benchmark applies the lagged deep25 health gate only to
+`intraday_overnight_gap_5m` and adds a row contribution cap of `25%`. This fixes
+the 2024 yearly slice while improving full-window and high-cost returns:
+
+- full-base return improves from `27.00%` to `27.97%`;
+- high-cost return improves from `21.19%` to `22.15%`;
+- worst year improves from `-4.59%` to `0.90%`;
+- 2025 improves from `18.09%` to `19.71%`;
+- full-base max drawdown worsens from `-28.53%` to `-30.77%`.
+
+The drawdown tradeoff should be monitored, but the repaired benchmark clears
+the standard validation gates and removes the 2024 stability blocker.
+
 ## Candidate Weights
 
 In the alpha-only v66 baseline, the largest decorrelated weights are:
@@ -84,20 +101,21 @@ alpha baseline.
 
 ## Decision
 
-Use the alpha-only v66 run as the current candidate baseline:
+Use the repaired alpha-rank run as the current research benchmark for
+alpha-rank portfolio iteration:
 
-`runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_nohealth_2026_05_31_standard/validation_summary.json`
+`runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/validation_summary.json`
 
-Do not replace the accepted framework benchmark yet. This candidate baseline is
-better in full-window return and cost stress, but it introduces a negative 2024
-slice. The next step should target that 2024 weakness before promoting this run
-to the standard acceptance benchmark.
+Keep the alpha-only v66 run as the naive/control comparison for attribution and
+ablation work, but do not use it as the frontier benchmark after the 2024 repair
+screen. Replacement of the accepted framework benchmark should still be handled
+through a separate default-change review.
 
 ## Next Steps
 
-1. Run 2024 attribution on the alpha-only v66 baseline, focusing on January and
-   June 2024.
-2. Test whether an event-overlay gate can use EOD lb1 without degrading the
-   alpha-only baseline.
-3. Use alpha-only v66, not alpha+EOD, as the baseline for the next incremental
-   factor tests.
+1. Run attribution on the repaired benchmark, focusing on January, June,
+   September, and the higher full-window drawdown.
+2. Test whether a small drawdown-control overlay can reduce the drawdown
+   tradeoff without losing the repaired 2024 slice.
+3. Use the repaired benchmark, not alpha-only v66 or alpha+EOD, as the frontier
+   comparison for the next incremental alpha-rank factor tests.
