@@ -1235,7 +1235,7 @@
       "evaluation": {
         "admission_direction": "long",
         "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate",
+        "admission_status": "watchlist",
         "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_amihud_5m/validation_summary.json",
         "legacy_revalidation_best_policy": "partial_rebalance_daily",
         "legacy_revalidation_full_base_return": 0.4097350784707931,
@@ -1244,7 +1244,57 @@
         "legacy_revalidation_review": "docs/validation/legacy_factor_revalidation_2026_05_20.md",
         "legacy_revalidation_status": "confirmed",
         "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
-        "legacy_revalidation_validation_status": "completed"
+        "legacy_revalidation_validation_status": "completed",
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "watchlist",
+        "current_standard_registry_action": "keep_candidate_pending_portfolio_revalidation",
+        "current_standard_admission_by_feature": {
+          "intraday_amihud_5m": {
+            "admission_status": "watchlist",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": 0.018342294557600006,
+            "spearman_rank_ic_t_stat": 36.604004932641224,
+            "directional_ic_hit_rate": 0.5947009971550906,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": -0.00012000584996802659,
+            "top_minus_bottom_label": 0.0009471018219820355,
+            "top_n_turnover": 0.8208520553462015,
+            "coverage": 0.9997389247841953,
+            "timestamp_count": 34799,
+            "sample_count": 102947272,
+            "failed_checks": [
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_amihud_5m": [
+            "cost_adjusted_spread"
+          ]
+        },
+        "cost_adjusted_top_minus_bottom_label": -0.00012000584996802659,
+        "coverage": 0.9997389247841953,
+        "directional_ic_hit_rate": 0.5947009971550906,
+        "failed_checks": [
+          "cost_adjusted_spread"
+        ],
+        "sample_count": 102947272,
+        "spearman_rank_ic_mean": 0.018342294557600006,
+        "spearman_rank_ic_t_stat": 36.604004932641224,
+        "stable_year_count": 3,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": 0.0009471018219820355,
+        "top_n_turnover": 0.8208520553462015,
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": 0.019918725303717452,
+          "2024": 0.01450872839851103,
+          "2025": 0.0206061390374012
+        }
       },
       "expected_direction": "long",
       "factor_id": "intraday_amihud_5m",
@@ -1272,7 +1322,8 @@
         "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
         "docs/validation/legacy_factor_revalidation_2026_05_20.md",
         "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
-        "runs/legacy_factor_revalidation/current/factors/intraday_amihud_5m/validation_summary.json"
+        "runs/legacy_factor_revalidation/current/factors/intraday_amihud_5m/validation_summary.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -2412,8 +2463,58 @@
       "display_name": "Intraday gap, 5-minute bar",
       "evaluation": {
         "admission_direction": "invert",
-        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
-        "admission_status": "reject"
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "watchlist",
+        "current_standard_registry_action": "status_updated_to_watchlist",
+        "current_standard_admission_by_feature": {
+          "intraday_gap_5m": {
+            "admission_status": "watchlist",
+            "expected_direction": "invert",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.001955402159861171,
+            "spearman_rank_ic_t_stat": -12.57679076134664,
+            "directional_ic_hit_rate": 0.5359636771171585,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": -0.0009473492420537061,
+            "top_minus_bottom_label": -0.00015496684113819315,
+            "top_n_turnover": 0.8479354486091534,
+            "coverage": 1.0,
+            "timestamp_count": 34799,
+            "sample_count": 102974156,
+            "failed_checks": [
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_gap_5m": [
+            "cost_adjusted_spread"
+          ]
+        },
+        "cost_adjusted_top_minus_bottom_label": -0.0009473492420537061,
+        "coverage": 1.0,
+        "directional_ic_hit_rate": 0.5359636771171585,
+        "failed_checks": [
+          "cost_adjusted_spread"
+        ],
+        "sample_count": 102974156,
+        "spearman_rank_ic_mean": -0.001955402159861171,
+        "spearman_rank_ic_t_stat": -12.57679076134664,
+        "stable_year_count": 3,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": -0.00015496684113819315,
+        "top_n_turnover": 0.8479354486091534,
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": -0.0026758067229346524,
+          "2024": -0.0017479418090880893,
+          "2025": -0.0014453909199942812
+        }
       },
       "expected_direction": "invert",
       "factor_id": "intraday_gap_5m",
@@ -2440,7 +2541,9 @@
         "docs/validation/factor_development_standard.md",
         "docs/validation/factor_admission.md",
         "docs/strategy/factor_research_batch_2026_05_16.md",
-        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json"
+        "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -2452,13 +2555,15 @@
         "decision_reason": "weak_ic",
         "evidence_artifacts": [
           "runs/framework_v1_acceptance/factor_batch_2026_05_16_new_factors/factor_admission/factor_admission_report.json",
-          "docs/strategy/factor_research_batch_2026_05_16.md"
+          "docs/strategy/factor_research_batch_2026_05_16.md",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "The intraday gap factor was rejected: rank IC was effectively zero, t-stat and hit-rate gates failed, turnover was high, and cost-adjusted spread was negative.",
         "retry_conditions": "Retry only as a redesigned event feature with overnight/session boundary separation, limit-event conditioning, or explicit reversal buckets.",
         "similar_to": []
       },
-      "status": "reject",
+      "status": "watchlist",
       "tags": [
         "batch_2026_05_16",
         "intraday",
@@ -3251,9 +3356,9 @@
       "description": "Rolling 48-bar price recovery after sell pressure, confirmed by upside turnover participation.",
       "display_name": "Intraday sell-pressure recovery, 48-bar window",
       "evaluation": {
-        "admission_direction": "invert",
-        "admission_report": "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json",
-        "admission_status": "watchlist",
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
         "legacy_revalidation": "runs/legacy_factor_revalidation/current/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json",
         "legacy_revalidation_best_policy": "partial_rebalance_daily",
         "legacy_revalidation_full_base_return": 0.1178292312932081,
@@ -3264,7 +3369,60 @@
         "legacy_revalidation_summary": "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
         "legacy_revalidation_validation_status": "completed",
         "long_only_top_bucket_health_status": "failed_two_of_three_years_positive_top_bucket",
-        "research_memory_check": "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json"
+        "research_memory_check": "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json",
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "reject",
+        "current_standard_registry_action": "keep_watchlist_pending_horizon_or_policy_revalidation",
+        "current_standard_admission_by_feature": {
+          "intraday_sell_pressure_recovery_5m_w48": {
+            "admission_status": "reject",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.02127139588987056,
+            "spearman_rank_ic_t_stat": -28.30289920094227,
+            "directional_ic_hit_rate": 0.409695680910371,
+            "stable_year_count": 0,
+            "cost_adjusted_top_minus_bottom_label": 0.00041695279397797533,
+            "top_minus_bottom_label": 0.0006806699645328756,
+            "top_n_turnover": 0.2028593619653079,
+            "coverage": 0.9996708203172843,
+            "timestamp_count": 34799,
+            "sample_count": 102940259,
+            "failed_checks": [
+              "directional_ic_hit_rate",
+              "stable_year_count"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_sell_pressure_recovery_5m_w48": [
+            "directional_ic_hit_rate",
+            "stable_year_count"
+          ]
+        },
+        "cost_adjusted_top_minus_bottom_label": 0.00041695279397797533,
+        "coverage": 0.9996708203172843,
+        "directional_ic_hit_rate": 0.409695680910371,
+        "failed_checks": [
+          "directional_ic_hit_rate",
+          "stable_year_count"
+        ],
+        "sample_count": 102940259,
+        "spearman_rank_ic_mean": -0.02127139588987056,
+        "spearman_rank_ic_t_stat": -28.30289920094227,
+        "stable_year_count": 0,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": 0.0006806699645328756,
+        "top_n_turnover": 0.2028593619653079,
+        "year_count": 3,
+        "yearly_spearman_rank_ic_mean": {
+          "2023": -0.02958157381166855,
+          "2024": -0.0012663068764326324,
+          "2025": -0.033001656396175846
+        }
       },
       "expected_direction": "long",
       "factor_id": "intraday_sell_pressure_recovery_5m_w48",
@@ -3299,7 +3457,9 @@
         "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json",
         "docs/validation/legacy_factor_revalidation_2026_05_20.md",
         "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
-        "runs/legacy_factor_revalidation/current/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json"
+        "runs/legacy_factor_revalidation/current/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -3312,7 +3472,9 @@
         "evidence_artifacts": [
           "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json",
           "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json",
-          "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_recovery.md"
+          "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_recovery.md",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "The recovery transform did not behave as a long-only quality signal. Admission selected the inverted direction, cost-adjusted spread was negative, and the highest quantile had negative average forward labels in 2023 and 2024. Strong apparent sell-pressure recovery likely marks short-horizon exhaustion or overextension rather than a robust next-day long entry.",
         "retry_conditions": "Retry only with a materially different recovery definition that separates early rebound from late overextension, or after adding an explicit pullback/entry-price condition. Do not rerun this plain recovery ratio as a standalone long-only factor.",
@@ -3361,7 +3523,238 @@
         "research_memory_check": "runs/factor_research_memory/intraday_daily_moving_average_state_5m/factor_research_memory_check.json",
         "risk_gate_schedule": "runs/candidate_factor_portfolios/daily_ma_score_gate_v1_plus_ribbon_dispersion_risk_standard/factor_risk_gate/ribbon_dispersion/gross_exposure_schedule.csv",
         "risk_gate_validation": "runs/candidate_factor_portfolios/daily_ma_score_gate_v1_plus_ribbon_dispersion_risk_standard/validation_summary.json",
-        "walk_forward_validation": "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_walk_forward_v1/walk_forward_summary.json"
+        "walk_forward_validation": "runs/candidate_factor_portfolios/daily_ma_ribbon_dispersion_walk_forward_v1/walk_forward_summary.json",
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "mixed",
+        "current_standard_registry_action": "keep_candidate_multi_feature_portfolio_evidence_required",
+        "current_standard_admission_by_feature": {
+          "intraday_daily_ma_deviation_5m_d5": {
+            "admission_status": "candidate",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.01740221610427019,
+            "spearman_rank_ic_t_stat": -19.2081739856902,
+            "directional_ic_hit_rate": 0.5470569537954749,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.004094894830687385,
+            "top_minus_bottom_label": -0.004132473032070047,
+            "top_n_turnover": 0.028906308755893666,
+            "coverage": 0.9943985362696248,
+            "timestamp_count": 34607,
+            "sample_count": 102397350,
+            "failed_checks": []
+          },
+          "intraday_daily_ma_slope_5m_d5": {
+            "admission_status": "candidate",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.024542859837002294,
+            "spearman_rank_ic_t_stat": -27.24184133001497,
+            "directional_ic_hit_rate": 0.5593622500651061,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.005406753776132438,
+            "top_minus_bottom_label": -0.005440226996883821,
+            "top_n_turnover": 0.0257486313472178,
+            "coverage": 0.9929920085967978,
+            "timestamp_count": 34559,
+            "sample_count": 102252514,
+            "failed_checks": []
+          },
+          "intraday_daily_ma_deviation_5m_d10": {
+            "admission_status": "candidate",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.028807158376010583,
+            "spearman_rank_ic_t_stat": -31.253058613209312,
+            "directional_ic_hit_rate": 0.5707510111444118,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.0060670788062201055,
+            "top_minus_bottom_label": -0.006101738909333909,
+            "top_n_turnover": 0.026661617779849114,
+            "coverage": 0.9873540696949242,
+            "timestamp_count": 34367,
+            "sample_count": 101671952,
+            "failed_checks": []
+          },
+          "intraday_daily_ma_slope_5m_d10": {
+            "admission_status": "candidate",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.03526723722688494,
+            "spearman_rank_ic_t_stat": -40.47015464559433,
+            "directional_ic_hit_rate": 0.5916547684955855,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.006027924175797071,
+            "top_minus_bottom_label": -0.006058159044390834,
+            "top_n_turnover": 0.023257591225972055,
+            "coverage": 0.985934062911863,
+            "timestamp_count": 34319,
+            "sample_count": 101525728,
+            "failed_checks": []
+          },
+          "intraday_daily_ma_deviation_5m_d20": {
+            "admission_status": "reject",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.03755453242617526,
+            "spearman_rank_ic_t_stat": -39.49002524526559,
+            "directional_ic_hit_rate": 0.5882710237798767,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.006337016014854005,
+            "top_minus_bottom_label": -0.006368651245305178,
+            "top_n_turnover": 0.024334792654748878,
+            "coverage": 0.9454358722784774,
+            "timestamp_count": 32927,
+            "sample_count": 97355461,
+            "failed_checks": [
+              "coverage"
+            ]
+          },
+          "intraday_daily_ma_slope_5m_d20": {
+            "admission_status": "reject",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.04161511794428654,
+            "spearman_rank_ic_t_stat": -43.506826166706205,
+            "directional_ic_hit_rate": 0.6064413045521476,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.00565103829394045,
+            "top_minus_bottom_label": -0.005678377272738593,
+            "top_n_turnover": 0.02102998369087944,
+            "coverage": 0.9163840876734158,
+            "timestamp_count": 31919,
+            "sample_count": 94363878,
+            "failed_checks": [
+              "coverage"
+            ]
+          },
+          "intraday_daily_ma_spread_5m_s5_l20": {
+            "admission_status": "reject",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.034100196971128316,
+            "spearman_rank_ic_t_stat": -37.398478449186605,
+            "directional_ic_hit_rate": 0.5918850791144046,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.004556795315467204,
+            "top_minus_bottom_label": -0.004579514092069418,
+            "top_n_turnover": 0.01747598200170254,
+            "coverage": 0.9454358722784774,
+            "timestamp_count": 32927,
+            "sample_count": 97355461,
+            "failed_checks": [
+              "coverage"
+            ]
+          },
+          "intraday_daily_ma_spread_5m_s10_l20": {
+            "admission_status": "reject",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.03128514185148195,
+            "spearman_rank_ic_t_stat": -35.335654068608015,
+            "directional_ic_hit_rate": 0.5951346918941902,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.003188136270330344,
+            "top_minus_bottom_label": -0.0032067928433572195,
+            "top_n_turnover": 0.01435121002067372,
+            "coverage": 0.9454358722784774,
+            "timestamp_count": 32927,
+            "sample_count": 97355461,
+            "failed_checks": [
+              "coverage"
+            ]
+          },
+          "intraday_daily_ma_ribbon_position_5m": {
+            "admission_status": "reject",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.03164019704243093,
+            "spearman_rank_ic_t_stat": -33.111116934152676,
+            "directional_ic_hit_rate": 0.5693503811461718,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.006066248638414768,
+            "top_minus_bottom_label": -0.0061014733739127615,
+            "top_n_turnover": 0.027095950383071873,
+            "coverage": 0.9454358722784774,
+            "timestamp_count": 32927,
+            "sample_count": 97355461,
+            "failed_checks": [
+              "coverage"
+            ]
+          },
+          "intraday_daily_ma_ribbon_dispersion_5m": {
+            "admission_status": "reject",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.03094146232377686,
+            "spearman_rank_ic_t_stat": -37.12866149813458,
+            "directional_ic_hit_rate": 0.620038266468248,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.002512776772017722,
+            "top_minus_bottom_label": -0.002534332773477043,
+            "top_n_turnover": 0.016581539584093394,
+            "coverage": 0.9454358722784774,
+            "timestamp_count": 32927,
+            "sample_count": 97355461,
+            "failed_checks": [
+              "coverage"
+            ]
+          },
+          "intraday_daily_ma_ribbon_trend_score_5m": {
+            "admission_status": "candidate",
+            "expected_direction": "mixed",
+            "direction_source": "sample_rank_ic_sign",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.0273308158406321,
+            "spearman_rank_ic_t_stat": -38.35520810731164,
+            "directional_ic_hit_rate": 0.5852998516018273,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.0007339391177139056,
+            "top_minus_bottom_label": -0.0007432641592215809,
+            "top_n_turnover": 0.007173108852057907,
+            "coverage": 0.9873540696949242,
+            "timestamp_count": 34367,
+            "sample_count": 101671952,
+            "failed_checks": []
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_daily_ma_deviation_5m_d5": [],
+          "intraday_daily_ma_slope_5m_d5": [],
+          "intraday_daily_ma_deviation_5m_d10": [],
+          "intraday_daily_ma_slope_5m_d10": [],
+          "intraday_daily_ma_deviation_5m_d20": [
+            "coverage"
+          ],
+          "intraday_daily_ma_slope_5m_d20": [
+            "coverage"
+          ],
+          "intraday_daily_ma_spread_5m_s5_l20": [
+            "coverage"
+          ],
+          "intraday_daily_ma_spread_5m_s10_l20": [
+            "coverage"
+          ],
+          "intraday_daily_ma_ribbon_position_5m": [
+            "coverage"
+          ],
+          "intraday_daily_ma_ribbon_dispersion_5m": [
+            "coverage"
+          ],
+          "intraday_daily_ma_ribbon_trend_score_5m": []
+        }
       },
       "expected_direction": "mixed",
       "factor_id": "intraday_daily_moving_average_state_5m",
@@ -3423,7 +3816,9 @@
         "runs/candidate_factor_portfolios/daily_ma_promoted_candidate_review_v1/promoted_candidate_review.json",
         "docs/validation/legacy_factor_revalidation_2026_05_20.md",
         "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
-        "runs/legacy_factor_revalidation/current/factors/intraday_daily_moving_average_state_5m/validation_summary.json"
+        "runs/legacy_factor_revalidation/current/factors/intraday_daily_moving_average_state_5m/validation_summary.json",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -3792,7 +4187,37 @@
         "integration_validation_quick": "runs/candidate_factor_portfolios/liquidity_recovery_balance_equal_annual_budget52_quick/validation_summary.json",
         "portfolio_validation_standard": "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/policy_validation_standard/validation_summary.json",
         "portfolio_validation_status": "standalone_pass_but_integration_dilutive",
-        "validation_review": "docs/validation/complementary_factor_development_2026_05_21.md"
+        "validation_review": "docs/validation/complementary_factor_development_2026_05_21.md",
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "mixed",
+        "current_standard_registry_action": "keep_watchlist_due_integration_dilution",
+        "current_standard_missing_feature_columns": [
+          "intraday_liquidity_reliability_recovery_balance_5m_l96_c24_r48"
+        ],
+        "current_standard_admission_by_feature": {
+          "intraday_liquidity_reliability_recovery_balance_5m_l48_c12_r24": {
+            "admission_status": "candidate",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": 0.05718249308567242,
+            "spearman_rank_ic_t_stat": 62.6151834708641,
+            "directional_ic_hit_rate": 0.6492427943331704,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.0013662004651097813,
+            "top_minus_bottom_label": 0.001473146528452991,
+            "top_n_turnover": 0.08226620257169977,
+            "coverage": 0.9987260687040737,
+            "timestamp_count": 34799,
+            "sample_count": 102842974,
+            "failed_checks": []
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_liquidity_reliability_recovery_balance_5m_l48_c12_r24": []
+        }
       },
       "expected_direction": "long",
       "factor_id": "intraday_liquidity_reliability_recovery_balance_5m",
@@ -3837,7 +4262,9 @@
         "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/factor_evaluation/single_factor_quantiles.csv",
         "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/policy_validation_standard/validation_summary.json",
         "runs/candidate_factor_portfolios/liquidity_recovery_balance_equal_annual_budget52_quick/validation_summary.json",
-        "runs/candidate_factor_portfolios/liquidity_recovery_balance_l48_equal_annual_budget52_quick/validation_summary.json"
+        "runs/candidate_factor_portfolios/liquidity_recovery_balance_l48_equal_annual_budget52_quick/validation_summary.json",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -3854,7 +4281,9 @@
           "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/factor_admission/factor_admission_report.json",
           "runs/factor_research/liquidity_reliability_recovery_balance_2026_05_21/policy_validation_standard/validation_summary.json",
           "runs/candidate_factor_portfolios/liquidity_recovery_balance_equal_annual_budget52_quick/validation_summary.json",
-          "runs/candidate_factor_portfolios/liquidity_recovery_balance_l48_equal_annual_budget52_quick/validation_summary.json"
+          "runs/candidate_factor_portfolios/liquidity_recovery_balance_l48_equal_annual_budget52_quick/validation_summary.json",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "Despite strong standalone IC and standalone policy validation, direct integration into the current leading equal annual-budget-52 portfolio was strongly dilutive. Adding both l48 and l96 balance windows cut full-base return to 4.49% and widened max drawdown to -25.11%; adding only l48 cut full-base return to 2.80% and widened max drawdown to -22.85%, versus the baseline 33.44% and -7.85%.",
         "retry_conditions": "Retry only with a portfolio-level allocator, regime gate, or explicit non-equal factor budget that proves incremental value versus the current leading baseline. Do not add more local variants of the same smooth recovery-balance formula.",
@@ -5476,33 +5905,60 @@
       "description": "Negative 1-bar 5-minute close-to-close return; recent losers receive higher scores.",
       "display_name": "Intraday reversal, 1-bar lookback",
       "evaluation": {
-        "admission_direction": "invert",
-        "admission_report": "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
-        "cost_adjusted_top_minus_bottom_label": -0.0006339541948308,
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.0004748987979593521,
         "coverage": 1.0,
-        "directional_ic_hit_rate": 0.4931125523732996,
+        "directional_ic_hit_rate": 0.5719417224632892,
         "factor_evaluation": "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "failed_checks": [
-          "abs_rank_ic_mean",
-          "abs_rank_ic_t_stat",
-          "directional_ic_hit_rate",
-          "stable_year_count",
           "cost_adjusted_spread"
         ],
-        "sample_count": 103495412,
-        "spearman_rank_ic_mean": -0.0002496485646289,
-        "spearman_rank_ic_t_stat": -0.5406519754426573,
-        "stable_year_count": 1,
-        "timestamp_count": 34846,
-        "top_minus_bottom_label": -0.0005801875460481,
-        "top_n_turnover": 0.9339551852915828,
+        "sample_count": 102974156,
+        "spearman_rank_ic_mean": 0.009485405207559193,
+        "spearman_rank_ic_t_stat": 20.487250337865934,
+        "stable_year_count": 3,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": 0.0007417789916445371,
+        "top_n_turnover": 0.9359059920029917,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.0024217438356958364,
-          "2024": -0.0037553997736751742,
-          "2025": 0.0005850120737274682
+          "2023": 0.013955736203121304,
+          "2024": 0.006133269801211046,
+          "2025": 0.00838558737918877
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "watchlist",
+        "current_standard_registry_action": "status_updated_to_watchlist",
+        "current_standard_admission_by_feature": {
+          "intraday_reversal_5m_lb1": {
+            "admission_status": "watchlist",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": 0.009485405207559193,
+            "spearman_rank_ic_t_stat": 20.487250337865934,
+            "directional_ic_hit_rate": 0.5719417224632892,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": -0.0004748987979593521,
+            "top_minus_bottom_label": 0.0007417789916445371,
+            "top_n_turnover": 0.9359059920029917,
+            "coverage": 1.0,
+            "timestamp_count": 34799,
+            "sample_count": 102974156,
+            "failed_checks": [
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_reversal_5m_lb1": [
+            "cost_adjusted_spread"
+          ]
         }
       },
       "expected_direction": "long",
@@ -5535,7 +5991,9 @@
         "docs/validation/factor_development_standard.md",
         "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -5548,7 +6006,9 @@
           "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
           "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
           "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "2023-2025 standard admission classified this factor as reject in invert direction. rank IC=-0.000250, t-stat=-0.54, hit rate=0.493, coverage=1.000, cost-adjusted spread=-0.000634, top-N turnover=0.934. Failed checks: abs_rank_ic_mean, abs_rank_ic_t_stat, directional_ic_hit_rate, stable_year_count, cost_adjusted_spread. Yearly rank IC means: {'2023': 0.0024217438356958364, '2024': -0.0037553997736751742, '2025': 0.0005850120737274682}.",
         "retry_conditions": "Retry only after a materially different reversal transform, horizon, or state gate clears statistical, stability, and cost-adjusted admission gates.",
@@ -5556,7 +6016,7 @@
           "intraday_cross_sectional_reversal_5m_lb1"
         ]
       },
-      "status": "reject",
+      "status": "watchlist",
       "tags": [
         "intraday",
         "reversal",
@@ -5576,33 +6036,60 @@
       "description": "Negative 1-bar return residual after subtracting the timestamp cross-sectional median return.",
       "display_name": "Cross-sectional intraday reversal, 1-bar lookback",
       "evaluation": {
-        "admission_direction": "invert",
-        "admission_report": "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
-        "cost_adjusted_top_minus_bottom_label": -0.0006339541948308,
+        "admission_direction": "long",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.0004748987979593521,
         "coverage": 1.0,
-        "directional_ic_hit_rate": 0.4931125523732996,
+        "directional_ic_hit_rate": 0.5719417224632892,
         "factor_evaluation": "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "failed_checks": [
-          "abs_rank_ic_mean",
-          "abs_rank_ic_t_stat",
-          "directional_ic_hit_rate",
-          "stable_year_count",
           "cost_adjusted_spread"
         ],
-        "sample_count": 103495412,
-        "spearman_rank_ic_mean": -0.0002496485646289,
-        "spearman_rank_ic_t_stat": -0.5406519754426573,
-        "stable_year_count": 1,
-        "timestamp_count": 34846,
-        "top_minus_bottom_label": -0.0005801875460481,
-        "top_n_turnover": 0.9339551852915828,
+        "sample_count": 102974156,
+        "spearman_rank_ic_mean": 0.009485405207559193,
+        "spearman_rank_ic_t_stat": 20.487250337865934,
+        "stable_year_count": 3,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": 0.0007417789916445371,
+        "top_n_turnover": 0.9359059920029917,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.0024217438356958364,
-          "2024": -0.0037553997736751742,
-          "2025": 0.0005850120737274682
+          "2023": 0.013955736203121304,
+          "2024": 0.006133269801211046,
+          "2025": 0.00838558737918877
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "watchlist",
+        "current_standard_registry_action": "status_updated_to_watchlist",
+        "current_standard_admission_by_feature": {
+          "intraday_cross_sectional_reversal_5m_lb1": {
+            "admission_status": "watchlist",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": 0.009485405207559193,
+            "spearman_rank_ic_t_stat": 20.487250337865934,
+            "directional_ic_hit_rate": 0.5719417224632892,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": -0.0004748987979593521,
+            "top_minus_bottom_label": 0.0007417789916445371,
+            "top_n_turnover": 0.9359059920029917,
+            "coverage": 1.0,
+            "timestamp_count": 34799,
+            "sample_count": 102974156,
+            "failed_checks": [
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_cross_sectional_reversal_5m_lb1": [
+            "cost_adjusted_spread"
+          ]
         }
       },
       "expected_direction": "long",
@@ -5635,7 +6122,9 @@
         "docs/validation/factor_development_standard.md",
         "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -5648,7 +6137,9 @@
           "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
           "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
           "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "2023-2025 standard admission classified this factor as reject in invert direction. rank IC=-0.000250, t-stat=-0.54, hit rate=0.493, coverage=1.000, cost-adjusted spread=-0.000634, top-N turnover=0.934. Failed checks: abs_rank_ic_mean, abs_rank_ic_t_stat, directional_ic_hit_rate, stable_year_count, cost_adjusted_spread. Its timestamp-wise rank metrics are identical to the raw reversal alias because subtracting a timestamp cross-sectional median does not change cross-sectional ordering. Yearly rank IC means: {'2023': 0.0024217438356958364, '2024': -0.0037553997736751742, '2025': 0.0005850120737274682}.",
         "retry_conditions": "Do not rerun the same median-demeaned rank factor as standalone alpha; retry only as an absolute-score residual, regime feature, or model input that benefits from market demeaning despite unchanged cross-sectional ranks.",
@@ -5656,7 +6147,7 @@
           "intraday_reversal_5m_lb1"
         ]
       },
-      "status": "reject",
+      "status": "watchlist",
       "tags": [
         "intraday",
         "reversal",
@@ -5789,29 +6280,53 @@
       "display_name": "End-of-day tilted intraday reversal, 1-bar lookback",
       "evaluation": {
         "admission_direction": "long",
-        "admission_report": "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
-        "cost_adjusted_top_minus_bottom_label": -0.0015950400960029,
-        "coverage": 0.1247789129048541,
-        "directional_ic_hit_rate": 0.5676234213547646,
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "cost_adjusted_top_minus_bottom_label": 0.00017193601113396303,
+        "coverage": 0.12466825171162364,
+        "directional_ic_hit_rate": 0.6718785927799494,
         "factor_evaluation": "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
-        "failed_checks": [
-          "coverage",
-          "cost_adjusted_spread"
-        ],
-        "sample_count": 12914045,
-        "spearman_rank_ic_mean": 0.0069766807673056,
-        "spearman_rank_ic_t_stat": 7.504098365102246,
+        "failed_checks": [],
+        "sample_count": 12837608,
+        "spearman_rank_ic_mean": 0.018752855965928825,
+        "spearman_rank_ic_t_stat": 19.99342297505682,
         "stable_year_count": 3,
-        "timestamp_count": 4355,
-        "top_minus_bottom_label": -0.0003930683432823,
-        "top_n_turnover": 0.9245936559388748,
+        "timestamp_count": 4349,
+        "top_minus_bottom_label": 0.0013793415293347515,
+        "top_n_turnover": 0.928773475539068,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.009420737408460621,
-          "2024": 0.00630366645216167,
-          "2025": 0.005204417874564243
+          "2023": 0.0232289885259091,
+          "2024": 0.018503771503291043,
+          "2025": 0.014541403834997453
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "candidate",
+        "current_standard_registry_action": "status_updated_to_candidate_event_overlay",
+        "current_standard_admission_by_feature": {
+          "intraday_eod_reversal_5m_lb1_tail6": {
+            "admission_status": "candidate",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "event_overlay",
+            "spearman_rank_ic_mean": 0.018752855965928825,
+            "spearman_rank_ic_t_stat": 19.99342297505682,
+            "directional_ic_hit_rate": 0.6718785927799494,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.00017193601113396303,
+            "top_minus_bottom_label": 0.0013793415293347515,
+            "top_n_turnover": 0.928773475539068,
+            "coverage": 0.12466825171162364,
+            "timestamp_count": 4349,
+            "sample_count": 12837608,
+            "failed_checks": []
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_eod_reversal_5m_lb1_tail6": []
         }
       },
       "expected_direction": "long",
@@ -5847,7 +6362,9 @@
         "docs/validation/factor_development_standard.md",
         "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -5868,7 +6385,7 @@
           "intraday_reversal_5m_lb24"
         ]
       },
-      "status": "reject",
+      "status": "candidate",
       "tags": [
         "intraday",
         "reversal",
@@ -5892,30 +6409,59 @@
       "display_name": "Intraday reversal, 6-bar lookback",
       "evaluation": {
         "admission_direction": "long",
-        "admission_report": "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
-        "cost_adjusted_top_minus_bottom_label": -0.0015149729987071,
-        "coverage": 0.9998531335862502,
-        "directional_ic_hit_rate": 0.5166901064837405,
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.00035105400258280035,
+        "coverage": 1.0,
+        "directional_ic_hit_rate": 0.5442685134630305,
         "factor_evaluation": "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "failed_checks": [
-          "abs_rank_ic_t_stat",
-          "directional_ic_hit_rate",
           "cost_adjusted_spread"
         ],
-        "sample_count": 103480212,
-        "spearman_rank_ic_mean": 0.0010068564027907,
-        "spearman_rank_ic_t_stat": 1.5187426426159578,
+        "sample_count": 102974156,
+        "spearman_rank_ic_mean": 0.007113938772616224,
+        "spearman_rank_ic_t_stat": 10.709160934783823,
         "stable_year_count": 2,
-        "timestamp_count": 34841,
-        "top_minus_bottom_label": -0.0008740627271944,
-        "top_n_turnover": 0.4930079011636259,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": 0.00029489600173213213,
+        "top_n_turnover": 0.4968846187037942,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.0073689092308366014,
-          "2024": -0.010295799060992572,
-          "2025": 0.00595117086974684
+          "2023": 0.01458744752793824,
+          "2024": -0.0040744159940774545,
+          "2025": 0.010859989542168413
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "watchlist",
+        "current_standard_registry_action": "status_updated_to_watchlist",
+        "current_standard_admission_by_feature": {
+          "intraday_reversal_5m_lb6": {
+            "admission_status": "watchlist",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": 0.007113938772616224,
+            "spearman_rank_ic_t_stat": 10.709160934783823,
+            "directional_ic_hit_rate": 0.5442685134630305,
+            "stable_year_count": 2,
+            "cost_adjusted_top_minus_bottom_label": -0.00035105400258280035,
+            "top_minus_bottom_label": 0.00029489600173213213,
+            "top_n_turnover": 0.4968846187037942,
+            "coverage": 1.0,
+            "timestamp_count": 34799,
+            "sample_count": 102974156,
+            "failed_checks": [
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_reversal_5m_lb6": [
+            "cost_adjusted_spread"
+          ]
         }
       },
       "expected_direction": "long",
@@ -5948,7 +6494,9 @@
         "docs/validation/factor_development_standard.md",
         "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -5961,7 +6509,9 @@
           "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
           "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
           "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "2023-2025 standard admission classified this factor as reject in long direction. rank IC=0.001007, t-stat=1.52, hit rate=0.517, coverage=1.000, cost-adjusted spread=-0.001515, top-N turnover=0.493. Failed checks: abs_rank_ic_t_stat, directional_ic_hit_rate, cost_adjusted_spread. Yearly rank IC means: {'2023': 0.0073689092308366014, '2024': -0.010295799060992572, '2025': 0.00595117086974684}.",
         "retry_conditions": "Retry only after a materially different reversal transform, horizon, or state gate clears statistical, stability, and cost-adjusted admission gates.",
@@ -5969,7 +6519,7 @@
           "intraday_cross_sectional_reversal_5m_lb6"
         ]
       },
-      "status": "reject",
+      "status": "watchlist",
       "tags": [
         "intraday",
         "reversal",
@@ -5990,30 +6540,59 @@
       "display_name": "Cross-sectional intraday reversal, 6-bar lookback",
       "evaluation": {
         "admission_direction": "long",
-        "admission_report": "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
-        "cost_adjusted_top_minus_bottom_label": -0.0015149729987071,
-        "coverage": 0.9998531335862502,
-        "directional_ic_hit_rate": 0.5166901064837405,
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.00035105400258280035,
+        "coverage": 1.0,
+        "directional_ic_hit_rate": 0.5442685134630305,
         "factor_evaluation": "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "failed_checks": [
-          "abs_rank_ic_t_stat",
-          "directional_ic_hit_rate",
           "cost_adjusted_spread"
         ],
-        "sample_count": 103480212,
-        "spearman_rank_ic_mean": 0.0010068564027907,
-        "spearman_rank_ic_t_stat": 1.5187426426159578,
+        "sample_count": 102974156,
+        "spearman_rank_ic_mean": 0.007113938772616224,
+        "spearman_rank_ic_t_stat": 10.709160934783823,
         "stable_year_count": 2,
-        "timestamp_count": 34841,
-        "top_minus_bottom_label": -0.0008740627271944,
-        "top_n_turnover": 0.4930079011636259,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": 0.00029489600173213213,
+        "top_n_turnover": 0.4968846187037942,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.0073689092308366014,
-          "2024": -0.010295799060992572,
-          "2025": 0.00595117086974684
+          "2023": 0.01458744752793824,
+          "2024": -0.0040744159940774545,
+          "2025": 0.010859989542168413
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "watchlist",
+        "current_standard_registry_action": "status_updated_to_watchlist",
+        "current_standard_admission_by_feature": {
+          "intraday_cross_sectional_reversal_5m_lb6": {
+            "admission_status": "watchlist",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": 0.007113938772616224,
+            "spearman_rank_ic_t_stat": 10.709160934783823,
+            "directional_ic_hit_rate": 0.5442685134630305,
+            "stable_year_count": 2,
+            "cost_adjusted_top_minus_bottom_label": -0.00035105400258280035,
+            "top_minus_bottom_label": 0.00029489600173213213,
+            "top_n_turnover": 0.4968846187037942,
+            "coverage": 1.0,
+            "timestamp_count": 34799,
+            "sample_count": 102974156,
+            "failed_checks": [
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_cross_sectional_reversal_5m_lb6": [
+            "cost_adjusted_spread"
+          ]
         }
       },
       "expected_direction": "long",
@@ -6046,7 +6625,9 @@
         "docs/validation/factor_development_standard.md",
         "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -6059,7 +6640,9 @@
           "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
           "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
           "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "2023-2025 standard admission classified this factor as reject in long direction. rank IC=0.001007, t-stat=1.52, hit rate=0.517, coverage=1.000, cost-adjusted spread=-0.001515, top-N turnover=0.493. Failed checks: abs_rank_ic_t_stat, directional_ic_hit_rate, cost_adjusted_spread. Its timestamp-wise rank metrics are identical to the raw reversal alias because subtracting a timestamp cross-sectional median does not change cross-sectional ordering. Yearly rank IC means: {'2023': 0.0073689092308366014, '2024': -0.010295799060992572, '2025': 0.00595117086974684}.",
         "retry_conditions": "Do not rerun the same median-demeaned rank factor as standalone alpha; retry only as an absolute-score residual, regime feature, or model input that benefits from market demeaning despite unchanged cross-sectional ranks.",
@@ -6067,7 +6650,7 @@
           "intraday_reversal_5m_lb6"
         ]
       },
-      "status": "reject",
+      "status": "watchlist",
       "tags": [
         "intraday",
         "reversal",
@@ -6196,29 +6779,53 @@
       "display_name": "End-of-day tilted intraday reversal, 6-bar lookback",
       "evaluation": {
         "admission_direction": "long",
-        "admission_report": "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
-        "cost_adjusted_top_minus_bottom_label": -0.000933683116315,
-        "coverage": 0.1247789129048541,
-        "directional_ic_hit_rate": 0.5552238805970149,
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "cost_adjusted_top_minus_bottom_label": 0.0007503774521437126,
+        "coverage": 0.12466825171162364,
+        "directional_ic_hit_rate": 0.6056564727523569,
         "factor_evaluation": "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
-        "failed_checks": [
-          "coverage",
-          "cost_adjusted_spread"
-        ],
-        "sample_count": 12914045,
-        "spearman_rank_ic_mean": 0.0098209219815574,
-        "spearman_rank_ic_t_stat": 6.540612173775041,
+        "failed_checks": [],
+        "sample_count": 12837608,
+        "spearman_rank_ic_mean": 0.018790835461198887,
+        "spearman_rank_ic_t_stat": 12.4919583107574,
         "stable_year_count": 3,
-        "timestamp_count": 4355,
-        "top_minus_bottom_label": -0.0002188667236315,
-        "top_n_turnover": 0.5498587636026858,
+        "timestamp_count": 4349,
+        "top_minus_bottom_label": 0.0014760806749584588,
+        "top_n_turnover": 0.5582332483190354,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.011864300469218296,
-          "2024": 0.0016442435736242927,
-          "2025": 0.015958448848708028
+          "2023": 0.023679485414825778,
+          "2024": 0.01059532840719989,
+          "2025": 0.02212018653594875
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "candidate",
+        "current_standard_registry_action": "status_updated_to_candidate_event_overlay",
+        "current_standard_admission_by_feature": {
+          "intraday_eod_reversal_5m_lb6_tail6": {
+            "admission_status": "candidate",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "event_overlay",
+            "spearman_rank_ic_mean": 0.018790835461198887,
+            "spearman_rank_ic_t_stat": 12.4919583107574,
+            "directional_ic_hit_rate": 0.6056564727523569,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.0007503774521437126,
+            "top_minus_bottom_label": 0.0014760806749584588,
+            "top_n_turnover": 0.5582332483190354,
+            "coverage": 0.12466825171162364,
+            "timestamp_count": 4349,
+            "sample_count": 12837608,
+            "failed_checks": []
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_eod_reversal_5m_lb6_tail6": []
         }
       },
       "expected_direction": "long",
@@ -6254,7 +6861,9 @@
         "docs/validation/factor_development_standard.md",
         "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -6275,7 +6884,7 @@
           "intraday_reversal_5m_lb24"
         ]
       },
-      "status": "reject",
+      "status": "candidate",
       "tags": [
         "intraday",
         "reversal",
@@ -6597,29 +7206,53 @@
       "display_name": "End-of-day tilted intraday reversal, 12-bar lookback",
       "evaluation": {
         "admission_direction": "long",
-        "admission_report": "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
-        "cost_adjusted_top_minus_bottom_label": -0.0002188097525709,
-        "coverage": 0.1247789129048541,
-        "directional_ic_hit_rate": 0.5545350172215844,
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
+        "cost_adjusted_top_minus_bottom_label": 0.0013429722416246498,
+        "coverage": 0.12466825171162364,
+        "directional_ic_hit_rate": 0.5851919981604967,
         "factor_evaluation": "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
-        "failed_checks": [
-          "coverage",
-          "cost_adjusted_spread"
-        ],
-        "sample_count": 12914045,
-        "spearman_rank_ic_mean": 0.0126794161875873,
-        "spearman_rank_ic_t_stat": 7.206149698089703,
+        "failed_checks": [],
+        "sample_count": 12837608,
+        "spearman_rank_ic_mean": 0.019258801081775013,
+        "spearman_rank_ic_t_stat": 10.922808858141325,
         "stable_year_count": 3,
-        "timestamp_count": 4355,
-        "top_minus_bottom_label": 0.000370533613949,
-        "top_n_turnover": 0.4533410511692521,
+        "timestamp_count": 4349,
+        "top_minus_bottom_label": 0.001942388888969885,
+        "top_n_turnover": 0.4610897287271041,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.012605365407568877,
-          "2024": 0.0005564011867613028,
-          "2025": 0.024884887940713685
+          "2023": 0.022424081228340286,
+          "2024": 0.005920226924326245,
+          "2025": 0.029452195006435405
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "candidate",
+        "current_standard_registry_action": "status_updated_to_candidate_event_overlay",
+        "current_standard_admission_by_feature": {
+          "intraday_eod_reversal_5m_lb12_tail6": {
+            "admission_status": "candidate",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "event_overlay",
+            "spearman_rank_ic_mean": 0.019258801081775013,
+            "spearman_rank_ic_t_stat": 10.922808858141325,
+            "directional_ic_hit_rate": 0.5851919981604967,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": 0.0013429722416246498,
+            "top_minus_bottom_label": 0.001942388888969885,
+            "top_n_turnover": 0.4610897287271041,
+            "coverage": 0.12466825171162364,
+            "timestamp_count": 4349,
+            "sample_count": 12837608,
+            "failed_checks": []
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_eod_reversal_5m_lb12_tail6": []
         }
       },
       "expected_direction": "long",
@@ -6655,7 +7288,9 @@
         "docs/validation/factor_development_standard.md",
         "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -6676,7 +7311,7 @@
           "intraday_reversal_5m_lb24"
         ]
       },
-      "status": "reject",
+      "status": "candidate",
       "tags": [
         "intraday",
         "reversal",
@@ -6998,21 +7633,19 @@
       "display_name": "End-of-day tilted intraday reversal, 24-bar lookback",
       "evaluation": {
         "admission_direction": "long",
-        "admission_report": "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "candidate",
         "compact_core_reference_full_base_return": 0.4292401077056083,
         "compact_core_reference_full_high_cost_return": 0.363893231384443,
         "compact_core_reference_full_turnover": 111.60013892176768,
         "compact_core_reference_method": "decorrelated",
         "compact_core_reference_validation": "runs/candidate_factor_portfolios/compact_core_legacy_revalidation_2026_05_20_standard/validation_summary.json",
         "compact_core_reference_year_2024_return": -0.0596178913241112,
-        "cost_adjusted_top_minus_bottom_label": 0.0011562772998235,
-        "coverage": 0.1247789129048541,
-        "directional_ic_hit_rate": 0.5340987370838117,
+        "cost_adjusted_top_minus_bottom_label": 0.002313006983642512,
+        "coverage": 0.12466825171162364,
+        "directional_ic_hit_rate": 0.55484019314785,
         "factor_evaluation": "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
-        "failed_checks": [
-          "coverage"
-        ],
+        "failed_checks": [],
         "portfolio_overlay_48bar_sampled_validation": "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_overlay_2026_05_25_standard/validation_summary.json",
         "portfolio_overlay_best_full_base_return": 0.25234792576051546,
         "portfolio_overlay_best_full_high_cost_return": 0.1542424981535233,
@@ -7025,19 +7658,46 @@
         "portfolio_overlay_satellite_score": "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_satellite_2026_05_25/summary.json",
         "portfolio_overlay_sparse_tail_validation": "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_sparse_overlay_2026_05_25_standard/validation_summary.json",
         "portfolio_overlay_tail_schedule": "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_satellite_2026_05_25/eod_tail_condition_schedule.csv",
-        "sample_count": 12914045,
-        "spearman_rank_ic_mean": 0.0108709402018665,
-        "spearman_rank_ic_t_stat": 5.411670418104221,
+        "sample_count": 12837608,
+        "spearman_rank_ic_mean": 0.014941962134514923,
+        "spearman_rank_ic_t_stat": 7.430867153655258,
         "stable_year_count": 2,
-        "timestamp_count": 4355,
-        "top_minus_bottom_label": 0.0016376475244126,
-        "top_n_turnover": 0.370284788145404,
+        "timestamp_count": 4349,
+        "top_minus_bottom_label": 0.002801485073139382,
+        "top_n_turnover": 0.37575237653605376,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.0091341782508628,
-          "2024": -0.005175526325844299,
-          "2025": 0.028666424523777927
+          "2023": 0.014265200706016196,
+          "2024": -0.0012937023481451215,
+          "2025": 0.03186324528712109
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "candidate",
+        "current_standard_registry_action": "status_updated_to_candidate_event_overlay_requires_portfolio_retest",
+        "current_standard_admission_by_feature": {
+          "intraday_eod_reversal_5m_lb24_tail6": {
+            "admission_status": "candidate",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "event_overlay",
+            "spearman_rank_ic_mean": 0.014941962134514923,
+            "spearman_rank_ic_t_stat": 7.430867153655258,
+            "directional_ic_hit_rate": 0.55484019314785,
+            "stable_year_count": 2,
+            "cost_adjusted_top_minus_bottom_label": 0.002313006983642512,
+            "top_minus_bottom_label": 0.002801485073139382,
+            "top_n_turnover": 0.37575237653605376,
+            "coverage": 0.12466825171162364,
+            "timestamp_count": 4349,
+            "sample_count": 12837608,
+            "failed_checks": []
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_eod_reversal_5m_lb24_tail6": []
         }
       },
       "expected_direction": "long",
@@ -7075,7 +7735,9 @@
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
         "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_satellite_2026_05_25/summary.json",
-        "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_close_overlay_2026_05_25_standard/validation_summary.json"
+        "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_close_overlay_2026_05_25_standard/validation_summary.json",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -7100,7 +7762,7 @@
           "intraday_reversal_5m_lb24"
         ]
       },
-      "status": "reject",
+      "status": "candidate",
       "tags": [
         "intraday",
         "reversal",
@@ -8123,8 +8785,8 @@
       "display_name": "Intraday volatility state change s12_l48",
       "evaluation": {
         "admission_direction": "long",
-        "admission_report": "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "candidate",
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
         "candidate_portfolio_best_method": "equal",
         "candidate_portfolio_best_policy": "partial_rebalance_daily",
         "candidate_portfolio_best_total_return": -0.05022502656898831,
@@ -8136,28 +8798,61 @@
         "compact_core_overlay_control_return": 0.4292401077056083,
         "compact_core_overlay_decision": "negative_incremental_return",
         "compact_core_overlay_validation": "runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_compact_core_overlay_quick/validation_summary.json",
-        "cost_adjusted_top_minus_bottom_label": 0.00032855984115616216,
-        "coverage": 0.9992593219042579,
+        "cost_adjusted_top_minus_bottom_label": -0.0003114978413695324,
+        "coverage": 0.9999982325662373,
         "dataset": "research_store/time_series_decomposition_2026_05_25_alpha_dataset",
-        "directional_ic_hit_rate": 0.5294405011638266,
+        "directional_ic_hit_rate": 0.523721946032932,
         "directional_top_minus_bottom_label": 0.0006019424030754441,
         "factor_evaluation": "research_store/time_series_decomposition_2026_05_25_factor_evaluation/summary.json",
-        "failed_checks": [],
+        "failed_checks": [
+          "cost_adjusted_spread"
+        ],
         "registry_decision_reason": "portfolio_negative",
         "registry_decision_status": "watchlist",
-        "sample_count": 103351590,
-        "spearman_rank_ic_mean": 0.007431690548335663,
-        "spearman_rank_ic_t_stat": 14.853219790204902,
+        "sample_count": 102973974,
+        "spearman_rank_ic_mean": 0.006169140012493546,
+        "spearman_rank_ic_t_stat": 12.435938643518764,
         "stable_year_count": 3,
         "timestamp_count": 34799,
-        "top_minus_bottom_label": 0.0006019424030754441,
-        "top_n_turnover": 0.21029427839944764,
+        "top_minus_bottom_label": -3.6163203967697176e-05,
+        "top_n_turnover": 0.21179587492448865,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": 0.005144215024310195,
-          "2024": 0.007319671592051647,
-          "2025": 0.009821938422474422
+          "2023": 0.004301575615429661,
+          "2024": 0.0054964230016676975,
+          "2025": 0.008701922254679348
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "watchlist",
+        "current_standard_registry_action": "keep_watchlist_current_standard_admission_watchlist",
+        "current_standard_admission_by_feature": {
+          "intraday_volatility_state_change_5m_s12_l48": {
+            "admission_status": "watchlist",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": 0.006169140012493546,
+            "spearman_rank_ic_t_stat": 12.435938643518764,
+            "directional_ic_hit_rate": 0.523721946032932,
+            "stable_year_count": 3,
+            "cost_adjusted_top_minus_bottom_label": -0.0003114978413695324,
+            "top_minus_bottom_label": -3.6163203967697176e-05,
+            "top_n_turnover": 0.21179587492448865,
+            "coverage": 0.9999982325662373,
+            "timestamp_count": 34799,
+            "sample_count": 102973974,
+            "failed_checks": [
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_volatility_state_change_5m_s12_l48": [
+            "cost_adjusted_spread"
+          ]
         }
       },
       "expected_direction": "long",
@@ -8197,7 +8892,9 @@
         "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
         "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv",
         "runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_standard/summary.json",
-        "runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_compact_core_overlay_quick/validation_summary.json"
+        "runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_compact_core_overlay_quick/validation_summary.json",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -8212,7 +8909,9 @@
           "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
           "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv",
           "runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_standard/summary.json",
-          "runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_compact_core_overlay_quick/validation_summary.json"
+          "runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_compact_core_overlay_quick/validation_summary.json",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "2023-2025 standard admission classified this feature as candidate in long direction. rank IC=0.007432, t-stat=14.85, hit rate=0.529, coverage=0.999, cost-adjusted spread=0.000329, top-N turnover=0.210, stable years=3/3. Yearly rank IC means: {'2023': 0.005144215024310195, '2024': 0.007319671592051647, '2025': 0.009821938422474422}. The 7-feature standalone candidate portfolio was negative: best tested method/policy equal/partial_rebalance_daily returned -5.02%, while equal/partial returned -5.02%. A compact-core overlay quick check also failed to add value: the 0% control returned 42.92%, but the best positive overlay (tsd_equal_w05) returned 35.86%.",
         "retry_conditions": "Retry only as a constrained risk-control or tie-breaker overlay against existing core names, and require positive incremental return versus the compact-core 0% control.",
@@ -9099,32 +9798,69 @@
       "display_name": "Intraday volume U-shape proxy w24",
       "evaluation": {
         "admission_direction": "long",
-        "admission_report": "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "watchlist",
-        "cost_adjusted_top_minus_bottom_label": -0.0019359223560362344,
-        "coverage": 0.9999987237522858,
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "reject",
+        "cost_adjusted_top_minus_bottom_label": -0.0019464973153290222,
+        "coverage": 0.9999986210132181,
         "dataset": "research_store/time_series_decomposition_2026_05_25_alpha_dataset",
-        "directional_ic_hit_rate": 0.5242648747989892,
+        "directional_ic_hit_rate": 0.5119687347337567,
         "directional_top_minus_bottom_label": -0.0007635680959465483,
         "factor_evaluation": "research_store/time_series_decomposition_2026_05_25_factor_evaluation/summary.json",
         "failed_checks": [
+          "abs_rank_ic_mean",
+          "directional_ic_hit_rate",
           "cost_adjusted_spread"
         ],
         "registry_decision_reason": "cost_fragile",
         "registry_decision_status": "watchlist",
-        "sample_count": 103428065,
-        "spearman_rank_ic_mean": 0.0017022045739196045,
-        "spearman_rank_ic_t_stat": 6.667125294171006,
+        "sample_count": 102974014,
+        "spearman_rank_ic_mean": 0.0006446461938990023,
+        "spearman_rank_ic_t_stat": 2.531390583038702,
         "stable_year_count": 2,
-        "timestamp_count": 34824,
-        "top_minus_bottom_label": -0.0007635680959465483,
-        "top_n_turnover": 0.9018109692997586,
+        "timestamp_count": 34799,
+        "top_minus_bottom_label": -0.000774215406402865,
+        "top_n_turnover": 0.9017553145585824,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": -0.0014526611286304046,
-          "2024": 0.003021145859849898,
-          "2025": 0.003532039796674315
+          "2023": -0.002373283098224407,
+          "2024": 0.001921955878140448,
+          "2025": 0.002372943805533523
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "reject",
+        "current_standard_registry_action": "status_updated_to_reject",
+        "current_standard_admission_by_feature": {
+          "intraday_volume_u_shape_5m_w24": {
+            "admission_status": "reject",
+            "expected_direction": "long",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": 0.0006446461938990023,
+            "spearman_rank_ic_t_stat": 2.531390583038702,
+            "directional_ic_hit_rate": 0.5119687347337567,
+            "stable_year_count": 2,
+            "cost_adjusted_top_minus_bottom_label": -0.0019464973153290222,
+            "top_minus_bottom_label": -0.000774215406402865,
+            "top_n_turnover": 0.9017553145585824,
+            "coverage": 0.9999986210132181,
+            "timestamp_count": 34799,
+            "sample_count": 102974014,
+            "failed_checks": [
+              "abs_rank_ic_mean",
+              "directional_ic_hit_rate",
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_volume_u_shape_5m_w24": [
+            "abs_rank_ic_mean",
+            "directional_ic_hit_rate",
+            "cost_adjusted_spread"
+          ]
         }
       },
       "expected_direction": "long",
@@ -9159,7 +9895,9 @@
         "docs/validation/factor_admission.md",
         "research_store/time_series_decomposition_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -9172,7 +9910,9 @@
           "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
           "research_store/time_series_decomposition_2026_05_25_factor_evaluation/summary.json",
           "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
-          "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv"
+          "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "2023-2025 standard admission classified this feature as watchlist in long direction. rank IC=0.001702, t-stat=6.67, hit rate=0.524, coverage=1.000, cost-adjusted spread=-0.001936, top-N turnover=0.902, stable years=2/3. Failed checks: ['cost_adjusted_spread']. Yearly rank IC means: {'2023': -0.0014526611286304046, '2024': 0.003021145859849898, '2025': 0.003532039796674315}. The feature is statistically visible but not robust after the 13 bps cost proxy in standalone admission.",
         "retry_conditions": "Retry only with materially lower turnover, wider rebalance spacing, or a portfolio policy that uses the feature as a filter rather than a full ranking leg.",
@@ -9181,7 +9921,7 @@
           "intraday_volume_u_shape_5m_w96"
         ]
       },
-      "status": "watchlist",
+      "status": "reject",
       "tags": [
         "intraday",
         "time_series_decomposition",
@@ -9525,35 +10265,63 @@
       "display_name": "Intraday microstructure recovery acceleration s24_l96",
       "evaluation": {
         "admission_direction": "invert",
-        "admission_report": "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
-        "admission_status": "reject",
-        "cost_adjusted_top_minus_bottom_label": -0.0018191557242612081,
-        "coverage": 0.9964197577571617,
+        "admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "admission_status": "watchlist",
+        "cost_adjusted_top_minus_bottom_label": -0.0010502834730936686,
+        "coverage": 0.9973346127741023,
         "dataset": "research_store/time_series_decomposition_2026_05_25_alpha_dataset",
-        "directional_ic_hit_rate": 0.5174527351730885,
+        "directional_ic_hit_rate": 0.5289631953037323,
         "directional_top_minus_bottom_label": -0.0012776030236994914,
         "factor_evaluation": "research_store/time_series_decomposition_2026_05_25_factor_evaluation/summary.json",
         "failed_checks": [
-          "abs_rank_ic_mean",
-          "abs_rank_ic_t_stat",
-          "directional_ic_hit_rate",
           "cost_adjusted_spread"
         ],
         "registry_decision_reason": "weak_ic",
         "registry_decision_status": "reject",
-        "sample_count": 103057899,
-        "spearman_rank_ic_mean": -0.0008496070197231938,
-        "spearman_rank_ic_t_stat": -1.430579322009171,
+        "sample_count": 102699690,
+        "spearman_rank_ic_mean": -0.00394742709613445,
+        "spearman_rank_ic_t_stat": -6.657803325208788,
         "stable_year_count": 2,
         "timestamp_count": 34751,
-        "top_minus_bottom_label": 0.0012776030236994914,
-        "top_n_turnover": 0.41657900043208984,
+        "top_minus_bottom_label": 0.0005079159086402623,
+        "top_n_turnover": 0.41720581881031255,
         "validation_review": "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
         "year_count": 3,
         "yearly_spearman_rank_ic_mean": {
-          "2023": -0.006344369637711628,
-          "2024": 0.0076355279631977885,
-          "2025": -0.0038856520134712257
+          "2023": -0.010054210936129716,
+          "2024": 0.004548910465218518,
+          "2025": -0.006387660180588226
+        },
+        "current_standard_admission_report": "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "current_standard_benchmark_summary": "runs/framework_v1_acceptance/standard/benchmark_summary.json",
+        "current_standard_registry_audit": "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "current_standard_admission_status": "watchlist",
+        "current_standard_registry_action": "status_updated_to_watchlist",
+        "current_standard_admission_by_feature": {
+          "intraday_microstructure_recovery_acceleration_5m_s24_l96": {
+            "admission_status": "watchlist",
+            "expected_direction": "invert",
+            "direction_source": "registry_expected_direction",
+            "evaluation_role": "alpha_rank",
+            "spearman_rank_ic_mean": -0.00394742709613445,
+            "spearman_rank_ic_t_stat": -6.657803325208788,
+            "directional_ic_hit_rate": 0.5289631953037323,
+            "stable_year_count": 2,
+            "cost_adjusted_top_minus_bottom_label": -0.0010502834730936686,
+            "top_minus_bottom_label": 0.0005079159086402623,
+            "top_n_turnover": 0.41720581881031255,
+            "coverage": 0.9973346127741023,
+            "timestamp_count": 34751,
+            "sample_count": 102699690,
+            "failed_checks": [
+              "cost_adjusted_spread"
+            ]
+          }
+        },
+        "current_standard_failed_checks_by_feature": {
+          "intraday_microstructure_recovery_acceleration_5m_s24_l96": [
+            "cost_adjusted_spread"
+          ]
         }
       },
       "expected_direction": "invert",
@@ -9591,7 +10359,9 @@
         "docs/validation/factor_admission.md",
         "research_store/time_series_decomposition_2026_05_25_factor_evaluation/summary.json",
         "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
-        "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv"
+        "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv",
+        "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
       ],
       "required_inputs": [
         "instrument_id",
@@ -9605,7 +10375,9 @@
           "docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md",
           "research_store/time_series_decomposition_2026_05_25_factor_evaluation/summary.json",
           "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_report.json",
-          "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv"
+          "runs/factor_research/time_series_decomposition_2026_05_25/factor_admission/factor_admission_table.csv",
+          "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
         ],
         "negative_findings": "2023-2025 standard admission classified this feature as reject in invert direction. rank IC=-0.000850, t-stat=-1.43, hit rate=0.517, coverage=0.996, cost-adjusted spread=-0.001819, top-N turnover=0.417, stable years=2/3. Failed checks: ['abs_rank_ic_mean', 'abs_rank_ic_t_stat', 'directional_ic_hit_rate', 'cost_adjusted_spread']. Yearly rank IC means: {'2023': -0.006344369637711628, '2024': 0.0076355279631977885, '2025': -0.0038856520134712257}.",
         "retry_conditions": "Retry only after a materially different transform; do not resubmit the same raw window.",
@@ -9615,7 +10387,7 @@
           "intraday_microstructure_recovery_speed_5m_w48"
         ]
       },
-      "status": "reject",
+      "status": "watchlist",
       "tags": [
         "intraday",
         "time_series_decomposition",
@@ -9972,10 +10744,12 @@
     "docs/strategy/factor_research_batch_2026_05_27_microstructure_exhaustion.md",
     "docs/strategy/factor_research_batch_2026_05_27_lottery_max.md",
     "docs/strategy/factor_research_batch_2026_05_28_order_flow_toxicity.md",
-    "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md"
+    "docs/strategy/factor_research_batch_2026_05_29_intraday_quality.md",
+    "docs/validation/framework_v1_benchmark_replacement_2026_05_31.md",
+    "docs/validation/factor_registry_admission_audit_2026_05_31.md"
   ],
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
-  "updated_at": "2026-05-29",
-  "version": 64
+  "updated_at": "2026-05-31",
+  "version": 65
 }
