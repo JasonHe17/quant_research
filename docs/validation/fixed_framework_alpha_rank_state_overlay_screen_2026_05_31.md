@@ -22,6 +22,8 @@ label horizon before rolling.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l96_2026_05_31_standard/validation_summary.json`
 - Monthly comparison to repaired benchmark:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l96_2026_05_31_standard/monthly_comparison_to_repaired.csv`
+- Robustness follow-up:
+  `docs/validation/fixed_framework_alpha_rank_state_overlay_robustness_2026_06_01.md`
 
 ## Construction
 
@@ -112,20 +114,21 @@ some profitable rebound and 2025 exposure.
 
 ## Decision
 
-Promote `state budget min90 l96` to the current state-aware alpha-rank frontier
-candidate. It is stronger than the simple drawdown brake and improves the
-repaired benchmark on full-window return, high-cost return, and full/high-cost
-drawdown.
+This first screen promoted `state budget min90 l96` to the state-aware
+alpha-rank frontier candidate. The 2026-06-01 robustness follow-up supersedes
+that exact parameter choice with `state budget min90 l120`, which improves the
+full-window and high-cost result while preserving positive yearly slices.
 
-Do not replace the production/default benchmark yet. This candidate still needs
-robustness work because it was selected from a small grid after observing the
-fixed 2023-2025 window.
+Do not replace the production/default benchmark from this first screen alone.
+The robustness follow-up addresses local parameter stability, but benchmark
+replacement still needs a separate default-change review because the overlay is
+selected on the fixed 2023-2025 validation window.
 
 ## Next Test
 
-1. Run a robustness check around `budget_min90_l96`: nearby lookbacks, floors,
-   ceilings, and min scales should not invert the result.
-2. Attribute the state overlay schedule by month to confirm it is not simply
+1. Attribute the `budget_min90_l120` state overlay schedule by month to confirm
+   it is not simply
    adding turnover or overfitting January and June 2024.
-3. If the robustness check holds, make this the new research benchmark and keep
-   the repaired no-overlay benchmark as the control.
+2. Use `budget_min90_l120` as the frontier comparison for incremental
+   alpha-rank factor tests, and keep the repaired no-overlay benchmark as the
+   control.

@@ -23,6 +23,8 @@ the fixed-framework priority revalidation.
   `docs/validation/fixed_framework_alpha_rank_drawdown_overlay_screen_2026_05_31.md`
 - State overlay screen:
   `docs/validation/fixed_framework_alpha_rank_state_overlay_screen_2026_05_31.md`
+- State overlay robustness:
+  `docs/validation/fixed_framework_alpha_rank_state_overlay_robustness_2026_06_01.md`
 
 All runs use:
 
@@ -53,6 +55,7 @@ schedule for `intraday_overnight_gap_5m` plus a row contribution cap.
 | alpha-only v66 | 20 | warn | 27.00% | 21.19% | -4.59% | -29.52% | 73.61 | superseded by repaired research benchmark |
 | alpha + EOD lb1 v66 | 21 | warn | 25.91% | 20.08% | -4.63% | -28.71% | 73.90 | do not use as default baseline |
 | overnight-gap gate + contribution cap25 | 20 | pass | 27.97% | 22.15% | 0.90% | -31.70% | 73.23 | current alpha-rank research benchmark |
+| state budget min90 l120 | 20 | pass | 30.32% | 24.39% | 0.86% | -29.87% | 71.02 | current state-aware frontier candidate |
 
 ## Readout
 
@@ -112,19 +115,22 @@ alpha baseline.
 
 ## Decision
 
-Use the repaired alpha-rank run as the current research benchmark for
+Use the repaired alpha-rank run as the no-overlay control benchmark for
 alpha-rank portfolio iteration:
 
 `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/validation_summary.json`
 
+Use `state budget min90 l120` as the current state-aware frontier candidate:
+
+`runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l120_2026_06_01_standard/validation_summary.json`
+
 Keep the alpha-only v66 run as the naive/control comparison for attribution and
-ablation work, but do not use it as the frontier benchmark after the 2024 repair
-screen. Replacement of the accepted framework benchmark should still be handled
-through a separate default-change review.
+ablation work. Replacement of the accepted framework benchmark should still be
+handled through a separate default-change review.
 
 ## Next Steps
 
-1. Run robustness checks around the state-aware `budget_min90_l96` overlay
-   before replacing the current research benchmark.
-2. Use the repaired benchmark and the state-aware overlay candidate as frontier
-   comparisons for the next incremental alpha-rank factor tests.
+1. Attribute the state-aware `budget_min90_l120` exposure schedule by month and
+   state bucket.
+2. Use the repaired benchmark and `budget_min90_l120` state-aware overlay as
+   frontier comparisons for the next incremental alpha-rank factor tests.
