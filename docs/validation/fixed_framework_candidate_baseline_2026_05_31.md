@@ -21,6 +21,8 @@ the fixed-framework priority revalidation.
   `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_2025_degradation_attribution_2026_05_31.md`
 - Drawdown overlay screen:
   `docs/validation/fixed_framework_alpha_rank_drawdown_overlay_screen_2026_05_31.md`
+- State overlay screen:
+  `docs/validation/fixed_framework_alpha_rank_state_overlay_screen_2026_05_31.md`
 
 All runs use:
 
@@ -122,8 +124,7 @@ through a separate default-change review.
 
 ## Next Steps
 
-1. Test a state-aware overlay based on lagged realized basket quality or
-   factor-state evidence; the simple drawdown brake passed validation but gave
-   up too much return for too little drawdown improvement.
-2. Use the repaired benchmark, not alpha-only v66 or alpha+EOD, as the frontier
-   comparison for the next incremental alpha-rank factor tests.
+1. Run robustness checks around the state-aware `budget_min90_l96` overlay
+   before replacing the current research benchmark.
+2. Use the repaired benchmark and the state-aware overlay candidate as frontier
+   comparisons for the next incremental alpha-rank factor tests.

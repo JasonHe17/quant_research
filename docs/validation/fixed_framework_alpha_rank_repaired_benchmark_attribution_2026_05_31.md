@@ -30,6 +30,8 @@ improved, and why the full-window max drawdown still worsened.
   `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_2025_degradation_attribution_2026_05_31.md`
 - Drawdown overlay screen:
   `docs/validation/fixed_framework_alpha_rank_drawdown_overlay_screen_2026_05_31.md`
+- State overlay screen:
+  `docs/validation/fixed_framework_alpha_rank_state_overlay_screen_2026_05_31.md`
 
 All comparisons use `decorrelated`, `partial_rebalance_daily`, the fixed
 standard dataset, and `factor_health_mode=off`. The promoted benchmark uses an
@@ -142,9 +144,8 @@ framework. The max drawdown tradeoff remains an explicit open item.
 
 ## Next Tests
 
-1. Test a state-aware overlay based on lagged realized basket quality or
-   factor-state evidence; the simple drawdown brake passed validation but did
-   not offer enough drawdown improvement for its return cost.
+1. Run robustness checks around the state-aware `budget_min90_l96` overlay
+   before replacing the current research benchmark.
 2. Explore a weak-tape state rule only if it uses an observable state distinct
    from the overnight health gate and can beat the promoted benchmark after
    costs.
