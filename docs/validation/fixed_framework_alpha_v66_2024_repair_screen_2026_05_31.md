@@ -41,6 +41,8 @@ of the alpha-only v66 candidate baseline.
   `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_attribution_2026_05_31.md`
 - Promoted benchmark 2025 degradation attribution:
   `docs/validation/fixed_framework_alpha_rank_repaired_benchmark_2025_degradation_attribution_2026_05_31.md`
+- Drawdown overlay screen:
+  `docs/validation/fixed_framework_alpha_rank_drawdown_overlay_screen_2026_05_31.md`
 - Conservative top-score-loss gate screen:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_top_score_loss_gate_conservative_2024_screen/validation_summary.json`
 - Targeted gap/tape factor scale schedule:
@@ -228,6 +230,8 @@ portfolio work. The next tests should focus on whether the full-base drawdown
 increase is acceptable or can be reduced without giving back the repaired 2024
 slice:
 
-1. test a small drawdown-control overlay only against this promoted variant;
+1. test a state-aware overlay against this promoted variant; the simple
+   drawdown brake is only an optional risk-version reference, not a replacement
+   benchmark;
 2. require future factor additions to beat both the old alpha-only v66 baseline
    and this promoted research benchmark after costs.
