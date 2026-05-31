@@ -55,12 +55,18 @@ Top-level status was intentionally not changed for:
 
 - `intraday_amihud_5m`: current single-factor admission is watchlist, but
   prior portfolio validation was strongly positive, so it remains candidate
-  pending portfolio revalidation under the fixed framework.
+  pending portfolio revalidation under the fixed framework. This follow-up is
+  now recorded in
+  `docs/validation/fixed_framework_priority_revalidation_2026_05_31.md`; it
+  remains candidate with a 2024 stability warning.
 - `intraday_sell_pressure_recovery_5m_w48`: current single-factor admission is
   reject, but prior legacy revalidation was positive enough to keep it as
-  watchlist pending horizon or policy review.
+  watchlist pending horizon or policy review. The fixed-framework retest failed
+  portfolio validation, so the registry now downgrades it to reject.
 - `intraday_daily_moving_average_state_5m`: current per-feature admission is
-  mixed and the entry has separate promoted-challenger portfolio evidence.
+  mixed and the entry has separate promoted-challenger portfolio evidence. The
+  fixed-framework retest was weak and unstable, so the registry now keeps it on
+  watchlist pending incremental portfolio review.
 - `intraday_liquidity_reliability_recovery_balance_5m`: current l48 feature is
   candidate, but l96 is missing from current admission and prior integration
   validation was dilutive, so the combined registry entry remains watchlist.

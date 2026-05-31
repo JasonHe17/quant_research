@@ -1294,7 +1294,25 @@
           "2023": 0.019918725303717452,
           "2024": 0.01450872839851103,
           "2025": 0.0206061390374012
-        }
+        },
+        "fixed_framework_revalidation": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_amihud_5m/validation_summary.json",
+        "fixed_framework_revalidation_summary": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "fixed_framework_revalidation_review": "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "fixed_framework_revalidation_status": "completed",
+        "fixed_framework_revalidation_validation_status": "warn",
+        "fixed_framework_revalidation_failed_count": 0,
+        "fixed_framework_revalidation_warning_count": 1,
+        "fixed_framework_revalidation_negative_years": [
+          "year_2024_base"
+        ],
+        "fixed_framework_revalidation_method": "decorrelated",
+        "fixed_framework_revalidation_policy": "partial_rebalance_daily",
+        "fixed_framework_revalidation_full_base_return": 0.543923289226496,
+        "fixed_framework_revalidation_full_high_cost_return": 0.4760399960275634,
+        "fixed_framework_revalidation_mean_gross_turnover": 71.94734727343136,
+        "fixed_framework_revalidation_worst_return": -0.0179414306314744,
+        "fixed_framework_revalidation_worst_drawdown": -0.3407231507945921,
+        "fixed_framework_registry_action": "keep_candidate_fixed_framework_portfolio_confirmed_with_2024_warning"
       },
       "expected_direction": "long",
       "factor_id": "intraday_amihud_5m",
@@ -1323,7 +1341,10 @@
         "docs/validation/legacy_factor_revalidation_2026_05_20.md",
         "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
         "runs/legacy_factor_revalidation/current/factors/intraday_amihud_5m/validation_summary.json",
-        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_amihud_5m/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -1337,8 +1358,12 @@
         "seed",
         "current_candidate",
         "intraday",
-        "legacy_revalidation_confirmed"
-      ]
+        "legacy_revalidation_confirmed",
+        "candidate",
+        "fixed_framework_revalidation_2026_05_31",
+        "fixed_framework_warn"
+      ],
+      "notes": "2026-05-31 fixed-framework priority revalidation remains strong: full-base return 54.39%, high-cost return 47.60%, but 2024 yearly slice is negative, so keep candidate with stability monitoring."
     },
     {
       "a_share_constraints": {
@@ -3422,7 +3447,26 @@
           "2023": -0.02958157381166855,
           "2024": -0.0012663068764326324,
           "2025": -0.033001656396175846
-        }
+        },
+        "fixed_framework_revalidation": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json",
+        "fixed_framework_revalidation_summary": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "fixed_framework_revalidation_review": "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "fixed_framework_revalidation_status": "completed",
+        "fixed_framework_revalidation_validation_status": "fail",
+        "fixed_framework_revalidation_failed_count": 2,
+        "fixed_framework_revalidation_warning_count": 1,
+        "fixed_framework_revalidation_negative_years": [
+          "year_2023_base",
+          "year_2024_base"
+        ],
+        "fixed_framework_revalidation_method": "decorrelated",
+        "fixed_framework_revalidation_policy": "partial_rebalance_daily",
+        "fixed_framework_revalidation_full_base_return": -0.0129283556113741,
+        "fixed_framework_revalidation_full_high_cost_return": -0.0500230216689198,
+        "fixed_framework_revalidation_mean_gross_turnover": 67.2637823474457,
+        "fixed_framework_revalidation_worst_return": -0.1427895347371546,
+        "fixed_framework_revalidation_worst_drawdown": -0.4286411754832652,
+        "fixed_framework_registry_action": "downgrade_to_reject_fixed_framework_portfolio_fail"
       },
       "expected_direction": "long",
       "factor_id": "intraday_sell_pressure_recovery_5m_w48",
@@ -3447,7 +3491,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 48,
-      "notes": "This was explicitly designed as a long-only top-bucket quality signal after the downside-turnover-decay diagnosis. It is not a raw VWAP deviation, reversal transform, sell-pressure absorption ratio, or downside turnover decay. The research-memory check matched the rejected VWAP-deviation factor, but that rejection allows retry with a liquidity-conditioned recovery hypothesis; this factor qualified by using rolling positive-return recovery over downside-return damage and confirming recovery with upside turnover participation. The standard admission run put the factor on watchlist: direction flipped to invert, cost-adjusted spread was -16.56 bps, and the long-only top-bucket health check failed because the highest quantile had negative average forward labels in 2023 and 2024.",
+      "notes": "This was explicitly designed as a long-only top-bucket quality signal after the downside-turnover-decay diagnosis. It is not a raw VWAP deviation, reversal transform, sell-pressure absorption ratio, or downside turnover decay. The research-memory check matched the rejected VWAP-deviation factor, but that rejection allows retry with a liquidity-conditioned recovery hypothesis; this factor qualified by using rolling positive-return recovery over downside-return damage and confirming recovery with upside turnover participation. The standard admission run put the factor on watchlist: direction flipped to invert, cost-adjusted spread was -16.56 bps, and the long-only top-bucket health check failed because the highest quantile had negative average forward labels in 2023 and 2024. 2026-05-31 fixed-framework priority revalidation failed: full-base return -1.29%, high-cost return -5.00%, and 2023/2024 yearly slices are negative. Remove from active watchlist.",
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_development_standard.md",
@@ -3459,7 +3503,10 @@
         "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
         "runs/legacy_factor_revalidation/current/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json",
         "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -3468,32 +3515,37 @@
         "turnover"
       ],
       "research_memory": {
-        "decision_reason": "cost_fragile",
+        "decision_reason": "portfolio_negative",
         "evidence_artifacts": [
           "runs/factor_research_memory/intraday_sell_pressure_recovery_5m_w48/factor_research_memory_check.json",
           "runs/framework_v1_acceptance/factor_batch_2026_05_17_sell_pressure_recovery/factor_admission/factor_admission_report.json",
           "docs/strategy/factor_research_batch_2026_05_17_sell_pressure_recovery.md",
           "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-          "docs/validation/factor_registry_admission_audit_2026_05_31.md"
+          "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+          "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_sell_pressure_recovery_5m_w48/validation_summary.json"
         ],
-        "negative_findings": "The recovery transform did not behave as a long-only quality signal. Admission selected the inverted direction, cost-adjusted spread was negative, and the highest quantile had negative average forward labels in 2023 and 2024. Strong apparent sell-pressure recovery likely marks short-horizon exhaustion or overextension rather than a robust next-day long entry.",
-        "retry_conditions": "Retry only with a materially different recovery definition that separates early rebound from late overextension, or after adding an explicit pullback/entry-price condition. Do not rerun this plain recovery ratio as a standalone long-only factor.",
+        "negative_findings": "Fixed-framework priority revalidation failed portfolio validation: full-base return -1.29%, high-cost return -5.00%, and both 2023 and 2024 yearly slices were negative. Current standard admission is also reject because directional IC hit rate and stable-year checks failed.",
+        "retry_conditions": "Retry only with a materially different recovery definition, horizon, or conditional regime filter that produces positive full-base and high-cost returns with no repeated yearly losses under the fixed framework.",
         "similar_to": [
           "intraday_downside_turnover_decay_5m_w48",
           "intraday_vwap_deviation_5m_w48",
           "intraday_sell_pressure_absorption_5m_w48"
         ]
       },
-      "status": "watchlist",
+      "status": "reject",
       "tags": [
         "batch_2026_05_17_sell_pressure_recovery",
-        "watchlist",
         "intraday",
         "liquidity",
         "sell_pressure",
         "recovery",
         "long_only_quality",
-        "policy_review"
+        "policy_review",
+        "reject",
+        "fixed_framework_revalidation_2026_05_31",
+        "fixed_framework_fail"
       ]
     },
     {
@@ -3754,7 +3806,26 @@
             "coverage"
           ],
           "intraday_daily_ma_ribbon_trend_score_5m": []
-        }
+        },
+        "fixed_framework_revalidation": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_daily_moving_average_state_5m/validation_summary.json",
+        "fixed_framework_revalidation_summary": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "fixed_framework_revalidation_review": "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "fixed_framework_revalidation_status": "completed",
+        "fixed_framework_revalidation_validation_status": "warn",
+        "fixed_framework_revalidation_failed_count": 0,
+        "fixed_framework_revalidation_warning_count": 1,
+        "fixed_framework_revalidation_negative_years": [
+          "year_2023_base",
+          "year_2024_base"
+        ],
+        "fixed_framework_revalidation_method": "decorrelated",
+        "fixed_framework_revalidation_policy": "partial_rebalance_daily",
+        "fixed_framework_revalidation_full_base_return": 0.0907903577136339,
+        "fixed_framework_revalidation_full_high_cost_return": 0.045461547537785,
+        "fixed_framework_revalidation_mean_gross_turnover": 71.13692560759728,
+        "fixed_framework_revalidation_worst_return": -0.0745416052888747,
+        "fixed_framework_revalidation_worst_drawdown": -0.4010963958432257,
+        "fixed_framework_registry_action": "downgrade_to_watchlist_fixed_framework_weak_and_unstable"
       },
       "expected_direction": "mixed",
       "factor_id": "intraday_daily_moving_average_state_5m",
@@ -3801,7 +3872,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 960,
-      "notes": "The implementation deliberately shifts daily moving-average features by one completed trading session before merging back to 5-minute bars. Deviation and spread columns express trend/anchor state; slope columns express trend change; ribbon position, dispersion, and trend score summarize cross-window alignment. The research-memory check matched the rejected intraday_range_position_5m_w48 factor, but this candidate is materially different: it uses completed daily moving-average anchors and cross-window MA ribbon geometry, not a 5-minute rolling high-low range location. Admission must evaluate the generated columns individually before any portfolio-level use. Formal promoted-candidate review on 2026-05-19 accepted the fixed high_dispersion_current ribbon-dispersion gross-exposure gate as the leading promoted challenger while keeping score_budget_gate_v1 as the active primary baseline. Evidence: standard validation improved full return from 14.38% to 20.75%, high-cost return from 9.43% to 16.18%, max drawdown from -19.16% to -16.13%, and turnover from 124.78 to 101.86. Walk-forward fixed challenger sum return was 21.22% versus v1 16.91% with 4/4 positive forward windows, but the dynamic train-window selector was rejected. Promotion checks passed monthly concentration, cost stress, and factor attribution gates. Do not add month-specific patches or switch the default strategy without a separate default-change review.",
+      "notes": "The implementation deliberately shifts daily moving-average features by one completed trading session before merging back to 5-minute bars. Deviation and spread columns express trend/anchor state; slope columns express trend change; ribbon position, dispersion, and trend score summarize cross-window alignment. The research-memory check matched the rejected intraday_range_position_5m_w48 factor, but this candidate is materially different: it uses completed daily moving-average anchors and cross-window MA ribbon geometry, not a 5-minute rolling high-low range location. Admission must evaluate the generated columns individually before any portfolio-level use. Formal promoted-candidate review on 2026-05-19 accepted the fixed high_dispersion_current ribbon-dispersion gross-exposure gate as the leading promoted challenger while keeping score_budget_gate_v1 as the active primary baseline. Evidence: standard validation improved full return from 14.38% to 20.75%, high-cost return from 9.43% to 16.18%, max drawdown from -19.16% to -16.13%, and turnover from 124.78 to 101.86. Walk-forward fixed challenger sum return was 21.22% versus v1 16.91% with 4/4 positive forward windows, but the dynamic train-window selector was rejected. Promotion checks passed monthly concentration, cost stress, and factor attribution gates. Do not add month-specific patches or switch the default strategy without a separate default-change review. 2026-05-31 fixed-framework priority revalidation is positive but weak: full-base return 9.08%, high-cost return 4.55%, with negative 2023 and 2024 slices. Downgrade to watchlist pending incremental portfolio retest.",
       "point_in_time_safe": true,
       "references": [
         "docs/validation/factor_development_standard.md",
@@ -3818,18 +3889,29 @@
         "runs/legacy_factor_revalidation/current/legacy_factor_revalidation_summary.json",
         "runs/legacy_factor_revalidation/current/factors/intraday_daily_moving_average_state_5m/validation_summary.json",
         "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_daily_moving_average_state_5m/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
         "bar_end_time",
         "close_price"
       ],
-      "research_memory": {},
-      "status": "candidate",
+      "research_memory": {
+        "decision_reason": "unstable_years",
+        "negative_findings": "Fixed-framework priority revalidation was only weakly positive and unstable: full-base return 9.08%, high-cost return 4.55%, and yearly returns were negative in 2023 and 2024. This no longer supports treating the daily moving-average state package as a promoted challenger without incremental portfolio evidence.",
+        "retry_conditions": "Retry only as an incremental overlay or gated state package that improves the current benchmark portfolio after costs and removes the 2023/2024 instability.",
+        "evidence_artifacts": [
+          "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_daily_moving_average_state_5m/validation_summary.json"
+        ]
+      },
+      "status": "watchlist",
       "tags": [
         "batch_2026_05_19_daily_ma",
-        "candidate",
         "intraday",
         "daily",
         "moving_average",
@@ -3838,7 +3920,10 @@
         "promoted_challenger",
         "risk_gate",
         "review_passed",
-        "separate_data_review_required"
+        "separate_data_review_required",
+        "watchlist",
+        "fixed_framework_revalidation_2026_05_31",
+        "fixed_framework_warn"
       ]
     },
     {
@@ -6327,7 +6412,26 @@
         },
         "current_standard_failed_checks_by_feature": {
           "intraday_eod_reversal_5m_lb1_tail6": []
-        }
+        },
+        "fixed_framework_revalidation": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb1_tail6/validation_summary.json",
+        "fixed_framework_revalidation_summary": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "fixed_framework_revalidation_review": "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "fixed_framework_revalidation_status": "completed",
+        "fixed_framework_revalidation_validation_status": "warn",
+        "fixed_framework_revalidation_failed_count": 0,
+        "fixed_framework_revalidation_warning_count": 1,
+        "fixed_framework_revalidation_negative_years": [
+          "year_2023_base",
+          "year_2024_base"
+        ],
+        "fixed_framework_revalidation_method": "decorrelated",
+        "fixed_framework_revalidation_policy": "partial_rebalance_daily",
+        "fixed_framework_revalidation_full_base_return": 0.2070735542329358,
+        "fixed_framework_revalidation_full_high_cost_return": 0.1981592982018005,
+        "fixed_framework_revalidation_mean_gross_turnover": 12.750900385032516,
+        "fixed_framework_revalidation_worst_return": -0.0802191126900729,
+        "fixed_framework_revalidation_worst_drawdown": -0.3384578008305222,
+        "fixed_framework_registry_action": "keep_candidate_event_overlay_fixed_framework_warn"
       },
       "expected_direction": "long",
       "evaluation_role": "event_overlay",
@@ -6355,7 +6459,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 1,
-      "notes": "2026-05-25 full 2023-2025 admission complete; see validation_review and admission_report for details.",
+      "notes": "2026-05-25 full 2023-2025 admission complete; see validation_review and admission_report for details. 2026-05-31 fixed-framework priority revalidation supports this as the strongest EOD tail overlay: full-base return 20.71%, high-cost return 19.82%, but 2023/2024 yearly slices are negative.",
       "point_in_time_safe": true,
       "references": [
         "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
@@ -6364,7 +6468,10 @@
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
         "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb1_tail6/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -6392,10 +6499,12 @@
         "eod",
         "tail30",
         "batch_2026_05_25_cross_sectional_reversal",
-        "reject",
         "standard_admission_2026_05_25",
         "negative_validation",
-        "tail_overlay_candidate"
+        "tail_overlay_candidate",
+        "candidate",
+        "fixed_framework_revalidation_2026_05_31",
+        "fixed_framework_warn"
       ]
     },
     {
@@ -6826,7 +6935,26 @@
         },
         "current_standard_failed_checks_by_feature": {
           "intraday_eod_reversal_5m_lb6_tail6": []
-        }
+        },
+        "fixed_framework_revalidation": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb6_tail6/validation_summary.json",
+        "fixed_framework_revalidation_summary": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "fixed_framework_revalidation_review": "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "fixed_framework_revalidation_status": "completed",
+        "fixed_framework_revalidation_validation_status": "warn",
+        "fixed_framework_revalidation_failed_count": 0,
+        "fixed_framework_revalidation_warning_count": 1,
+        "fixed_framework_revalidation_negative_years": [
+          "year_2023_base",
+          "year_2024_base"
+        ],
+        "fixed_framework_revalidation_method": "decorrelated",
+        "fixed_framework_revalidation_policy": "partial_rebalance_daily",
+        "fixed_framework_revalidation_full_base_return": 0.0076513028991114,
+        "fixed_framework_revalidation_full_high_cost_return": 0.0018260224095802,
+        "fixed_framework_revalidation_mean_gross_turnover": 12.473199948490258,
+        "fixed_framework_revalidation_worst_return": -0.159680238725775,
+        "fixed_framework_revalidation_worst_drawdown": -0.3803861917820458,
+        "fixed_framework_registry_action": "downgrade_to_watchlist_fixed_framework_weak_edge"
       },
       "expected_direction": "long",
       "evaluation_role": "event_overlay",
@@ -6854,7 +6982,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 6,
-      "notes": "2026-05-25 full 2023-2025 admission complete; see validation_review and admission_report for details.",
+      "notes": "2026-05-25 full 2023-2025 admission complete; see validation_review and admission_report for details. 2026-05-31 fixed-framework priority revalidation is too weak for candidate status: full-base return 0.77%, high-cost return 0.18%, mean scenario return negative, and 2023/2024 slices are negative.",
       "point_in_time_safe": true,
       "references": [
         "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
@@ -6863,7 +6991,10 @@
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
         "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb6_tail6/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -6871,30 +7002,35 @@
         "close_price"
       ],
       "research_memory": {
-        "decision_reason": "data_quality",
+        "decision_reason": "unstable_years",
         "evidence_artifacts": [
           "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
           "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
           "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+          "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb6_tail6/validation_summary.json"
         ],
-        "negative_findings": "2023-2025 standard admission classified this factor as reject in long direction. rank IC=0.009821, t-stat=6.54, hit rate=0.555, coverage=0.125, cost-adjusted spread=-0.000934, top-N turnover=0.550. Failed checks: coverage, cost_adjusted_spread. The low coverage is structural for the tail-only design, so this should be retested only as a tail overlay rather than a full-coverage standalone factor. Yearly rank IC means: {'2023': 0.011864300469218296, '2024': 0.0016442435736242927, '2025': 0.015958448848708028}.",
-        "retry_conditions": "Retry only as an explicit end-of-day tail overlay or portfolio policy with tail-signal coverage handled separately, and require positive after-cost spread plus incremental portfolio contribution.",
+        "negative_findings": "Fixed-framework priority revalidation produced near-zero edge despite positive admission: full-base return 0.77%, high-cost return 0.18%, mean scenario return -1.78%, and negative yearly returns in 2023 and 2024.",
+        "retry_conditions": "Retry only if combined with an event gate or policy that materially raises high-cost full-period return and fixes repeated yearly losses.",
         "similar_to": [
           "intraday_reversal_5m_lb24"
         ]
       },
-      "status": "candidate",
+      "status": "watchlist",
       "tags": [
         "intraday",
         "reversal",
         "eod",
         "tail30",
         "batch_2026_05_25_cross_sectional_reversal",
-        "reject",
         "standard_admission_2026_05_25",
         "negative_validation",
-        "tail_overlay_candidate"
+        "tail_overlay_candidate",
+        "watchlist",
+        "fixed_framework_revalidation_2026_05_31",
+        "fixed_framework_warn"
       ]
     },
     {
@@ -7253,7 +7389,26 @@
         },
         "current_standard_failed_checks_by_feature": {
           "intraday_eod_reversal_5m_lb12_tail6": []
-        }
+        },
+        "fixed_framework_revalidation": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb12_tail6/validation_summary.json",
+        "fixed_framework_revalidation_summary": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "fixed_framework_revalidation_review": "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "fixed_framework_revalidation_status": "completed",
+        "fixed_framework_revalidation_validation_status": "warn",
+        "fixed_framework_revalidation_failed_count": 0,
+        "fixed_framework_revalidation_warning_count": 1,
+        "fixed_framework_revalidation_negative_years": [
+          "year_2023_base",
+          "year_2024_base"
+        ],
+        "fixed_framework_revalidation_method": "decorrelated",
+        "fixed_framework_revalidation_policy": "partial_rebalance_daily",
+        "fixed_framework_revalidation_full_base_return": 0.0816767978330506,
+        "fixed_framework_revalidation_full_high_cost_return": 0.0739293233795519,
+        "fixed_framework_revalidation_mean_gross_turnover": 12.307437345490943,
+        "fixed_framework_revalidation_worst_return": -0.1132143855732122,
+        "fixed_framework_revalidation_worst_drawdown": -0.3668788315941631,
+        "fixed_framework_registry_action": "downgrade_to_watchlist_fixed_framework_unstable"
       },
       "expected_direction": "long",
       "evaluation_role": "event_overlay",
@@ -7281,7 +7436,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 12,
-      "notes": "2026-05-25 full 2023-2025 admission complete; see validation_review and admission_report for details.",
+      "notes": "2026-05-25 full 2023-2025 admission complete; see validation_review and admission_report for details. 2026-05-31 fixed-framework priority revalidation is positive but unstable: full-base return 8.17%, high-cost return 7.39%, with negative 2023/2024 slices. Keep as watchlist until incremental overlay validation.",
       "point_in_time_safe": true,
       "references": [
         "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
@@ -7290,7 +7445,10 @@
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
         "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
         "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb12_tail6/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -7298,30 +7456,35 @@
         "close_price"
       ],
       "research_memory": {
-        "decision_reason": "data_quality",
+        "decision_reason": "unstable_years",
         "evidence_artifacts": [
           "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
           "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
           "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_report.json",
-          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv"
+          "runs/factor_research/reversal_batch_2026_05_25/factor_admission/factor_admission_table.csv",
+          "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb12_tail6/validation_summary.json"
         ],
-        "negative_findings": "2023-2025 standard admission classified this factor as reject in long direction. rank IC=0.012679, t-stat=7.21, hit rate=0.555, coverage=0.125, cost-adjusted spread=-0.000219, top-N turnover=0.453. Failed checks: coverage, cost_adjusted_spread. The low coverage is structural for the tail-only design, so this should be retested only as a tail overlay rather than a full-coverage standalone factor. Yearly rank IC means: {'2023': 0.012605365407568877, '2024': 0.0005564011867613028, '2025': 0.024884887940713685}.",
-        "retry_conditions": "Retry only as an explicit end-of-day tail overlay or portfolio policy with tail-signal coverage handled separately, and require positive after-cost spread plus incremental portfolio contribution.",
+        "negative_findings": "Fixed-framework priority revalidation was positive in full-window tests but unstable across years: full-base return 8.17%, high-cost return 7.39%, with negative yearly returns in 2023 and 2024.",
+        "retry_conditions": "Retry only as an incremental EOD overlay that improves the selected portfolio after costs and demonstrates year-slice stability.",
         "similar_to": [
           "intraday_reversal_5m_lb24"
         ]
       },
-      "status": "candidate",
+      "status": "watchlist",
       "tags": [
         "intraday",
         "reversal",
         "eod",
         "tail30",
         "batch_2026_05_25_cross_sectional_reversal",
-        "reject",
         "standard_admission_2026_05_25",
         "negative_validation",
-        "tail_overlay_candidate"
+        "tail_overlay_candidate",
+        "watchlist",
+        "fixed_framework_revalidation_2026_05_31",
+        "fixed_framework_warn"
       ]
     },
     {
@@ -7698,7 +7861,26 @@
         },
         "current_standard_failed_checks_by_feature": {
           "intraday_eod_reversal_5m_lb24_tail6": []
-        }
+        },
+        "fixed_framework_revalidation": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb24_tail6/validation_summary.json",
+        "fixed_framework_revalidation_summary": "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "fixed_framework_revalidation_review": "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "fixed_framework_revalidation_status": "completed",
+        "fixed_framework_revalidation_validation_status": "warn",
+        "fixed_framework_revalidation_failed_count": 0,
+        "fixed_framework_revalidation_warning_count": 1,
+        "fixed_framework_revalidation_negative_years": [
+          "year_2023_base",
+          "year_2024_base"
+        ],
+        "fixed_framework_revalidation_method": "decorrelated",
+        "fixed_framework_revalidation_policy": "partial_rebalance_daily",
+        "fixed_framework_revalidation_full_base_return": 0.0755109795664226,
+        "fixed_framework_revalidation_full_high_cost_return": 0.0671245873084673,
+        "fixed_framework_revalidation_mean_gross_turnover": 12.347661222952155,
+        "fixed_framework_revalidation_worst_return": -0.1426922244115178,
+        "fixed_framework_revalidation_worst_drawdown": -0.3981218396537007,
+        "fixed_framework_registry_action": "downgrade_to_watchlist_fixed_framework_unstable_prior_overlay_negative"
       },
       "expected_direction": "long",
       "evaluation_role": "event_overlay",
@@ -7726,7 +7908,7 @@
       "label_lag_bars": 48,
       "live_available": true,
       "lookback_bars": 24,
-      "notes": "2026-05-25 full 2023-2025 admission and compact-core overlay tests complete; standard admission rejected on sparse coverage and portfolio-layer tests did not clear incremental economics.",
+      "notes": "2026-05-25 full 2023-2025 admission and compact-core overlay tests complete; standard admission rejected on sparse coverage and portfolio-layer tests did not clear incremental economics. 2026-05-31 fixed-framework priority revalidation is positive but unstable: full-base return 7.55%, high-cost return 6.71%, with negative 2023/2024 slices. Prior compact-core overlay evidence was negative, so keep on watchlist.",
       "point_in_time_safe": true,
       "references": [
         "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
@@ -7737,7 +7919,10 @@
         "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_satellite_2026_05_25/summary.json",
         "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_close_overlay_2026_05_25_standard/validation_summary.json",
         "runs/framework_v1_acceptance/standard/factor_admission/factor_admission_report.json",
-        "docs/validation/factor_registry_admission_audit_2026_05_31.md"
+        "docs/validation/factor_registry_admission_audit_2026_05_31.md",
+        "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+        "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb24_tail6/validation_summary.json"
       ],
       "required_inputs": [
         "instrument_id",
@@ -7745,7 +7930,7 @@
         "close_price"
       ],
       "research_memory": {
-        "decision_reason": "portfolio_negative",
+        "decision_reason": "unstable_years",
         "evidence_artifacts": [
           "docs/strategy/factor_research_batch_2026_05_25_cross_sectional_reversal.md",
           "research_store/reversal_batch_2026_05_25_factor_evaluation/summary.json",
@@ -7754,26 +7939,31 @@
           "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_satellite_2026_05_25/summary.json",
           "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_overlay_2026_05_25_standard/validation_summary.json",
           "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_sparse_overlay_2026_05_25_standard/validation_summary.json",
-          "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_close_overlay_2026_05_25_standard/validation_summary.json"
+          "runs/candidate_factor_portfolios/eod_reversal_lb24_tail6_compact_core_close_overlay_2026_05_25_standard/validation_summary.json",
+          "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_eod_reversal_5m_lb24_tail6/validation_summary.json"
         ],
-        "negative_findings": "2023-2025 standard admission classified this factor as reject in long direction: rank IC=0.010871, t-stat=5.41, hit rate=0.534, coverage=0.125, cost-adjusted spread=0.001156, top-N turnover=0.370; failed check: coverage. A portfolio-layer overlay review was then run against the compact core. The 48-bar sampled overlay was a no-op because standard rebalance sampling missed the tail condition. The six-tail-bar sparse overlay overtraded badly: the weight-0 control returned -54.06% full-window with 602.48 turnover. The clean close-only anchored overlay worked mechanically, but its best 2% weight returned 25.23% full-base, 15.42% high-cost, and -13.03% in 2024 with 215.40 turnover, versus the compact-core reference at 42.92% full-base, 36.39% high-cost, -5.96% in 2024, and 111.60 turnover. The sparse EOD signal is therefore not promotable under the tested same-policy-family overlay designs.",
-        "retry_conditions": "Do not continue local EOD overlay weight searches under the same daily-plus-close or tail-bar rebalance policy. Retry only with a materially different allocator, such as using EOD reversal as a next-day single-rebalance tie-breaker, or move to orthogonal time-series decomposition factors with separate admission criteria.",
+        "negative_findings": "Fixed-framework priority revalidation was positive but unstable: full-base return 7.55%, high-cost return 6.71%, with negative yearly returns in 2023 and 2024. Earlier compact-core overlay validation was negative, so the factor is not eligible for candidate portfolio inclusion without a new incremental overlay test.",
+        "retry_conditions": "Retry only with a new incremental overlay design that beats the benchmark portfolio after costs and resolves the 2023/2024 losses.",
         "similar_to": [
           "intraday_reversal_5m_lb24"
         ]
       },
-      "status": "candidate",
+      "status": "watchlist",
       "tags": [
         "intraday",
         "reversal",
         "eod",
         "tail30",
         "batch_2026_05_25_cross_sectional_reversal",
-        "reject",
         "standard_admission_2026_05_25",
         "negative_validation",
         "portfolio_overlay_review_2026_05_25",
-        "overlay_negative"
+        "overlay_negative",
+        "watchlist",
+        "fixed_framework_revalidation_2026_05_31",
+        "fixed_framework_warn"
       ]
     },
     {
@@ -10751,5 +10941,5 @@
   "registry_name": "factor_development_registry",
   "scope": "Governance registry for A-share factor discovery, admission, and portfolio validation.",
   "updated_at": "2026-05-31",
-  "version": 65
+  "version": 66
 }

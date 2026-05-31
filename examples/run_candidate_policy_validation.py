@@ -558,7 +558,7 @@ def _scenario_score_reuse_source(
     args: argparse.Namespace,
     scenario: ValidationScenario,
 ) -> Path | None:
-    if scenario.name not in {"full_high_cost", "full_zero_cost"}:
+    if scenario.name == "full_base":
         return None
     return Path(args.output_dir) / "full_base"
 

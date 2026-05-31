@@ -8,6 +8,7 @@ from examples.run_legacy_factor_revalidation import (
     _collect_factor_results,
     _factor_jobs,
     _primary_label_column,
+    _recommended_action,
     _selected_factors,
     _shared_benchmark_command,
     run_legacy_factor_revalidation,
@@ -172,6 +173,34 @@ def test_legacy_factor_revalidation_skips_admission_filtered_jobs(
     alpha_a = next(row for row in results if row["factor_id"] == "alpha_a")
     assert alpha_a["new_admission_status"] == "reject"
     assert alpha_a["validation_status"] == "admission_filtered"
+
+
+def test_legacy_factor_revalidation_recommendation_flags_weak_warn_candidate() -> None:
+    action = _recommended_action(
+        legacy_status="candidate",
+        new_status="candidate",
+        best_policy={
+            "full_base_return": 0.007,
+            "full_high_cost_return": 0.001,
+        },
+        validation={"overall_status": "warn"},
+    )
+
+    assert action == "weak_or_unstable_candidate_review"
+
+
+def test_legacy_factor_revalidation_recommendation_confirms_strong_warn_candidate() -> None:
+    action = _recommended_action(
+        legacy_status="candidate",
+        new_status="candidate",
+        best_policy={
+            "full_base_return": 0.20,
+            "full_high_cost_return": 0.19,
+        },
+        validation={"overall_status": "warn"},
+    )
+
+    assert action == "confirmed_with_stability_warning"
 
 
 def _registry_path(tmp_path: Path) -> Path:

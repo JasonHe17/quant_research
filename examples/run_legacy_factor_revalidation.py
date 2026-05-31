@@ -410,6 +410,7 @@ def _collect_factor_results(
                     legacy_status=entry.status,
                     new_status=new_status,
                     best_policy=best_policy,
+                    validation=payload.get("validation", {}),
                 ),
                 "validation_summary": str(job.summary_path),
             }
@@ -445,15 +446,35 @@ def _recommended_action(
     legacy_status: str,
     new_status: str,
     best_policy: dict[str, Any],
+    validation: dict[str, Any] | None = None,
 ) -> str:
     full_return = _number(best_policy.get("full_base_return"))
     high_cost_return = _number(best_policy.get("full_high_cost_return"))
-    if new_status == "candidate" and full_return is not None and full_return > 0:
+    validation_status = str((validation or {}).get("overall_status") or "")
+    strong_full = full_return is not None and full_return >= 0.10
+    strong_high_cost = high_cost_return is not None and high_cost_return >= 0.05
+    positive_full = full_return is not None and full_return > 0
+    positive_high_cost = high_cost_return is not None and high_cost_return > 0
+    if validation_status == "fail":
+        if high_cost_return is not None and high_cost_return <= 0:
+            return "cost_fragile_review"
+        return "portfolio_failure_review"
+    if new_status == "candidate" and positive_full and positive_high_cost:
+        if validation_status == "warn" and not (strong_full and strong_high_cost):
+            return "weak_or_unstable_candidate_review"
+        if validation_status == "warn":
+            if legacy_status in {"candidate", "promoted"}:
+                return "confirmed_with_stability_warning"
+            return "upgrade_to_candidate_with_stability_warning"
         if legacy_status in {"candidate", "promoted"}:
             return "confirmed"
         return "upgrade_to_candidate"
     if new_status == "candidate":
         return "policy_dependent_review"
+    if new_status == "watchlist" and positive_full and positive_high_cost:
+        if strong_full and strong_high_cost:
+            return "portfolio_confirmed_admission_watchlist"
+        return "horizon_or_policy_review"
     if new_status == "watchlist":
         return "horizon_or_policy_review"
     if high_cost_return is not None and high_cost_return <= 0:

@@ -29,10 +29,13 @@ practice:
 
 Latest legacy-factor revalidation:
 
+- `docs/validation/fixed_framework_priority_revalidation_2026_05_31.md`
+  records the priority retest after the framework-v1 leakage and governance
+  fixes. Use it as the current source for the retested priority factors before
+  using older legacy validation decisions.
 - `docs/validation/legacy_factor_revalidation_2026_05_20.md` records the first
-  full revalidation run under factor-health monitor mode. Use it as the current
-  source for confirmed legacy factors, upgrade-review candidates, and
-  horizon/policy review queues before starting the next discovery batch.
+  full revalidation run under factor-health monitor mode. Use it for legacy
+  factors that have not yet been retested under the fixed framework.
 
 Reference links:
 

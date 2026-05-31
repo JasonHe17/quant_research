@@ -118,6 +118,21 @@ def test_candidate_policy_validation_reuses_full_base_scores_for_cost_scenarios(
     )
 
 
+def test_candidate_policy_validation_reuses_full_base_scores_for_yearly_scenarios(
+    tmp_path: Path,
+) -> None:
+    args = _validation_args(output_dir=str(tmp_path), methods=["equal"])
+    scenario = _validation_scenarios(args, years=[2023])[1]
+
+    command = _scenario_command(args, scenario)
+
+    assert scenario.name == "year_2023_base"
+    assert _scenario_score_reuse_source(args, scenario) == tmp_path / "full_base"
+    assert command[command.index("--reuse-scores-from") + 1] == str(
+        tmp_path / "full_base"
+    )
+
+
 def test_candidate_policy_validation_command_supports_single_calibrated_optimizer(
     tmp_path: Path,
 ) -> None:
