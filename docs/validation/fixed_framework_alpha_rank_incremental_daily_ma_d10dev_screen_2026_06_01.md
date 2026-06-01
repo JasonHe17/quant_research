@@ -27,6 +27,8 @@ benchmark because the benchmark only used registry status `candidate`.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_single_2026_06_01_attribution/monthly_comparison.csv`
 - 2025 generalization attribution:
   `docs/validation/fixed_framework_alpha_rank_daily_ma_d10dev_2025_generalization_attribution_2026_06_01.md`
+- Lagged broad-tape state sleeve screen:
+  `docs/validation/fixed_framework_alpha_rank_d10_state_sleeve_screen_2026_06_01.md`
 
 ## Candidate Setup
 
@@ -141,7 +143,7 @@ Classify it as a high-potential interaction candidate:
 - but it materially damages the 2025 isolated yearly slice, especially under
   the state frontier.
 
-The 2025 attribution shows that the useful next test is not a broader daily-MA
-grid. It should be a coarse state-conditioned sleeve test that asks when
-daily-MA deviation improves marginal selection quality, without fitting a
-calendar-year-specific switch.
+The follow-up lagged broad-tape state sleeve screen did not pass. Do not tune
+another d10 threshold around the same state. Keep d10 documented as a
+non-promoted interaction candidate until a different general mechanism is
+available.

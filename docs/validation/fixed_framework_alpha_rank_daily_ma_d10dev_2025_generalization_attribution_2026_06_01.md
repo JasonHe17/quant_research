@@ -18,6 +18,8 @@ score stack and to the state-aware frontier.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_single_2026_06_01_attribution/generalization_diagnostics/monthly_selection_displacement_2025.csv`
 - State bucket diagnostics:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_single_2026_06_01_attribution/generalization_diagnostics/selection_state_buckets_2025.csv`
+- Follow-up state sleeve screen:
+  `docs/validation/fixed_framework_alpha_rank_d10_state_sleeve_screen_2026_06_01.md`
 
 The diagnostics use existing score and label artifacts only. No new parameter
 grid or market-period fit was run.
@@ -136,12 +138,14 @@ The acceptance condition should require:
 
 ## Decision
 
-Keep d10 as a high-potential conditional candidate, but do not promote it to the
-alpha-rank research frontier.
+Keep d10 as a high-potential interaction candidate, but do not promote it to
+the alpha-rank research frontier.
 
-The next experiment should be a coarse state-conditioned sleeve test, not a
-daily-MA parameter grid. The test should use a small number of generic
-observable tape states and should report both:
+The follow-up lagged broad-tape sleeve test did not pass. The simple
+positive-tape rule should not be tuned further. Any future d10 work should
+require a new general mechanism, not another threshold around the same state.
+
+A coarse state-conditioned sleeve test should report both:
 
 1. portfolio metrics against the no-overlay control and state-aware frontier;
 2. selection-displacement quality inside enabled and disabled states.

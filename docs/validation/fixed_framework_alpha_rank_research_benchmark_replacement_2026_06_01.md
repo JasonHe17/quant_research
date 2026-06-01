@@ -26,6 +26,8 @@ production/default framework benchmark or the active/default allocator.
   `docs/validation/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_screen_2026_06_01.md`
 - d10 2025 generalization attribution:
   `docs/validation/fixed_framework_alpha_rank_daily_ma_d10dev_2025_generalization_attribution_2026_06_01.md`
+- d10 state sleeve screen:
+  `docs/validation/fixed_framework_alpha_rank_d10_state_sleeve_screen_2026_06_01.md`
 
 ## Benchmark Stack
 
@@ -123,8 +125,9 @@ out-of-window evidence or a clearly accepted production validation protocol.
 
 ## Next Steps
 
-1. Test a coarse state-conditioned daily-MA deviation sleeve before testing a
-   broader daily-MA batch.
+1. Do not continue tuning d10 broad-tape thresholds. Reuse the score-level
+   sleeve harness for future candidates only when the lagged enabled-state
+   selection-displacement evidence is positive.
 2. For any new factor that improves only one of the two benchmark layers,
    classify the result as interaction evidence rather than immediate promotion
    evidence.
