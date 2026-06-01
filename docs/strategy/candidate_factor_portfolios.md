@@ -1,12 +1,14 @@
 # Candidate Factor Portfolio Experiments
 
-Status note, 2026-05-26: this file is a historical experiment log plus a
+Status note, 2026-06-01: this file is a historical experiment log plus a
 frontier index. It contains older "current default" decisions from optimizer,
 gate, and turnover-budget branches. For new factor promotion or framework
 compatibility work, follow
 `docs/validation/factor_development_standard.md` and use
 `examples/run_candidate_policy_validation.py` with the standard comparison set
-unless the task explicitly selects one of the historical branches below.
+unless the task explicitly selects one of the historical branches below. For
+fixed-framework alpha-rank factor work, also follow
+`docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`.
 
 Current state:
 
@@ -18,6 +20,13 @@ Current state:
 - Latest fixed-framework alpha-rank research frontier:
   `budget_min90_l120`, from
   `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`.
+- Required alpha-rank factor comparison stack: repaired no-overlay control plus
+  the `budget_min90_l120` state-aware frontier. A single full-window return
+  improvement is not promotion evidence.
+- Conditional alpha-rank candidates must use lagged observable states and
+  report enabled/disabled selection displacement. When disabled timestamps are
+  intended to be identical to the baseline, use score-level switching rather
+  than factor-weight scaling inside a recomputed factor stack.
 - Active/default allocator: unchanged. The latest frontier is not yet a live
   allocator registry entry and must not be described as the active default.
 

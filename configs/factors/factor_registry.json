@@ -3825,7 +3825,11 @@
         "fixed_framework_revalidation_mean_gross_turnover": 71.13692560759728,
         "fixed_framework_revalidation_worst_return": -0.0745416052888747,
         "fixed_framework_revalidation_worst_drawdown": -0.4010963958432257,
-        "fixed_framework_registry_action": "downgrade_to_watchlist_fixed_framework_weak_and_unstable"
+        "fixed_framework_registry_action": "downgrade_to_watchlist_fixed_framework_weak_and_unstable",
+        "fixed_framework_d10_incremental_screen": "docs/validation/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_screen_2026_06_01.md",
+        "fixed_framework_d10_generalization_attribution": "docs/validation/fixed_framework_alpha_rank_daily_ma_d10dev_2025_generalization_attribution_2026_06_01.md",
+        "fixed_framework_d10_state_sleeve_screen": "docs/validation/fixed_framework_alpha_rank_d10_state_sleeve_screen_2026_06_01.md",
+        "fixed_framework_d10_state_sleeve_status": "failed_do_not_tune_broad_tape_threshold"
       },
       "expected_direction": "mixed",
       "factor_id": "intraday_daily_moving_average_state_5m",
@@ -3901,12 +3905,15 @@
       ],
       "research_memory": {
         "decision_reason": "unstable_years",
-        "negative_findings": "Fixed-framework priority revalidation was only weakly positive and unstable: full-base return 9.08%, high-cost return 4.55%, and yearly returns were negative in 2023 and 2024. This no longer supports treating the daily moving-average state package as a promoted challenger without incremental portfolio evidence.",
-        "retry_conditions": "Retry only as an incremental overlay or gated state package that improves the current benchmark portfolio after costs and removes the 2023/2024 instability.",
+        "negative_findings": "Fixed-framework priority revalidation was only weakly positive and unstable: full-base return 9.08%, high-cost return 4.55%, and yearly returns were negative in 2023 and 2024. The follow-up d10 incremental screen improved aggregate full-window metrics but damaged isolated yearly slices, especially 2025. A no-leak lagged broad-tape score-switch sleeve then failed versus the repaired no-overlay control: full-base return 27.14% versus 27.97%, max drawdown -31.03% versus -30.77%, and enabled-state selection displacement was negative.",
+        "retry_conditions": "Do not retry d10 by tuning broad-tape thresholds or daily-MA windows. Retry daily-MA only with a materially different general mechanism whose lagged enabled-state selection-displacement is positive before portfolio validation.",
         "evidence_artifacts": [
           "docs/validation/fixed_framework_priority_revalidation_2026_05_31.md",
           "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/legacy_factor_revalidation_summary.json",
-          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_daily_moving_average_state_5m/validation_summary.json"
+          "runs/legacy_factor_revalidation/fixed_framework_priority_decorr_2026_05_31/factors/intraday_daily_moving_average_state_5m/validation_summary.json",
+          "docs/validation/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_screen_2026_06_01.md",
+          "docs/validation/fixed_framework_alpha_rank_daily_ma_d10dev_2025_generalization_attribution_2026_06_01.md",
+          "docs/validation/fixed_framework_alpha_rank_d10_state_sleeve_screen_2026_06_01.md"
         ]
       },
       "status": "watchlist",

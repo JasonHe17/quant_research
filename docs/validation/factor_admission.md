@@ -84,6 +84,24 @@ default. To intentionally test another role in the same score-construction
 runner, pass `--evaluation-roles`, but document why that role is being treated
 as a rank alpha for the experiment.
 
+## Portfolio Handoff
+
+Admission is a single-factor screen. It does not prove that a factor is
+incrementally useful in the current portfolio stack.
+
+For fixed-framework alpha-rank work, the next step after admission must use the
+two-layer benchmark from
+`docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`:
+
+- repaired no-overlay alpha-rank control;
+- `budget_min90_l120` state-aware alpha-rank frontier.
+
+The portfolio handoff must report selection displacement versus the relevant
+baseline top-N basket. For conditional candidates, use lagged observable states
+and verify enabled-state displacement before standard validation. If a disabled
+state is intended to preserve the baseline exactly, use score-level switching
+instead of factor-weight scaling inside a recomputed score stack.
+
 ## Status Semantics
 
 - `candidate`: eligible for the next research step, usually portfolio-level

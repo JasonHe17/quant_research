@@ -28,6 +28,8 @@ production/default framework benchmark or the active/default allocator.
   `docs/validation/fixed_framework_alpha_rank_daily_ma_d10dev_2025_generalization_attribution_2026_06_01.md`
 - d10 state sleeve screen:
   `docs/validation/fixed_framework_alpha_rank_d10_state_sleeve_screen_2026_06_01.md`
+- Process migration audit:
+  `docs/validation/fixed_framework_alpha_rank_process_migration_audit_2026_06_01.md`
 
 ## Benchmark Stack
 

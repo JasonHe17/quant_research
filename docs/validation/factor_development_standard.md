@@ -268,6 +268,10 @@ The validator treats missing active-factor safety metadata as a hard error.
    optimizer-native risk-penalty or cost-pressure research, compare against
    `vc_opt_risk_cp0010_w50` and state explicitly that it is a research frontier,
    not the active/default allocator.
+   For fixed-framework alpha-rank research, every incremental factor test must
+   compare against both the repaired no-overlay control and the
+   `budget_min90_l120` state-aware frontier documented in
+   `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`.
 
    ```bash
    conda run -n quant python examples/run_candidate_policy_validation.py \
@@ -297,6 +301,40 @@ The validator treats missing active-factor safety metadata as a hard error.
    unless the experiment is explicitly testing evidence-weighted sizing.
    `admission_ic` reuses single-factor admission evidence for weights and must
    be reported as a separate sizing variant.
+
+   Incremental alpha-rank factor decisions must include more than aggregate
+   portfolio return:
+
+   - full-window base-cost return and drawdown;
+   - full-window high-cost return and drawdown;
+   - calendar-year slices for every validation year;
+   - turnover and transaction-cost change;
+   - selection displacement versus the relevant baseline top-N basket.
+
+   Standalone IC and a positive full-window portfolio delta are necessary but
+   not sufficient. If the factor changes the selected basket, the review must
+   identify which names it adds, which names it removes, and whether the
+   added-minus-removed forward label is positive in the states where the factor
+   is supposed to help.
+
+   Conditional or state-dependent alpha-rank candidates have an extra no-leak
+   gate before standard validation:
+
+   - state definitions must be broad, observable, and lagged;
+   - enabled-state selection-displacement quality must be positive before a
+     full standard validation is claimed;
+   - disabled states must be checked separately and should not silently change
+     the baseline score stream;
+   - when "disabled" means "use the original baseline score", use a
+     score-level switch such as `examples/build_timestamp_score_switch.py`
+     rather than scaling a factor to zero inside a recomputed multi-factor
+     stack.
+
+   Factor-weight scale schedules remain valid for explicit alpha-transform or
+   risk-gate experiments, but they are not automatically equivalent to
+   baseline-preserving conditional sleeves. If the candidate factor is present
+   when decorrelated weights are computed, setting its runtime scale to zero can
+   still leave a different weight structure from the original baseline.
 
    LightGBM or primary-pool rerank experiments have an additional standard
    wrapper and must not be run as loose one-off commands when they are used for

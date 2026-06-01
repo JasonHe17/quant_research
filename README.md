@@ -54,6 +54,8 @@ it does not load large market data or write cache artifacts.
 - [Production Strategy Framework and Roadmap](docs/architecture/production_strategy_framework.md)
 - [Framework v1 Acceptance Plan](docs/validation/framework_v1_acceptance.md)
 - [Framework v1 Benchmark Replacement 2026-05-31](docs/validation/framework_v1_benchmark_replacement_2026_05_31.md)
+- [Alpha-Rank Research Benchmark Replacement 2026-06-01](docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md)
+- [Alpha-Rank Process Migration Audit 2026-06-01](docs/validation/fixed_framework_alpha_rank_process_migration_audit_2026_06_01.md)
 - [Factor Development Standard](docs/validation/factor_development_standard.md)
 - [Factor Admission Plan](docs/validation/factor_admission.md)
 - [Factor Registry Admission Audit 2026-05-31](docs/validation/factor_registry_admission_audit_2026_05_31.md)
@@ -151,16 +153,31 @@ conda run -n quant python examples/run_legacy_factor_revalidation.py \
   --resume-existing
 ```
 
-The current controlled combination-validation baseline is still
-`decorrelated + partial_rebalance_daily` over the standard comparison set.
-Do not treat that baseline as the latest research frontier. As of the
-2026-05-25 time-series-decomposition review, the latest portfolio-native
-frontier is the volume-concentration optimizer risk-penalty branch
-`vc_opt_risk_cp0010_w50`: path gross-turnover budget `155`, cost-pressure
-turnover cap `0.01` after `1000` bps realized transaction-cost pressure, and
-standard validation status `pass`. It is documented in
-`docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md`
-and is not yet a live/default allocator registry entry.
+The current controlled combination-validation policy is still
+`decorrelated + partial_rebalance_daily` over the standard comparison set, but
+new fixed-framework alpha-rank factor work must use the two-layer research
+benchmark documented in
+`docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`:
+
+- no-overlay alpha-rank control:
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/`
+- state-aware alpha-rank frontier:
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l120_2026_06_01_standard/`
+
+Incremental factor decisions must compare against both layers and must include
+yearly slices, high-cost stress, drawdown, and selection-displacement evidence.
+For conditional or state-dependent candidates, use a no-leak lagged state and a
+score-level switch when the disabled state should exactly preserve the baseline
+score stream. Do not use factor-weight scaling as evidence that a disabled
+factor reverts to the original baseline unless the base score weights are also
+unchanged by construction.
+
+Optimizer-native portfolio work remains a separate family. Its current
+research frontier is the volume-concentration optimizer risk-penalty branch
+`vc_opt_risk_cp0010_w50`, documented in
+`docs/strategy/factor_research_batch_2026_05_25_time_series_decomposition.md`.
+It is not the alpha-rank frontier and is not a live/default allocator registry
+entry.
 
 ## DataPortal v0
 
