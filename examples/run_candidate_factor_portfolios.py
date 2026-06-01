@@ -82,6 +82,7 @@ def main() -> None:
     args = _parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = output_dir / "summary.json"
     if args.reuse_scores_from:
         source_summary = _load_reused_score_summary(Path(args.reuse_scores_from))
         scores_summary = _reused_scores_summary(args, source_summary)
@@ -123,30 +124,59 @@ def main() -> None:
             )
             for method in args.methods
         }
-        factor_health_schedule = _build_factor_health_schedule(args, dataset_paths, candidates)
-        factor_weight_scale_schedule = _factor_weight_scale_schedule(
+        score_build_signature = _score_build_signature(
             args,
-            factor_health_schedule,
-        )
-        factor_health_path: Path | None = None
-        if factor_weight_scale_schedule is not None:
-            health_dir = output_dir / "factor_health"
-            health_dir.mkdir(parents=True, exist_ok=True)
-            factor_health_path = health_dir / "factor_health_schedule.csv"
-            factor_weight_scale_schedule.to_csv(factor_health_path, index=False)
-        scores_summary = write_score_partitions(
-            dataset_paths,
-            output_dir=output_dir / "scores",
+            dataset_paths=dataset_paths,
             candidates=candidates,
             weights_by_method=weights_by_method,
-            max_factor_weight=args.factor_max_weight,
-            max_factor_contribution_share=args.factor_max_contribution_share,
-            factor_health_schedule=factor_weight_scale_schedule,
-            diagnostics_top_n=args.score_diagnostics_top_n,
-            diagnostics_label_column=args.label_column,
-            forecast_calibration_config=_forecast_calibration_config(args),
-            score_transform=args.score_transform,
         )
+        cached_summary = (
+            _load_resumable_score_summary(
+                summary_path,
+                score_build_signature=score_build_signature,
+                methods=tuple(args.methods),
+            )
+            if args.resume_existing
+            else None
+        )
+        factor_health_path: Path | None = None
+        score_resume = {"enabled": False}
+        if cached_summary is not None:
+            scores_summary = _reused_scores_summary(args, cached_summary)
+            if cached_summary.get("factor_health_schedule"):
+                factor_health_path = Path(str(cached_summary["factor_health_schedule"]))
+            score_resume = {
+                "enabled": True,
+                "source": str(summary_path),
+            }
+        else:
+            factor_health_schedule = _build_factor_health_schedule(
+                args,
+                dataset_paths,
+                candidates,
+            )
+            factor_weight_scale_schedule = _factor_weight_scale_schedule(
+                args,
+                factor_health_schedule,
+            )
+            if factor_weight_scale_schedule is not None:
+                health_dir = output_dir / "factor_health"
+                health_dir.mkdir(parents=True, exist_ok=True)
+                factor_health_path = health_dir / "factor_health_schedule.csv"
+                factor_weight_scale_schedule.to_csv(factor_health_path, index=False)
+            scores_summary = write_score_partitions(
+                dataset_paths,
+                output_dir=output_dir / "scores",
+                candidates=candidates,
+                weights_by_method=weights_by_method,
+                max_factor_weight=args.factor_max_weight,
+                max_factor_contribution_share=args.factor_max_contribution_share,
+                factor_health_schedule=factor_weight_scale_schedule,
+                diagnostics_top_n=args.score_diagnostics_top_n,
+                diagnostics_label_column=args.label_column,
+                forecast_calibration_config=_forecast_calibration_config(args),
+                score_transform=args.score_transform,
+            )
         summary = {
             "params": _summary_params(args),
             "registry_filter": {
@@ -155,10 +185,16 @@ def main() -> None:
                 if key != "candidates"
             },
             "score_reuse": {"enabled": False},
+            "score_resume": score_resume,
+            "score_build_signature": score_build_signature,
             **scores_summary,
         }
         if factor_health_path is not None:
             summary["factor_health_schedule"] = str(factor_health_path)
+    summary_path.write_text(
+        json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     if args.run_backtests:
         backtests = _run_backtests(args, scores_summary=scores_summary)
         summary["backtests"] = backtests
@@ -167,7 +203,6 @@ def main() -> None:
             output_dir / "backtest_summary.csv",
             summary["backtest_summary"],
         )
-    summary_path = output_dir / "summary.json"
     summary_path.write_text(
         json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -238,6 +273,163 @@ def _reused_scores_summary(
     return {
         "candidate_features": candidate_features,
         "methods": methods,
+    }
+
+
+def _load_resumable_score_summary(
+    summary_path: Path,
+    *,
+    score_build_signature: dict[str, object],
+    methods: tuple[str, ...],
+) -> dict[str, object] | None:
+    if not summary_path.exists():
+        return None
+    try:
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("score_build_signature") != score_build_signature:
+        return None
+    source_methods = payload.get("methods")
+    if not isinstance(source_methods, dict):
+        return None
+    for method in methods:
+        method_payload = source_methods.get(method)
+        if not isinstance(method_payload, dict):
+            return None
+        path = method_payload.get("path")
+        if not isinstance(path, str) or not glob.glob(path):
+            return None
+    return payload
+
+
+def _score_build_signature(
+    args: argparse.Namespace,
+    *,
+    dataset_paths: list[Path],
+    candidates: tuple[CandidateFactor, ...],
+    weights_by_method: dict[str, dict[str, float]],
+) -> dict[str, object]:
+    return {
+        "version": 1,
+        "inputs": {
+            "datasets": [_file_signature(path) for path in dataset_paths],
+            "admission_report": _optional_file_signature(args.admission_report),
+            "factor_correlation": _optional_file_signature(args.factor_correlation),
+            "registry": (
+                _optional_file_signature(args.registry)
+                if args.enforce_registry
+                else None
+            ),
+            "factor_weight_scale_schedule": _optional_file_signature(
+                args.factor_weight_scale_schedule
+            ),
+            "factor_health_state_regime_schedule": _optional_file_signature(
+                args.factor_health_state_regime_schedule
+            ),
+        },
+        "params": _score_build_params(args),
+        "candidates": [
+            {
+                "feature": factor.feature,
+                "direction": factor.direction,
+                "rank_ic_mean": factor.rank_ic_mean,
+                "evaluation_role": factor.evaluation_role,
+            }
+            for factor in candidates
+        ],
+        "weights_by_method": {
+            method: {
+                feature: float(value)
+                for feature, value in sorted(weights.items())
+            }
+            for method, weights in sorted(weights_by_method.items())
+        },
+    }
+
+
+def _score_build_params(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "label_column": args.label_column,
+        "methods": list(args.methods),
+        "statuses": list(args.statuses),
+        "enforce_registry": args.enforce_registry,
+        "registry_statuses": list(args.registry_statuses),
+        "evaluation_roles": list(args.evaluation_roles),
+        "include_features": list(args.include_features),
+        "max_partitions": args.max_partitions,
+        "partition_start": args.partition_start,
+        "partition_end": args.partition_end,
+        "decorrelation_ridge": args.decorrelation_ridge,
+        "factor_max_weight": args.factor_max_weight,
+        "factor_max_contribution_share": args.factor_max_contribution_share,
+        "weight_evidence_mode": args.weight_evidence_mode,
+        "score_transform": args.score_transform,
+        "score_diagnostics_top_n": args.score_diagnostics_top_n,
+        "factor_health_mode": args.factor_health_mode,
+        "factor_health_lookback_windows": args.factor_health_lookback_windows,
+        "factor_health_ensemble_lookbacks": args.factor_health_ensemble_lookbacks,
+        "factor_health_ensemble_combine_mode": (
+            args.factor_health_ensemble_combine_mode
+        ),
+        "factor_health_min_periods": args.factor_health_min_periods,
+        "factor_health_label_lag_windows": args.factor_health_label_lag_windows,
+        "factor_health_min_scale": args.factor_health_min_scale,
+        "factor_health_max_scale": args.factor_health_max_scale,
+        "factor_health_stress_lookback_windows": (
+            args.factor_health_stress_lookback_windows
+        ),
+        "factor_health_stress_min_periods": args.factor_health_stress_min_periods,
+        "factor_health_stress_min_scale": args.factor_health_stress_min_scale,
+        "factor_health_stress_max_scale": args.factor_health_stress_max_scale,
+        "factor_health_state_regime_mode": args.factor_health_state_regime_mode,
+        "factor_health_state_regime_feature": args.factor_health_state_regime_feature,
+        "factor_health_state_regime_threshold": (
+            args.factor_health_state_regime_threshold
+        ),
+        "factor_health_rank_ic_floor": args.factor_health_rank_ic_floor,
+        "factor_health_rank_ic_ceiling": args.factor_health_rank_ic_ceiling,
+        "factor_health_spread_floor": args.factor_health_spread_floor,
+        "factor_health_spread_ceiling": args.factor_health_spread_ceiling,
+        "factor_weight_scale_combine_mode": args.factor_weight_scale_combine_mode,
+        "forecast_calibration_mode": args.forecast_calibration_mode,
+        "forecast_calibration_lookback_windows": (
+            args.forecast_calibration_lookback_windows
+        ),
+        "forecast_calibration_min_periods": args.forecast_calibration_min_periods,
+        "forecast_calibration_label_lag_windows": (
+            args.forecast_calibration_label_lag_windows
+        ),
+        "forecast_calibration_bucket_count": args.forecast_calibration_bucket_count,
+        "forecast_calibration_risk_multiplier": (
+            args.forecast_calibration_risk_multiplier
+        ),
+        "forecast_calibration_max_abs_edge_bps": (
+            args.forecast_calibration_max_abs_edge_bps
+        ),
+    }
+
+
+def _optional_file_signature(path: str | None) -> dict[str, object] | None:
+    if not path:
+        return None
+    candidate = Path(path)
+    if not candidate.exists():
+        return {
+            "path": str(candidate.resolve()),
+            "missing": True,
+        }
+    return _file_signature(candidate)
+
+
+def _file_signature(path: Path) -> dict[str, object]:
+    stat = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
     }
 
 
@@ -1562,7 +1754,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--resume-existing",
         action="store_true",
-        help="skip backtests whose summary.json already exists",
+        help=(
+            "reuse matching score artifacts in the output directory and skip "
+            "backtests whose summary.json already exists"
+        ),
     )
     parser.add_argument("--min-trade-weight", type=float, default=0.0005)
     parser.add_argument("--exclude-st", action=argparse.BooleanOptionalAction, default=True)

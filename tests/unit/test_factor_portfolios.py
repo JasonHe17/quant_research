@@ -17,9 +17,11 @@ from examples.run_candidate_factor_portfolios import (
     _default_label_lag_windows,
     _effective_backtest_memory_budget_gb,
     _factor_weight_scale_schedule,
+    _load_resumable_score_summary,
     _parse_factor_health_ensemble_lookbacks,
     _registry_filter_summary,
     _reused_scores_summary,
+    _score_build_signature,
     _summary_params,
 )
 from quant_research.portfolio import (
@@ -250,6 +252,120 @@ def test_factor_combination_weights_support_methods() -> None:
     assert ic_weighted["alpha_a"] == pytest.approx(2 / 3)
     assert equal_evidence == {"alpha_a": 0.5, "alpha_b": 0.5}
     assert sum(decorrelated.values()) == pytest.approx(1.0)
+
+
+def test_resumable_score_summary_requires_matching_signature(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    admission_path = tmp_path / "admission.json"
+    correlation_path = tmp_path / "correlation.csv"
+    registry_path = tmp_path / "registry.json"
+    score_path = tmp_path / "scores" / "equal" / "score_2024_01.parquet"
+    score_path.parent.mkdir(parents=True)
+    dataset_path.write_text("dataset", encoding="utf-8")
+    admission_path.write_text("admission", encoding="utf-8")
+    correlation_path.write_text("correlation", encoding="utf-8")
+    registry_path.write_text("registry", encoding="utf-8")
+    score_path.write_text("score", encoding="utf-8")
+    args = _score_signature_args(
+        dataset_dir=str(tmp_path),
+        admission_report=str(admission_path),
+        factor_correlation=str(correlation_path),
+        registry=str(registry_path),
+    )
+    candidates = (CandidateFactor("alpha_a", 1, 0.02),)
+    weights = {"equal": {"alpha_a": 1.0}}
+    signature = _score_build_signature(
+        args,
+        dataset_paths=[dataset_path],
+        candidates=candidates,
+        weights_by_method=weights,
+    )
+    summary_path = tmp_path / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "score_build_signature": signature,
+                "candidate_features": ["alpha_a"],
+                "methods": {
+                    "equal": {
+                        "path": str(score_path.parent / "*.parquet"),
+                        "weights": {"alpha_a": 1.0},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _load_resumable_score_summary(
+        summary_path,
+        score_build_signature=signature,
+        methods=("equal",),
+    ) is not None
+
+    changed = dict(signature)
+    changed["version"] = 2
+    assert _load_resumable_score_summary(
+        summary_path,
+        score_build_signature=changed,
+        methods=("equal",),
+    ) is None
+
+
+def _score_signature_args(**overrides: object) -> object:
+    values = {
+        "dataset_dir": "",
+        "label_column": "forward_return",
+        "admission_report": "",
+        "registry": "",
+        "enforce_registry": True,
+        "registry_statuses": ["candidate", "promoted"],
+        "evaluation_roles": ["alpha_rank"],
+        "factor_correlation": "",
+        "methods": ["equal"],
+        "statuses": ["candidate"],
+        "include_features": [],
+        "max_partitions": None,
+        "partition_start": None,
+        "partition_end": None,
+        "decorrelation_ridge": 0.05,
+        "factor_max_weight": None,
+        "factor_max_contribution_share": None,
+        "weight_evidence_mode": "equal",
+        "score_transform": "rank",
+        "factor_health_mode": "off",
+        "factor_health_lookback_windows": 20,
+        "factor_health_ensemble_lookbacks": None,
+        "factor_health_ensemble_combine_mode": "mean",
+        "factor_health_min_periods": 5,
+        "factor_health_label_lag_windows": 49,
+        "factor_health_min_scale": 0.25,
+        "factor_health_max_scale": 1.0,
+        "factor_health_stress_lookback_windows": None,
+        "factor_health_stress_min_periods": None,
+        "factor_health_stress_min_scale": None,
+        "factor_health_stress_max_scale": None,
+        "factor_health_state_regime_mode": "off",
+        "factor_health_state_regime_schedule": None,
+        "factor_health_state_regime_feature": "intraday_overnight_gap_5m",
+        "factor_health_state_regime_threshold": 0.999,
+        "factor_health_rank_ic_floor": -0.05,
+        "factor_health_rank_ic_ceiling": 0.05,
+        "factor_health_spread_floor": -0.001,
+        "factor_health_spread_ceiling": 0.001,
+        "factor_weight_scale_schedule": None,
+        "factor_weight_scale_combine_mode": "min",
+        "forecast_calibration_mode": "off",
+        "forecast_calibration_lookback_windows": 20,
+        "forecast_calibration_min_periods": 5,
+        "forecast_calibration_label_lag_windows": 49,
+        "forecast_calibration_bucket_count": 5,
+        "forecast_calibration_risk_multiplier": 1.0,
+        "forecast_calibration_max_abs_edge_bps": None,
+        "score_diagnostics_top_n": None,
+    }
+    values.update(overrides)
+    return type("Args", (), values)()
 
 
 def test_cap_factor_weights_limits_concentrated_static_weights() -> None:

@@ -51,6 +51,8 @@ class FrameworkV1BenchmarkConfig:
     dataset_worker_memory_estimate_gb: float
     dataset_memory_budget_gb: float | None
     evaluation_workers: int
+    evaluation_worker_memory_estimate_gb: float
+    evaluation_memory_budget_gb: float | None
     evaluation_backend: str
     skip_feature_correlation: bool
     correlation_sample_rows: int
@@ -222,16 +224,24 @@ def _benchmark_commands(
         "5",
         "--workers",
         str(config.evaluation_workers),
+        "--worker-memory-estimate-gb",
+        str(config.evaluation_worker_memory_estimate_gb),
         "--backend",
         config.evaluation_backend,
         "--correlation-sample-rows",
         str(config.correlation_sample_rows),
     ]
+    if config.evaluation_memory_budget_gb is not None:
+        evaluation_command.extend(
+            ["--memory-budget-gb", str(config.evaluation_memory_budget_gb)]
+        )
     horizon_labels = _horizon_label_columns(config)
     if horizon_labels:
         evaluation_command.extend(["--horizon-label-columns", *horizon_labels])
     if config.skip_feature_correlation:
         evaluation_command.append("--skip-feature-correlation")
+    if config.resume_existing:
+        evaluation_command.append("--resume-existing")
     if config.dataset_memory_budget_gb is not None:
         dataset_command.extend(["--memory-budget-gb", str(config.dataset_memory_budget_gb)])
     dataset_command.extend(
@@ -434,6 +444,8 @@ def _candidate_policy_validation_command(config: FrameworkV1BenchmarkConfig) -> 
         str(config.streaming_chunk_padding_days),
         "--backtest-workers",
         str(config.backtest_workers),
+        "--backtest-memory-budget-gb",
+        str(_candidate_policy_validation_backtest_memory_budget_gb(config)),
         "--full-backtest-memory-gb",
         str(config.candidate_policy_validation_memory_gb),
         "--yearly-backtest-memory-gb",
@@ -488,6 +500,18 @@ def _estimated_round_trip_cost_bps(config: FrameworkV1BenchmarkConfig) -> float:
         + 2.0 * config.slippage_bps
         + config.sell_stamp_tax_bps
     )
+
+
+def _candidate_policy_validation_backtest_memory_budget_gb(
+    config: FrameworkV1BenchmarkConfig,
+) -> float:
+    if config.backtest_memory_budget_gb is not None:
+        return config.backtest_memory_budget_gb
+    available = _available_memory_gb()
+    requested = config.backtest_workers * config.candidate_policy_validation_memory_gb
+    if available is None:
+        return requested
+    return min(requested, max(config.candidate_policy_validation_memory_gb, available - 4.0))
 
 
 def _years_in_window(start: str, end: str) -> list[int]:
@@ -1162,6 +1186,12 @@ def _config_from_args(args: argparse.Namespace) -> FrameworkV1BenchmarkConfig:
             else None
         ),
         evaluation_workers=args.evaluation_workers,
+        evaluation_worker_memory_estimate_gb=args.evaluation_worker_memory_estimate_gb,
+        evaluation_memory_budget_gb=(
+            args.evaluation_memory_budget_gb
+            if args.evaluation_memory_budget_gb > 0
+            else None
+        ),
         evaluation_backend=args.evaluation_backend,
         skip_feature_correlation=args.skip_feature_correlation,
         correlation_sample_rows=args.correlation_sample_rows,
@@ -1271,6 +1301,21 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--evaluation-workers", type=int, default=6)
     parser.add_argument(
+        "--evaluation-worker-memory-estimate-gb",
+        type=float,
+        default=7.0,
+        help="estimated memory footprint for each factor-evaluation worker",
+    )
+    parser.add_argument(
+        "--evaluation-memory-budget-gb",
+        type=float,
+        default=0.0,
+        help=(
+            "memory budget for concurrent factor-evaluation workers; 0 lets "
+            "the evaluator auto-detect available memory"
+        ),
+    )
+    parser.add_argument(
         "--evaluation-backend",
         choices=("process",),
         default="process",
@@ -1317,7 +1362,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--candidate-policy-validation-memory-gb",
         type=float,
-        default=5.0,
+        default=4.0,
         help="estimated memory footprint for each candidate policy validation backtest",
     )
     parser.add_argument(
@@ -1414,7 +1459,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         )
     for name in (
         "dataset_memory_budget_gb",
-        "dataset_worker_memory_estimate_gb",
+        "evaluation_memory_budget_gb",
         "backtest_memory_budget_gb",
         "full_backtest_memory_gb",
         "yearly_backtest_memory_gb",
@@ -1422,6 +1467,12 @@ def _validate_args(args: argparse.Namespace) -> None:
     ):
         if getattr(args, name) < 0:
             raise ValueError(f"--{name.replace('_', '-')} must be non-negative")
+    for name in (
+        "dataset_worker_memory_estimate_gb",
+        "evaluation_worker_memory_estimate_gb",
+    ):
+        if getattr(args, name) <= 0:
+            raise ValueError(f"--{name.replace('_', '-')} must be positive")
     if not args.candidate_policy_validation_methods:
         raise ValueError("--candidate-policy-validation-methods must be non-empty")
 

@@ -203,8 +203,8 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --policy-set-rebalance-every-n-bars 48 \
   --policy-set-partial-rebalance-rate 0.5 \
   --backtest-workers 6 \
-  --backtest-memory-budget-gb 30 \
-  --backtest-memory-estimate-gb 5 \
+  --backtest-memory-budget-gb 24 \
+  --backtest-memory-estimate-gb 4 \
   --resume-existing
 ```
 
@@ -214,9 +214,15 @@ writes a flat `backtest_summary.csv` for ranking and review. Use
 `--backtest-workers` together with `--backtest-memory-budget-gb` and
 `--backtest-memory-estimate-gb` to run independent score backtests concurrently
 without exceeding local memory. On the current research machine, the standard
-score-backtest setting is six workers with a 30 GB budget. `--resume-existing`
-skips policy runs whose `summary.json` already exists and is the default
-operational mode for long promotion-grade sweeps.
+score-backtest setting is six workers with a 24 GB budget and 4 GB per-worker
+estimate. `--resume-existing`
+first reuses matching score artifacts in the current output directory when the
+score-build signature is unchanged, then skips policy runs whose `summary.json`
+already exists. The signature covers dataset partitions, admission report,
+registry and correlation inputs, candidate list, method weights, score
+transform, health/shrink settings, forecast-calibration settings, and
+diagnostic settings. If any of these change, scores are rebuilt. This is the
+default operational mode for long promotion-grade sweeps.
 
 The standard comparison set currently covers:
 
@@ -289,8 +295,8 @@ conda run -n quant python examples/run_candidate_factor_portfolios.py \
   --policy-set-rebalance-every-n-bars 48 \
   --policy-set-partial-rebalance-rate 0.5 \
   --backtest-workers 6 \
-  --backtest-memory-budget-gb 30 \
-  --backtest-memory-estimate-gb 5 \
+  --backtest-memory-budget-gb 24 \
+  --backtest-memory-estimate-gb 4 \
   --resume-existing
 ```
 

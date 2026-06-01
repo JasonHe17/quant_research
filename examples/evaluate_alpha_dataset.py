@@ -10,6 +10,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
+import pyarrow.parquet as pq
+import pyarrow.types as pat
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -20,8 +22,6 @@ from quant_research.factors import (
     SingleFactorEvaluationResult,
     evaluate_single_factors,
 )
-from quant_research.models import infer_feature_columns
-
 
 def main() -> None:
     args = _parse_args()
@@ -44,6 +44,9 @@ def main() -> None:
         backend=args.backend,
         skip_feature_correlation=args.skip_feature_correlation,
         correlation_sample_rows=args.correlation_sample_rows or None,
+        worker_memory_estimate_gb=args.worker_memory_estimate_gb,
+        memory_budget_gb=args.memory_budget_gb,
+        resume_existing=args.resume_existing,
     )
     summary_path = output_dir / "single_factor_summary.csv"
     by_timestamp_path = output_dir / "single_factor_by_timestamp.csv"
@@ -65,6 +68,14 @@ def main() -> None:
             "skip_feature_correlation": args.skip_feature_correlation,
             "correlation_sample_rows": args.correlation_sample_rows,
             "workers": args.workers,
+            "effective_workers": _effective_workers(
+                requested_workers=args.workers,
+                worker_memory_estimate_gb=args.worker_memory_estimate_gb,
+                memory_budget_gb=args.memory_budget_gb,
+            ),
+            "worker_memory_estimate_gb": args.worker_memory_estimate_gb,
+            "memory_budget_gb": args.memory_budget_gb,
+            "resume_existing": args.resume_existing,
             "backend": args.backend,
         },
         "artifacts": {
@@ -102,6 +113,9 @@ def _evaluate_dataset_paths(
     backend: str,
     skip_feature_correlation: bool,
     correlation_sample_rows: int | None,
+    worker_memory_estimate_gb: float,
+    memory_budget_gb: float,
+    resume_existing: bool,
 ) -> SingleFactorEvaluationResult:
     feature_columns = config.feature_columns or _infer_feature_columns_from_path(
         dataset_paths[0],
@@ -115,11 +129,17 @@ def _evaluate_dataset_paths(
     )
     partition_dir = output_dir / "_partitions"
     partition_dir.mkdir(parents=True, exist_ok=True)
-    _clear_partition_artifacts(partition_dir)
+    if not resume_existing:
+        _clear_partition_artifacts(partition_dir)
+    effective_workers = _effective_workers(
+        requested_workers=workers,
+        worker_memory_estimate_gb=worker_memory_estimate_gb,
+        memory_budget_gb=memory_budget_gb,
+    )
     total_rows = 0
     partition_artifacts: list[_PartitionEvaluation] = []
     corr_stats: _CorrelationStats | None = None
-    if workers == 1:
+    if effective_workers == 1:
         partition_results = (
             _evaluate_dataset_path(
                 path,
@@ -127,6 +147,7 @@ def _evaluate_dataset_paths(
                 partition_dir=partition_dir,
                 skip_feature_correlation=skip_feature_correlation,
                 correlation_sample_rows=correlation_sample_rows,
+                resume_existing=resume_existing,
             )
             for path in dataset_paths
         )
@@ -138,7 +159,7 @@ def _evaluate_dataset_paths(
     else:
         if backend != "process":
             raise ValueError("only process backend is supported")
-        with ProcessPoolExecutor(max_workers=workers) as executor:
+        with ProcessPoolExecutor(max_workers=effective_workers) as executor:
             futures = [
                 executor.submit(
                     _evaluate_dataset_path,
@@ -147,6 +168,7 @@ def _evaluate_dataset_paths(
                     partition_dir=partition_dir,
                     skip_feature_correlation=skip_feature_correlation,
                     correlation_sample_rows=correlation_sample_rows,
+                    resume_existing=resume_existing,
                 )
                 for path in dataset_paths
             ]
@@ -204,30 +226,42 @@ def _infer_feature_columns_from_path(
     label_column: str,
     horizon_label_columns: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
-    frame = pd.read_parquet(path)
-    try:
-        exclude_columns: list[str] = []
-        for column in (label_column, *horizon_label_columns):
-            exclude_columns.extend(
-                [
-                    column,
-                    f"{column}_rank",
-                    f"{column}_entry_timestamp",
-                    f"{column}_entry_price",
-                    f"{column}_exit_timestamp",
-                    f"{column}_exit_price",
-                    f"{column}_exit_tradable_bar",
-                    f"{column}_exit_limit_up_open",
-                    f"{column}_exit_limit_down_open",
-                ]
-            )
-        return infer_feature_columns(
-            frame,
-            label_column=label_column,
-            exclude_columns=tuple(exclude_columns),
+    exclude_columns: list[str] = []
+    for column in (label_column, *horizon_label_columns):
+        exclude_columns.extend(
+            [
+                column,
+                f"{column}_rank",
+                f"{column}_entry_timestamp",
+                f"{column}_entry_price",
+                f"{column}_exit_timestamp",
+                f"{column}_exit_price",
+                f"{column}_exit_tradable_bar",
+                f"{column}_exit_limit_up_open",
+                f"{column}_exit_limit_down_open",
+            ]
         )
-    finally:
-        del frame
+    schema = pq.read_schema(path)
+    blocked = _blocked_feature_columns(
+        label_column=label_column,
+        exclude_columns=tuple(exclude_columns),
+    )
+    features = [
+        field.name
+        for field in schema
+        if field.name not in blocked
+        and not field.name.endswith(
+            (
+                "_exit_tradable_bar",
+                "_exit_limit_up_open",
+                "_exit_limit_down_open",
+            )
+        )
+        and _is_numeric_arrow_type(field.type)
+    ]
+    if not features:
+        raise ValueError("no numeric feature columns found")
+    return tuple(features)
 
 
 def _evaluate_dataset_path(
@@ -237,7 +271,19 @@ def _evaluate_dataset_path(
     partition_dir: Path,
     skip_feature_correlation: bool,
     correlation_sample_rows: int | None = None,
+    resume_existing: bool = False,
 ) -> _PartitionEvaluation:
+    if resume_existing:
+        existing = _load_existing_partition_evaluation(
+            path,
+            config,
+            partition_dir=partition_dir,
+            skip_feature_correlation=skip_feature_correlation,
+            correlation_sample_rows=correlation_sample_rows,
+        )
+        if existing is not None:
+            print(f"reusing {path.name}: rows={existing.row_count}", flush=True)
+            return existing
     frame = pd.read_parquet(path)
     print(f"evaluating {path.name}: rows={len(frame)}", flush=True)
     result = evaluate_single_factors(frame, config)
@@ -261,6 +307,15 @@ def _evaluate_dataset_path(
         )
         corr_stats.update(correlation_frame, weight_scale=weight_scale)
     row_count = len(frame)
+    _write_partition_metadata(
+        path,
+        config,
+        partition_dir=partition_dir,
+        row_count=row_count,
+        skip_feature_correlation=skip_feature_correlation,
+        correlation_sample_rows=correlation_sample_rows,
+        correlation=corr_stats,
+    )
     del frame
     del result
     return _PartitionEvaluation(
@@ -275,6 +330,165 @@ def _evaluate_dataset_path(
 def _clear_partition_artifacts(partition_dir: Path) -> None:
     for path in partition_dir.glob("*.parquet"):
         path.unlink()
+    for path in partition_dir.glob("*.json"):
+        path.unlink()
+
+
+def _load_existing_partition_evaluation(
+    path: Path,
+    config: SingleFactorEvaluationConfig,
+    *,
+    partition_dir: Path,
+    skip_feature_correlation: bool,
+    correlation_sample_rows: int | None,
+) -> _PartitionEvaluation | None:
+    metadata_path = _partition_metadata_path(path, partition_dir)
+    by_timestamp_path = partition_dir / f"{path.stem}_by_timestamp.parquet"
+    quantile_by_timestamp_path = partition_dir / f"{path.stem}_quantiles.parquet"
+    if (
+        not metadata_path.exists()
+        or not by_timestamp_path.exists()
+        or not quantile_by_timestamp_path.exists()
+    ):
+        return None
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    expected = _partition_metadata_signature(
+        path,
+        config,
+        skip_feature_correlation=skip_feature_correlation,
+        correlation_sample_rows=correlation_sample_rows,
+    )
+    if metadata.get("signature") != expected:
+        return None
+    correlation = None
+    if not skip_feature_correlation:
+        payload = metadata.get("correlation")
+        if not isinstance(payload, dict):
+            return None
+        try:
+            correlation = _CorrelationStats.from_payload(payload)
+        except (KeyError, TypeError, ValueError):
+            return None
+    try:
+        row_count = int(metadata["row_count"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return _PartitionEvaluation(
+        name=path.stem,
+        row_count=row_count,
+        by_timestamp_path=by_timestamp_path,
+        quantile_by_timestamp_path=quantile_by_timestamp_path,
+        correlation=correlation,
+    )
+
+
+def _write_partition_metadata(
+    path: Path,
+    config: SingleFactorEvaluationConfig,
+    *,
+    partition_dir: Path,
+    row_count: int,
+    skip_feature_correlation: bool,
+    correlation_sample_rows: int | None,
+    correlation: "_CorrelationStats | None",
+) -> None:
+    payload = {
+        "signature": _partition_metadata_signature(
+            path,
+            config,
+            skip_feature_correlation=skip_feature_correlation,
+            correlation_sample_rows=correlation_sample_rows,
+        ),
+        "row_count": row_count,
+        "correlation": None if correlation is None else correlation.to_payload(),
+    }
+    _partition_metadata_path(path, partition_dir).write_text(
+        json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _partition_metadata_path(path: Path, partition_dir: Path) -> Path:
+    return partition_dir / f"{path.stem}_metadata.json"
+
+
+def _partition_metadata_signature(
+    path: Path,
+    config: SingleFactorEvaluationConfig,
+    *,
+    skip_feature_correlation: bool,
+    correlation_sample_rows: int | None,
+) -> dict[str, object]:
+    stat = path.stat()
+    return {
+        "dataset_path": str(path.resolve()),
+        "dataset_size": stat.st_size,
+        "dataset_mtime_ns": stat.st_mtime_ns,
+        "label_column": config.label_column,
+        "horizon_label_columns": list(config.horizon_label_columns),
+        "feature_columns": list(config.feature_columns),
+        "top_n": config.top_n,
+        "quantiles": config.quantiles,
+        "correlation_method": config.correlation_method,
+        "skip_feature_correlation": skip_feature_correlation,
+        "correlation_sample_rows": correlation_sample_rows,
+    }
+
+
+def _blocked_feature_columns(
+    *,
+    label_column: str,
+    exclude_columns: tuple[str, ...],
+) -> set[str]:
+    return {
+        "timestamp",
+        "instrument_id",
+        "canonical_code",
+        label_column,
+        f"{label_column}_rank",
+        f"{label_column}_entry_timestamp",
+        f"{label_column}_exit_timestamp",
+        f"{label_column}_entry_price",
+        f"{label_column}_exit_price",
+        f"{label_column}_exit_tradable_bar",
+        f"{label_column}_exit_limit_up_open",
+        f"{label_column}_exit_limit_down_open",
+        "entry_timestamp",
+        "exit_timestamp",
+        "entry_price",
+        "exit_price",
+        "entry_tradable_bar",
+        "entry_limit_up_open",
+        "entry_limit_down_open",
+        "exit_tradable_bar",
+        "exit_limit_up_open",
+        "exit_limit_down_open",
+        "tradable_bar",
+        "buyable_bar",
+        "sellable_bar",
+        "suspended_bar",
+        "limit_up_open",
+        "limit_down_open",
+        "is_st",
+        "previous_close",
+        "trade_date",
+        "sample_count",
+        "rank",
+        "diagnostic",
+        *exclude_columns,
+    }
+
+
+def _is_numeric_arrow_type(value: object) -> bool:
+    return (
+        pat.is_integer(value)
+        or pat.is_floating(value)
+        or pat.is_decimal(value)
+        or pat.is_boolean(value)
+    )
 
 
 def _summarize_by_timestamp(
@@ -411,6 +625,40 @@ class _CorrelationStats:
             for name, value in other.values[key].items():
                 stats[name] += value
 
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "feature_columns": list(self.feature_columns),
+            "method": self.method,
+            "values": [
+                {
+                    "left": left,
+                    "right": right,
+                    "stats": stats,
+                }
+                for (left, right), stats in self.values.items()
+            ],
+        }
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, object]) -> "_CorrelationStats":
+        feature_columns = tuple(str(value) for value in payload["feature_columns"])
+        method = str(payload["method"])
+        stats = cls(feature_columns, method=method)
+        values = payload.get("values")
+        if not isinstance(values, list):
+            raise ValueError("invalid correlation payload")
+        for item in values:
+            if not isinstance(item, dict):
+                raise ValueError("invalid correlation payload item")
+            key = (str(item["left"]), str(item["right"]))
+            raw_stats = item.get("stats")
+            if key not in stats.values or not isinstance(raw_stats, dict):
+                raise ValueError("invalid correlation payload stats")
+            stats.values[key] = {
+                name: float(value) for name, value in raw_stats.items()
+            }
+        return stats
+
     def to_frame(self) -> pd.DataFrame:
         rows: list[list[float | None]] = []
         for left in self.feature_columns:
@@ -455,6 +703,50 @@ def _nullable_float(value: object) -> float | None:
     return float(value)
 
 
+def _effective_workers(
+    *,
+    requested_workers: int,
+    worker_memory_estimate_gb: float,
+    memory_budget_gb: float,
+) -> int:
+    if requested_workers <= 1:
+        return requested_workers
+    budget = _effective_memory_budget_gb(
+        worker_memory_estimate_gb=worker_memory_estimate_gb,
+        memory_budget_gb=memory_budget_gb,
+    )
+    allowed = max(1, int(budget // worker_memory_estimate_gb))
+    return min(requested_workers, allowed)
+
+
+def _effective_memory_budget_gb(
+    *,
+    worker_memory_estimate_gb: float,
+    memory_budget_gb: float,
+) -> float:
+    if memory_budget_gb > 0:
+        return memory_budget_gb
+    available = _available_memory_gb()
+    if available is None:
+        return worker_memory_estimate_gb
+    return max(
+        min(available * 0.60, available - 2.0),
+        worker_memory_estimate_gb,
+    )
+
+
+def _available_memory_gb() -> float | None:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return None
+    for line in meminfo.read_text(encoding="utf-8").splitlines():
+        if line.startswith("MemAvailable:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                return float(parts[1]) / 1024.0 / 1024.0
+    return None
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-dir")
@@ -482,16 +774,40 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument(
+        "--worker-memory-estimate-gb",
+        type=float,
+        default=7.0,
+        help="estimated memory footprint for each partition evaluation worker",
+    )
+    parser.add_argument(
+        "--memory-budget-gb",
+        type=float,
+        default=0.0,
+        help=(
+            "memory budget for concurrent partition evaluation workers; "
+            "0 auto-detects available memory"
+        ),
+    )
+    parser.add_argument(
         "--backend",
         choices=("process",),
         default="process",
         help="parallel execution backend used when --workers is greater than 1",
+    )
+    parser.add_argument(
+        "--resume-existing",
+        action="store_true",
+        help="reuse matching per-partition evaluation artifacts when present",
     )
     args = parser.parse_args()
     if bool(args.dataset_dir) == bool(args.dataset_paths):
         raise ValueError("provide exactly one of --dataset-dir or --dataset-paths")
     if args.workers <= 0:
         raise ValueError("--workers must be positive")
+    if args.worker_memory_estimate_gb <= 0:
+        raise ValueError("--worker-memory-estimate-gb must be positive")
+    if args.memory_budget_gb < 0:
+        raise ValueError("--memory-budget-gb must be non-negative")
     if args.correlation_sample_rows < 0:
         raise ValueError("--correlation-sample-rows must be non-negative")
     return args

@@ -62,6 +62,8 @@ def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
     assert summary["config"]["profile"] == "standard"
     assert summary["config"]["label_horizon_bars"] == [48, 240]
     assert summary["config"]["evaluation_workers"] == 6
+    assert summary["config"]["evaluation_worker_memory_estimate_gb"] == 7.0
+    assert summary["config"]["evaluation_memory_budget_gb"] is None
     assert summary["config"]["backtest_workers"] == 6
     assert summary["config"]["backtest_memory_budget_gb"] is None
     assert "acceptance_plan" in summary
@@ -75,6 +77,9 @@ def test_framework_v1_benchmark_dry_run_writes_reproducible_plan(
     assert commands["factor_evaluation"][
         commands["factor_evaluation"].index("--label-column") + 1
     ] == "forward_return_48b"
+    assert commands["factor_evaluation"][
+        commands["factor_evaluation"].index("--worker-memory-estimate-gb") + 1
+    ] == "7.0"
     assert commands["factor_evaluation"][
         commands["factor_evaluation"].index("--horizon-label-columns") + 1
     ] == "forward_return_240b"
@@ -149,8 +154,9 @@ def test_framework_v1_benchmark_can_plan_candidate_policy_validation(
     ] == ["decorrelated", "equal"]
     assert command[command.index("--policy") + 1] == "partial_rebalance_daily"
     assert "--backtest-memory-estimate-gb" not in command
-    assert command[command.index("--full-backtest-memory-gb") + 1] == "5.0"
-    assert command[command.index("--yearly-backtest-memory-gb") + 1] == "5.0"
+    assert "--backtest-memory-budget-gb" in command
+    assert command[command.index("--full-backtest-memory-gb") + 1] == "4.0"
+    assert command[command.index("--yearly-backtest-memory-gb") + 1] == "4.0"
 
 
 def test_framework_v1_benchmark_can_plan_auto_factor_admission(
@@ -196,6 +202,7 @@ def test_framework_v1_benchmark_can_plan_auto_factor_admission(
     assert commands["candidate_policy_validation"][
         commands["candidate_policy_validation"].index("--admission-report") + 1
     ] == str(admission_path)
+    assert "--resume-existing" not in commands["factor_evaluation"]
     assert summary["config"]["auto_factor_admission"] is True
     assert summary["config"]["effective_candidate_admission_report"] == str(
         admission_path

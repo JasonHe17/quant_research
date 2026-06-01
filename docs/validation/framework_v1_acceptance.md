@@ -52,11 +52,18 @@ Default settings:
   labels are written as `forward_return_48b`, `forward_return_240b`, and
   `forward_return_960b`, and the current single-factor gates use the first
   horizon as the primary label.
-- Factor evaluation: six worker processes by default; reduce with
-  `--evaluation-workers` on memory-constrained machines. Single-factor IC,
-  bucket returns, and turnover use the full evaluated rows. Feature-correlation
-  estimation uses `--correlation-sample-rows` by default so the standard
-  all-factor benchmark remains reproducible on research workstations.
+- Factor evaluation: six worker processes are requested by default, but the
+  evaluator now applies a memory budget before launching partition workers.
+  `--evaluation-memory-budget-gb 0` auto-detects available memory and
+  `--evaluation-worker-memory-estimate-gb` controls the per-partition estimate;
+  the current 32 GB research machine should use the 7 GB default, which limits
+  full-width evaluation to two active workers under auto memory budgeting.
+  `--resume-existing` is also forwarded to the evaluator, so interrupted
+  partition diagnostics can be reused when the source parquet file and
+  evaluation parameters match. Single-factor IC, bucket returns, and turnover
+  use the full evaluated rows. Feature-correlation estimation uses
+  `--correlation-sample-rows` by default so the standard all-factor benchmark
+  remains reproducible on research workstations.
 - Backtest streaming: fast parquet runs use monthly chunks by default, with
   10 calendar days of boundary padding for lookback and next-bar continuity.
   Increase memory headroom before switching `--streaming-chunk year`.
@@ -115,7 +122,8 @@ conda run -n quant python examples/run_candidate_policy_validation.py \
 
 This wrapper keeps scenario construction serial by default
 (`--scenario-workers 1`) and runs score-backtest subprocesses with
-`--backtest-workers 6 --backtest-memory-budget-gb 30.0`. The primary gate is
+`--backtest-workers 6 --backtest-memory-budget-gb 24.0` and
+`--backtest-memory-estimate-gb 4.0`. The primary gate is
 currently `decorrelated + partial_rebalance_daily`; the leaderboard should still
 be reviewed because higher-return policies can be less cost-robust.
 Combination weights default to equal admission evidence. Using admission IC
@@ -153,7 +161,12 @@ The benchmark writes:
 - `logs/`: stdout/stderr for every stage.
 
 Interrupted runs can continue with `--resume-existing`; completed stages are
-detected by their summary JSON files and skipped.
+detected by their summary JSON files and skipped. If factor evaluation was
+interrupted before writing its stage summary, matching per-partition artifacts
+under `factor_evaluation/_partitions/` are reused and only missing or stale
+partitions are recomputed. This is a lossless resume path: it does not change
+the evaluated rows, labels, feature list, ranking, or correlation sampling
+parameters.
 
 The current standard replacement report is
 `runs/framework_v1_acceptance/standard/benchmark_summary.json`, generated after

@@ -6,7 +6,9 @@ import pandas as pd
 import pytest
 
 from examples.evaluate_alpha_dataset import (
+    _effective_workers,
     _evaluate_dataset_path,
+    _infer_feature_columns_from_path,
     SingleFactorEvaluationConfig,
 )
 from quant_research.artifacts import ArtifactStore
@@ -173,6 +175,83 @@ def test_partition_evaluation_writes_artifacts_without_returning_frames(
     assert partition.by_timestamp_path.exists()
     assert partition.quantile_by_timestamp_path.exists()
     assert not hasattr(partition, "result")
+
+
+def test_partition_evaluation_reuses_matching_artifacts(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    partition_dir = tmp_path / "partitions"
+    partition_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "t0",
+                "instrument_id": "a",
+                "alpha": 0.9,
+                "forward_return": 0.03,
+            },
+            {
+                "timestamp": "t0",
+                "instrument_id": "b",
+                "alpha": 0.1,
+                "forward_return": -0.01,
+            },
+        ]
+    ).to_parquet(dataset_path, index=False)
+    config = SingleFactorEvaluationConfig(feature_columns=("alpha",), top_n=1)
+
+    first = _evaluate_dataset_path(
+        dataset_path,
+        config,
+        partition_dir=partition_dir,
+        skip_feature_correlation=False,
+        resume_existing=True,
+    )
+    second = _evaluate_dataset_path(
+        dataset_path,
+        config,
+        partition_dir=partition_dir,
+        skip_feature_correlation=False,
+        resume_existing=True,
+    )
+
+    assert first.row_count == second.row_count == 2
+    assert second.correlation is not None
+    pd.testing.assert_frame_equal(
+        first.correlation.to_frame(),
+        second.correlation.to_frame(),
+    )
+
+
+def test_factor_evaluation_infers_features_from_parquet_schema(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(
+        {
+            "timestamp": ["t0"],
+            "instrument_id": ["a"],
+            "alpha": [1.0],
+            "forward_return": [0.01],
+            "forward_return_rank": [1.0],
+            "entry_price": [10.0],
+        }
+    ).to_parquet(dataset_path, index=False)
+
+    assert _infer_feature_columns_from_path(
+        dataset_path,
+        label_column="forward_return",
+    ) == ("alpha",)
+
+
+def test_factor_evaluation_memory_budget_reduces_workers() -> None:
+    assert _effective_workers(
+        requested_workers=6,
+        worker_memory_estimate_gb=5.0,
+        memory_budget_gb=12.0,
+    ) == 2
+    assert _effective_workers(
+        requested_workers=6,
+        worker_memory_estimate_gb=5.0,
+        memory_budget_gb=3.0,
+    ) == 1
 
 
 def test_factor_evaluation_persists_artifacts(tmp_path: Path) -> None:

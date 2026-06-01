@@ -471,7 +471,18 @@ parallelized only within explicit family boundaries:
 - Python compute parallelism must use process workers. Do not add
   `ThreadPoolExecutor` or `thread` backends for factor builds, evaluations,
   backtests, or validation orchestration.
-- Evaluation can run in parallel under the existing memory-budget controls.
+- Evaluation can run in parallel under memory-budget controls. Framework
+  benchmark runs pass the evaluation worker memory estimate to
+  `examples/evaluate_alpha_dataset.py`; the evaluator reduces active partition
+  workers when available memory is below the requested concurrency.
+- Interrupted factor evaluation may use `--resume-existing` to reuse matching
+  per-partition artifacts. Reuse is allowed only when the source parquet file
+  signature and evaluation parameters match, so this remains a lossless
+  workflow optimization rather than a change in evidence.
+- Candidate portfolio runs should also use `--resume-existing`. The runner
+  writes its score summary before starting backtests and reuses current-output
+  score artifacts only when the score-build signature is unchanged; otherwise
+  it rebuilds the scores before any policy replay.
 - Full-feature dataset builds must set an explicit worker memory estimate or
   memory budget. The builder may reduce requested worker count to stay within
   budget.
