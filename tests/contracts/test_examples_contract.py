@@ -138,6 +138,22 @@ def test_ml_challenger_attribution_example_has_cli_help() -> None:
     assert "--challenger-score-dir" in result.stdout
 
 
+def test_score_selection_displacement_example_has_cli_help() -> None:
+    script = Path("examples/analyze_score_selection_displacement.py")
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "--baseline-score-dir" in result.stdout
+    assert "--challenger-score-dir" in result.stdout
+    assert "--regime-schedule" in result.stdout
+
+
 def test_state_conditioned_score_switch_example_has_cli_help() -> None:
     script = Path("examples/build_state_conditioned_score_switch.py")
 

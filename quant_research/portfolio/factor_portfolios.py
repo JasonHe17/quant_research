@@ -73,6 +73,69 @@ class FactorHealthConfig:
             raise ValueError("spread_floor must be below spread_ceiling")
 
 
+@dataclass(frozen=True, slots=True)
+class RegimeConditionedFactorWeightConfig:
+    """Rolling decorrelation weights conditioned on observable market state."""
+
+    lookback_windows: int = 48
+    min_periods: int = 24
+    state_lookback_windows: int = 240
+    state_min_periods: int = 48
+    correlation_lag_windows: int = 1
+    state_lag_windows: int = 1
+    high_volatility_quantile: float = 0.75
+    low_breadth_quantile: float = 0.25
+    regime_selector: str = "volatility_or_weak_breadth"
+    volatility_column: str = "intraday_bar_return_5m"
+    volatility_aggregation: str = "std"
+    breadth_column: str = "market_state_breadth_5m"
+    ridge: float = 0.05
+    base_weight_mode: str = "equal"
+    score_transform: str = "rank"
+    condition_on_regime: bool = True
+
+    def __post_init__(self) -> None:
+        if self.lookback_windows <= 0:
+            raise ValueError("lookback_windows must be positive")
+        if self.min_periods <= 0:
+            raise ValueError("min_periods must be positive")
+        if self.min_periods > self.lookback_windows:
+            raise ValueError("min_periods must be <= lookback_windows")
+        if self.state_lookback_windows <= 0:
+            raise ValueError("state_lookback_windows must be positive")
+        if self.state_min_periods <= 0:
+            raise ValueError("state_min_periods must be positive")
+        if self.state_min_periods > self.state_lookback_windows:
+            raise ValueError("state_min_periods must be <= state_lookback_windows")
+        if self.correlation_lag_windows < 0:
+            raise ValueError("correlation_lag_windows must be non-negative")
+        if self.state_lag_windows < 0:
+            raise ValueError("state_lag_windows must be non-negative")
+        if not 0 <= self.high_volatility_quantile <= 1:
+            raise ValueError("high_volatility_quantile must be in [0, 1]")
+        if not 0 <= self.low_breadth_quantile <= 1:
+            raise ValueError("low_breadth_quantile must be in [0, 1]")
+        if self.regime_selector not in {
+            "volatility",
+            "breadth",
+            "volatility_or_weak_breadth",
+            "volatility_and_weak_breadth",
+        }:
+            raise ValueError("regime_selector is not supported")
+        if self.volatility_aggregation not in {"std", "mean"}:
+            raise ValueError("volatility_aggregation must be std or mean")
+        if not self.volatility_column:
+            raise ValueError("volatility_column must be non-empty")
+        if not self.breadth_column:
+            raise ValueError("breadth_column must be non-empty")
+        if self.ridge < 0:
+            raise ValueError("ridge must be non-negative")
+        if self.base_weight_mode not in {"equal", "ic_magnitude"}:
+            raise ValueError("base_weight_mode must be equal or ic_magnitude")
+        if self.score_transform not in {"rank", "zscore"}:
+            raise ValueError("score_transform must be rank or zscore")
+
+
 def load_candidate_factors(
     admission_report_path: Path,
     *,
@@ -156,6 +219,84 @@ def factor_combination_weights(
     if float(raw.sum()) <= 0:
         raw = target
     return _normalize(dict(zip(features, raw.tolist(), strict=True)))
+
+
+def build_regime_conditioned_factor_weight_schedule(
+    dataset_paths: list[Path],
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    config: RegimeConditionedFactorWeightConfig,
+) -> pd.DataFrame:
+    """Build timestamp-level decorrelated factor weights from lagged regimes.
+
+    The schedule uses cross-sectional factor correlations observed in prior
+    timestamps only.  When enabled, the rolling correlation history is filtered
+    to timestamps that match the current observable market regime; if too few
+    same-regime observations exist, it falls back to the full rolling window.
+    """
+
+    if not candidates:
+        raise ValueError("candidates must be non-empty")
+    observations = _factor_correlation_observations(
+        dataset_paths,
+        candidates=candidates,
+        config=config,
+    )
+    if observations.empty:
+        return _empty_factor_weight_schedule(candidates)
+    observations = _attach_regime_state(observations, config=config)
+    features = [factor.feature for factor in candidates]
+    pair_columns = _factor_pair_columns(features)
+    rows: list[dict[str, Any]] = []
+    for index, current in observations.reset_index(drop=True).iterrows():
+        end = max(0, index - config.correlation_lag_windows + 1)
+        start = max(0, end - config.lookback_windows)
+        history = observations.iloc[start:end]
+        regime = str(current["regime_state"])
+        used_regime_filter = False
+        if config.condition_on_regime and regime != "warmup" and not history.empty:
+            regime_history = history.loc[history["regime_state"].astype(str) == regime]
+            if len(regime_history) >= config.min_periods:
+                history = regime_history
+                used_regime_filter = True
+        fallback_reason = ""
+        if len(history) < config.min_periods:
+            fallback_reason = "insufficient_history"
+            weights = factor_combination_weights(
+                candidates,
+                method="ic_weighted",
+                base_weight_mode=config.base_weight_mode,
+            )
+        else:
+            matrix = _correlation_matrix_from_pair_history(history, features, pair_columns)
+            weights = factor_combination_weights(
+                candidates,
+                method="decorrelated",
+                correlation=matrix,
+                ridge=config.ridge,
+                base_weight_mode=config.base_weight_mode,
+            )
+        for feature in features:
+            rows.append(
+                {
+                    "timestamp": current["timestamp"],
+                    "feature": feature,
+                    "weight": float(weights[feature]),
+                    "regime_state": regime,
+                    "used_regime_filter": bool(used_regime_filter),
+                    "history_count": int(len(history)),
+                    "fallback_reason": fallback_reason,
+                    "lagged_cross_sectional_volatility": current[
+                        "lagged_cross_sectional_volatility"
+                    ],
+                    "lagged_breadth": current["lagged_breadth"],
+                    "high_volatility_threshold": current["high_volatility_threshold"],
+                    "low_breadth_threshold": current["low_breadth_threshold"],
+                    "high_volatility_state": bool(current["high_volatility_state"]),
+                    "weak_breadth_state": bool(current["weak_breadth_state"]),
+                }
+            )
+    return pd.DataFrame(rows).sort_values(["timestamp", "feature"]).reset_index(drop=True)
 
 
 def cap_factor_weights(
@@ -591,6 +732,7 @@ def build_composite_scores(
     *,
     candidates: tuple[CandidateFactor, ...],
     weights: dict[str, float],
+    factor_weight_schedule: pd.DataFrame | None = None,
     factor_health: pd.DataFrame | None = None,
     max_factor_contribution_share: float | None = None,
     score_transform: str = "rank",
@@ -605,14 +747,16 @@ def build_composite_scores(
     contributions: dict[str, pd.Series] = {}
     available_weight = pd.Series(0.0, index=frame.index)
     health_scales = _factor_health_scale_lookup(factor_health)
+    scheduled_weights = _factor_weight_lookup(factor_weight_schedule)
     for factor in candidates:
         weight = float(weights.get(factor.feature, 0.0))
-        if weight <= 0:
+        if weight <= 0 and factor.feature not in scheduled_weights:
             continue
         effective_weight = _effective_factor_weight(
             frame["timestamp"],
             feature=factor.feature,
             base_weight=weight,
+            scheduled_weights=scheduled_weights,
             health_scales=health_scales,
         )
         oriented = _oriented_factor_signal(
@@ -646,6 +790,7 @@ def write_score_partitions(
     output_dir: Path,
     candidates: tuple[CandidateFactor, ...],
     weights_by_method: dict[str, dict[str, float]],
+    factor_weight_schedules_by_method: dict[str, pd.DataFrame] | None = None,
     max_factor_weight: float | None = None,
     max_factor_contribution_share: float | None = None,
     factor_health_schedule: pd.DataFrame | None = None,
@@ -665,6 +810,11 @@ def write_score_partitions(
     methods: dict[str, dict[str, Any]] = {}
     for method, weights in weights_by_method.items():
         effective_weights = cap_factor_weights(weights, max_weight=max_factor_weight)
+        factor_weight_schedule = _normalized_factor_weight_schedule(
+            (factor_weight_schedules_by_method or {}).get(method),
+            candidates=candidates,
+            max_weight=max_factor_weight,
+        )
         method_dir = output_dir / method
         method_dir.mkdir(parents=True, exist_ok=True)
         for old_path in method_dir.glob("score_*.parquet"):
@@ -699,6 +849,7 @@ def write_score_partitions(
                 frame,
                 candidates=candidates,
                 weights=effective_weights,
+                factor_weight_schedule=factor_weight_schedule,
                 factor_health=health,
                 max_factor_contribution_share=max_factor_contribution_share,
                 score_transform=score_transform,
@@ -748,6 +899,7 @@ def write_score_partitions(
                     scores=scores,
                     candidates=candidates,
                     weights=effective_weights,
+                    factor_weight_schedule=factor_weight_schedule,
                     factor_health=health,
                     max_factor_contribution_share=max_factor_contribution_share,
                     top_n=diagnostics_top_n,
@@ -782,6 +934,10 @@ def write_score_partitions(
             "factor_contribution_diagnostics": diagnostics_paths,
             "score_forecast_calibration": calibration_paths,
         }
+        if factor_weight_schedule is not None:
+            methods[method]["dynamic_factor_weights"] = _factor_weight_schedule_summary(
+                factor_weight_schedule
+            )
     return {
         "candidate_features": [factor.feature for factor in candidates],
         "methods": methods,
@@ -794,7 +950,8 @@ def factor_contribution_diagnostics(
     scores: pd.DataFrame,
     candidates: tuple[CandidateFactor, ...],
     weights: dict[str, float],
-    factor_health: pd.DataFrame | None,
+    factor_weight_schedule: pd.DataFrame | None = None,
+    factor_health: pd.DataFrame | None = None,
     max_factor_contribution_share: float | None = None,
     top_n: int,
     label_column: str = "forward_return",
@@ -813,6 +970,7 @@ def factor_contribution_diagnostics(
         frame,
         candidates=candidates,
         weights=weights,
+        factor_weight_schedule=factor_weight_schedule,
         factor_health=factor_health,
         max_factor_contribution_share=max_factor_contribution_share,
         score_transform=score_transform,
@@ -857,6 +1015,185 @@ def factor_contribution_diagnostics(
             }
         )
     return pd.DataFrame(rows)
+
+
+def _factor_correlation_observations(
+    dataset_paths: list[Path],
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    config: RegimeConditionedFactorWeightConfig,
+) -> pd.DataFrame:
+    features = [factor.feature for factor in candidates]
+    columns = [
+        "timestamp",
+        *features,
+        config.volatility_column,
+        config.breadth_column,
+    ]
+    columns = list(dict.fromkeys(columns))
+    frames: list[pd.DataFrame] = []
+    for dataset_path in dataset_paths:
+        frame = pd.read_parquet(dataset_path, columns=columns)
+        frame["timestamp"] = _timestamp_strings(frame["timestamp"])
+        timestamps = frame["timestamp"]
+        state = _timestamp_state_frame(
+            timestamps,
+            volatility=pd.to_numeric(frame[config.volatility_column], errors="coerce"),
+            breadth=pd.to_numeric(frame[config.breadth_column], errors="coerce"),
+            volatility_aggregation=config.volatility_aggregation,
+        )
+        signals = pd.DataFrame({"timestamp": timestamps}, index=frame.index)
+        for factor in candidates:
+            signals[factor.feature] = _oriented_factor_signal(
+                frame,
+                feature=factor.feature,
+                direction=factor.direction,
+                score_transform=config.score_transform,
+            )
+        corr = signals.groupby("timestamp", sort=True)[features].corr()
+        for left, right in _factor_pairs(features):
+            state[_factor_pair_column(left, right)] = (
+                corr.loc[(slice(None), left), right]
+                .droplevel(1)
+                .reindex(state.index)
+                .astype(float)
+            )
+        frames.append(state.reset_index())
+        del frame
+    if not frames:
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "cross_sectional_volatility",
+                "breadth",
+                *_factor_pair_columns(features),
+            ]
+        )
+    return (
+        pd.concat(frames, ignore_index=True)
+        .groupby("timestamp", as_index=False, sort=True)
+        .mean(numeric_only=True)
+    )
+
+
+def _timestamp_state_frame(
+    timestamps: pd.Series,
+    *,
+    volatility: pd.Series,
+    breadth: pd.Series,
+    volatility_aggregation: str,
+) -> pd.DataFrame:
+    if volatility_aggregation == "std":
+        mean = volatility.groupby(timestamps, sort=True).mean()
+        mean_square = (volatility * volatility).groupby(timestamps, sort=True).mean()
+        cross_sectional_volatility = (mean_square - mean * mean).clip(lower=0.0) ** 0.5
+    else:
+        cross_sectional_volatility = volatility.groupby(timestamps, sort=True).mean()
+    return pd.DataFrame(
+        {
+            "cross_sectional_volatility": cross_sectional_volatility,
+            "breadth": breadth.groupby(timestamps, sort=True).mean(),
+        }
+    )
+
+
+def _attach_regime_state(
+    observations: pd.DataFrame,
+    *,
+    config: RegimeConditionedFactorWeightConfig,
+) -> pd.DataFrame:
+    output = observations.sort_values("timestamp").reset_index(drop=True).copy()
+    lagged_volatility = output["cross_sectional_volatility"].shift(
+        config.state_lag_windows
+    )
+    lagged_breadth = output["breadth"].shift(config.state_lag_windows)
+    volatility_threshold = lagged_volatility.rolling(
+        config.state_lookback_windows,
+        min_periods=config.state_min_periods,
+    ).quantile(config.high_volatility_quantile)
+    breadth_threshold = lagged_breadth.rolling(
+        config.state_lookback_windows,
+        min_periods=config.state_min_periods,
+    ).quantile(config.low_breadth_quantile)
+    high_volatility = lagged_volatility >= volatility_threshold
+    weak_breadth = lagged_breadth <= breadth_threshold
+    volatility_ready = lagged_volatility.notna() & volatility_threshold.notna()
+    breadth_ready = lagged_breadth.notna() & breadth_threshold.notna()
+    if config.regime_selector == "volatility":
+        stress = high_volatility
+        warmup = ~volatility_ready
+    elif config.regime_selector == "breadth":
+        stress = weak_breadth
+        warmup = ~breadth_ready
+    elif config.regime_selector == "volatility_and_weak_breadth":
+        stress = high_volatility & weak_breadth
+        warmup = ~(volatility_ready & breadth_ready)
+    else:
+        stress = high_volatility | weak_breadth
+        warmup = ~(volatility_ready & breadth_ready)
+    output["lagged_cross_sectional_volatility"] = lagged_volatility
+    output["lagged_breadth"] = lagged_breadth
+    output["high_volatility_threshold"] = volatility_threshold
+    output["low_breadth_threshold"] = breadth_threshold
+    output["high_volatility_state"] = high_volatility.fillna(False).astype(bool)
+    output["weak_breadth_state"] = weak_breadth.fillna(False).astype(bool)
+    output["regime_state"] = "normal"
+    output.loc[stress.fillna(False), "regime_state"] = "stress"
+    output.loc[warmup.fillna(True), "regime_state"] = "warmup"
+    return output
+
+
+def _empty_factor_weight_schedule(
+    candidates: tuple[CandidateFactor, ...],
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "timestamp",
+            "feature",
+            "weight",
+            "regime_state",
+            "used_regime_filter",
+            "history_count",
+            "fallback_reason",
+            "lagged_cross_sectional_volatility",
+            "lagged_breadth",
+            "high_volatility_threshold",
+            "low_breadth_threshold",
+            "high_volatility_state",
+            "weak_breadth_state",
+        ]
+    )
+
+
+def _correlation_matrix_from_pair_history(
+    history: pd.DataFrame,
+    features: list[str],
+    pair_columns: list[str],
+) -> pd.DataFrame:
+    matrix = pd.DataFrame(np.eye(len(features)), index=features, columns=features)
+    for (left, right), column in zip(_factor_pairs(features), pair_columns, strict=True):
+        value = pd.to_numeric(history[column], errors="coerce").mean()
+        if pd.isna(value):
+            value = 0.0
+        matrix.loc[left, right] = float(value)
+        matrix.loc[right, left] = float(value)
+    return matrix
+
+
+def _factor_pairs(features: list[str]) -> list[tuple[str, str]]:
+    return [
+        (left, right)
+        for left_index, left in enumerate(features)
+        for right in features[left_index + 1 :]
+    ]
+
+
+def _factor_pair_columns(features: list[str]) -> list[str]:
+    return [_factor_pair_column(left, right) for left, right in _factor_pairs(features)]
+
+
+def _factor_pair_column(left: str, right: str) -> str:
+    return f"corr__{left}__{right}"
 
 
 def _factor_health_observations(
@@ -922,6 +1259,73 @@ def _factor_health_scale_lookup(
     return lookup
 
 
+def _factor_weight_lookup(
+    factor_weight_schedule: pd.DataFrame | None,
+) -> dict[str, pd.Series]:
+    if factor_weight_schedule is None or factor_weight_schedule.empty:
+        return {}
+    _require_columns(factor_weight_schedule, ("timestamp", "feature", "weight"))
+    lookup: dict[str, pd.Series] = {}
+    for feature, group in factor_weight_schedule.groupby("feature", sort=False):
+        series = group.drop_duplicates("timestamp", keep="last").set_index("timestamp")[
+            "weight"
+        ]
+        lookup[str(feature)] = pd.to_numeric(series, errors="coerce").astype(float)
+    return lookup
+
+
+def _normalized_factor_weight_schedule(
+    schedule: pd.DataFrame | None,
+    *,
+    candidates: tuple[CandidateFactor, ...],
+    max_weight: float | None,
+) -> pd.DataFrame | None:
+    if schedule is None or schedule.empty:
+        return None
+    _require_columns(schedule, ("timestamp", "feature", "weight"))
+    features = {factor.feature for factor in candidates}
+    frame = schedule.loc[schedule["feature"].astype(str).isin(features)].copy()
+    if frame.empty:
+        return None
+    frame["timestamp"] = _timestamp_strings(frame["timestamp"])
+    frame["feature"] = frame["feature"].astype(str)
+    frame["weight"] = pd.to_numeric(frame["weight"], errors="coerce")
+    if frame["weight"].isna().any():
+        raise ValueError("factor weight schedule contains non-numeric weight")
+    if (frame["weight"] < 0).any():
+        raise ValueError("factor weight schedule weights must be non-negative")
+    duplicates = frame.duplicated(["timestamp", "feature"], keep=False)
+    if bool(duplicates.any()):
+        raise ValueError("factor weight schedule has duplicate timestamp/feature rows")
+    if max_weight is None:
+        return frame.sort_values(["timestamp", "feature"]).reset_index(drop=True)
+    rows: list[pd.DataFrame] = []
+    for timestamp, group in frame.groupby("timestamp", sort=True):
+        weights = dict(zip(group["feature"], group["weight"], strict=True))
+        normalized = cap_factor_weights(weights, max_weight=max_weight)
+        current = group.copy()
+        current["weight"] = current["feature"].map(normalized).astype(float)
+        rows.append(current)
+    return pd.concat(rows, ignore_index=True).sort_values(
+        ["timestamp", "feature"]
+    ).reset_index(drop=True)
+
+
+def _factor_weight_schedule_summary(schedule: pd.DataFrame) -> dict[str, Any]:
+    by_feature = (
+        schedule.groupby("feature")["weight"]
+        .agg(["mean", "min", "max"])
+        .reset_index()
+        .to_dict("records")
+    )
+    return {
+        "enabled": True,
+        "timestamp_count": int(schedule["timestamp"].nunique()),
+        "row_count": int(len(schedule)),
+        "average_weights": by_feature,
+    }
+
+
 def _factor_health_component_scales(frame: pd.DataFrame, *, label: str) -> pd.DataFrame:
     _require_columns(frame, ("timestamp", "feature", "weight_scale"))
     output = frame.loc[:, ["timestamp", "feature", "weight_scale"]].copy()
@@ -973,12 +1377,18 @@ def _effective_factor_weight(
     *,
     feature: str,
     base_weight: float,
+    scheduled_weights: dict[str, pd.Series],
     health_scales: dict[str, pd.Series],
 ) -> pd.Series:
+    if feature in scheduled_weights:
+        base = timestamps.map(scheduled_weights[feature]).fillna(float(base_weight))
+    else:
+        base = pd.Series(float(base_weight), index=timestamps.index)
+    base = base.astype(float)
     if feature not in health_scales:
-        return pd.Series(float(base_weight), index=timestamps.index)
+        return base
     scale = timestamps.map(health_scales[feature]).fillna(1.0).astype(float)
-    return scale * float(base_weight)
+    return scale * base
 
 
 def _oriented_factor_signal(
@@ -1022,6 +1432,7 @@ def _factor_contribution_frame(
     *,
     candidates: tuple[CandidateFactor, ...],
     weights: dict[str, float],
+    factor_weight_schedule: pd.DataFrame | None,
     factor_health: pd.DataFrame | None,
     max_factor_contribution_share: float | None = None,
     score_transform: str = "rank",
@@ -1030,6 +1441,7 @@ def _factor_contribution_frame(
         raise ValueError("score_transform must be rank or zscore")
     output = frame.loc[:, ["timestamp", "instrument_id"]].copy()
     health_scales = _factor_health_scale_lookup(factor_health)
+    scheduled_weights = _factor_weight_lookup(factor_weight_schedule)
     contributions: dict[str, pd.Series] = {}
     for factor in candidates:
         weight = float(weights.get(factor.feature, 0.0))
@@ -1037,6 +1449,7 @@ def _factor_contribution_frame(
             frame["timestamp"],
             feature=factor.feature,
             base_weight=weight,
+            scheduled_weights=scheduled_weights,
             health_scales=health_scales,
         )
         oriented = _oriented_factor_signal(
@@ -1107,6 +1520,16 @@ def _mean(series: pd.Series) -> float | None:
     if pd.isna(value):
         return None
     return float(value)
+
+
+def _nullable_float(value: object) -> float | None:
+    if pd.isna(value):
+        return None
+    return float(value)
+
+
+def _timestamp_strings(values: pd.Series) -> pd.Series:
+    return values.astype(str)
 
 
 def _normalize(values: dict[str, float]) -> dict[str, float]:

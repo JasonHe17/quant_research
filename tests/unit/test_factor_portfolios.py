@@ -13,6 +13,7 @@ from examples.run_candidate_factor_portfolios import (
     _backtest_jobs,
     _backtest_policy_specs,
     _backtest_summary_rows,
+    _blend_factor_weight_schedule,
     _dataset_paths,
     _default_label_lag_windows,
     _effective_backtest_memory_budget_gb,
@@ -24,13 +25,18 @@ from examples.run_candidate_factor_portfolios import (
     _score_build_signature,
     _summary_params,
 )
+from examples.build_regime_factor_shrink_schedule import (
+    build_regime_factor_shrink_schedule,
+)
 from quant_research.portfolio import (
     CandidateFactor,
     FactorHealthConfig,
+    RegimeConditionedFactorWeightConfig,
     ScoreForecastCalibrationConfig,
     build_composite_scores,
     build_factor_health_ensemble_schedule,
     build_factor_health_schedule,
+    build_regime_conditioned_factor_weight_schedule,
     build_state_conditioned_factor_health_schedule,
     build_state_conditioned_factor_health_schedule_from_partitions,
     cap_factor_weights,
@@ -329,6 +335,20 @@ def _score_signature_args(**overrides: object) -> object:
         "partition_start": None,
         "partition_end": None,
         "decorrelation_ridge": 0.05,
+        "factor_weight_regime_mode": "off",
+        "factor_weight_regime_blend": 1.0,
+        "factor_weight_regime_lookback_windows": 48,
+        "factor_weight_regime_min_periods": 24,
+        "factor_weight_regime_state_lookback_windows": 240,
+        "factor_weight_regime_state_min_periods": 48,
+        "factor_weight_regime_correlation_lag_windows": 1,
+        "factor_weight_regime_state_lag_windows": 1,
+        "factor_weight_regime_high_volatility_quantile": 0.75,
+        "factor_weight_regime_low_breadth_quantile": 0.25,
+        "factor_weight_regime_selector": "volatility_or_weak_breadth",
+        "factor_weight_regime_volatility_column": "intraday_bar_return_5m",
+        "factor_weight_regime_volatility_aggregation": "std",
+        "factor_weight_regime_breadth_column": "market_state_breadth_5m",
         "factor_max_weight": None,
         "factor_max_contribution_share": None,
         "weight_evidence_mode": "equal",
@@ -451,6 +471,82 @@ def test_build_composite_scores_applies_factor_health_scales() -> None:
 
     assert scores.iloc[0]["instrument_id"] == "c"
     assert scores.iloc[-1]["instrument_id"] == "a"
+
+
+def test_build_composite_scores_applies_dynamic_factor_weights() -> None:
+    timestamp = "2024-01-02T09:35:00+00:00"
+    frame = pd.DataFrame(
+        [
+            {"timestamp": timestamp, "instrument_id": "a", "alpha_a": 3.0, "alpha_b": 1.0},
+            {"timestamp": timestamp, "instrument_id": "b", "alpha_a": 2.0, "alpha_b": 2.0},
+            {"timestamp": timestamp, "instrument_id": "c", "alpha_a": 1.0, "alpha_b": 3.0},
+        ]
+    )
+    schedule = pd.DataFrame(
+        [
+            {"timestamp": timestamp, "feature": "alpha_a", "weight": 0.0},
+            {"timestamp": timestamp, "feature": "alpha_b", "weight": 1.0},
+        ]
+    )
+
+    scores = build_composite_scores(
+        frame,
+        candidates=(
+            CandidateFactor("alpha_a", 1, 0.02),
+            CandidateFactor("alpha_b", 1, 0.01),
+        ),
+        weights={"alpha_a": 1.0, "alpha_b": 0.0},
+        factor_weight_schedule=schedule,
+    )
+
+    assert scores.iloc[0]["instrument_id"] == "c"
+    assert scores.iloc[-1]["instrument_id"] == "a"
+
+
+def test_regime_conditioned_factor_weight_schedule_uses_lagged_state(
+    tmp_path: Path,
+) -> None:
+    rows = []
+    for index in range(5):
+        timestamp = f"2024-01-02T09:{35 + index * 5:02d}:00+00:00"
+        for instrument_index, instrument in enumerate(("a", "b", "c", "d")):
+            value = float(instrument_index + 1)
+            rows.append(
+                {
+                    "timestamp": timestamp,
+                    "instrument_id": instrument,
+                    "alpha_a": value,
+                    "alpha_b": value if index % 2 == 0 else 5.0 - value,
+                    "alpha_c": 1.0 if instrument in {"a", "d"} else 2.0,
+                    "intraday_bar_return_5m": value * (index + 1),
+                    "market_state_breadth_5m": 0.4,
+                }
+            )
+    dataset_path = tmp_path / "dataset_2024_01.parquet"
+    pd.DataFrame(rows).to_parquet(dataset_path, index=False)
+
+    schedule = build_regime_conditioned_factor_weight_schedule(
+        [dataset_path],
+        candidates=(
+            CandidateFactor("alpha_a", 1, 0.02),
+            CandidateFactor("alpha_b", 1, 0.01),
+            CandidateFactor("alpha_c", 1, 0.01),
+        ),
+        config=RegimeConditionedFactorWeightConfig(
+            lookback_windows=2,
+            min_periods=1,
+            state_lookback_windows=1,
+            state_min_periods=1,
+            correlation_lag_windows=1,
+            state_lag_windows=1,
+            regime_selector="volatility",
+        ),
+    )
+
+    assert set(schedule["regime_state"]) == {"warmup", "stress"}
+    assert schedule["used_regime_filter"].any()
+    by_timestamp = schedule.groupby("timestamp")["weight"].sum()
+    assert by_timestamp.tolist() == pytest.approx([1.0] * len(by_timestamp))
 
 
 def test_build_composite_scores_caps_row_level_factor_contributions() -> None:
@@ -1487,6 +1583,50 @@ def test_parse_factor_health_ensemble_lookbacks() -> None:
         _parse_factor_health_ensemble_lookbacks("16,16")
 
 
+def test_blend_factor_weight_schedule_mixes_static_and_dynamic_weights() -> None:
+    schedule = pd.DataFrame(
+        {
+            "timestamp": ["2025-01-01 09:35:00", "2025-01-01 09:35:00"],
+            "feature": ["alpha_a", "alpha_b"],
+            "weight": [0.2, 0.8],
+        }
+    )
+
+    blended = _blend_factor_weight_schedule(
+        schedule,
+        {"alpha_a": 0.8, "alpha_b": 0.2},
+        blend=0.25,
+    )
+
+    assert blended["weight"].tolist() == pytest.approx([0.65, 0.35])
+    assert blended["static_weight"].tolist() == pytest.approx([0.8, 0.2])
+    assert blended["dynamic_weight"].tolist() == pytest.approx([0.2, 0.8])
+    assert blended["factor_weight_regime_blend"].tolist() == [0.25, 0.25]
+
+
+def test_build_regime_factor_shrink_schedule_uses_only_stress_state() -> None:
+    regime = pd.DataFrame(
+        {
+            "timestamp": ["t0", "t0", "t1", "t1"],
+            "feature": ["a", "b", "a", "b"],
+            "regime_state": ["normal", "normal", "stress", "stress"],
+        }
+    )
+
+    schedule = build_regime_factor_shrink_schedule(
+        regime,
+        features=("alpha_a", "alpha_b"),
+        stress_scale=0.5,
+    )
+
+    assert len(schedule) == 4
+    by_key = schedule.set_index(["timestamp", "feature"])["weight_scale"]
+    assert by_key.loc[("t0", "alpha_a")] == pytest.approx(1.0)
+    assert by_key.loc[("t0", "alpha_b")] == pytest.approx(1.0)
+    assert by_key.loc[("t1", "alpha_a")] == pytest.approx(0.5)
+    assert by_key.loc[("t1", "alpha_b")] == pytest.approx(0.5)
+
+
 def _portfolio_args(**overrides: object) -> object:
     defaults = {
         "dataset_dir": "dataset",
@@ -1505,6 +1645,21 @@ def _portfolio_args(**overrides: object) -> object:
         "partition_end": None,
         "run_backtests": False,
         "output_dir": "runs",
+        "decorrelation_ridge": 0.05,
+        "factor_weight_regime_mode": "off",
+        "factor_weight_regime_blend": 1.0,
+        "factor_weight_regime_lookback_windows": 48,
+        "factor_weight_regime_min_periods": 24,
+        "factor_weight_regime_state_lookback_windows": 240,
+        "factor_weight_regime_state_min_periods": 48,
+        "factor_weight_regime_correlation_lag_windows": 1,
+        "factor_weight_regime_state_lag_windows": 1,
+        "factor_weight_regime_high_volatility_quantile": 0.75,
+        "factor_weight_regime_low_breadth_quantile": 0.25,
+        "factor_weight_regime_selector": "volatility_or_weak_breadth",
+        "factor_weight_regime_volatility_column": "intraday_bar_return_5m",
+        "factor_weight_regime_volatility_aggregation": "std",
+        "factor_weight_regime_breadth_column": "market_state_breadth_5m",
         "factor_max_weight": None,
         "factor_max_contribution_share": None,
         "weight_evidence_mode": "equal",

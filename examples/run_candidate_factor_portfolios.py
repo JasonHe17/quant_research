@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 import glob
@@ -20,9 +21,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from quant_research.portfolio import (  # noqa: E402
     CandidateFactor,
     FactorHealthConfig,
+    RegimeConditionedFactorWeightConfig,
     ScoreForecastCalibrationConfig,
     build_factor_health_ensemble_schedule,
     build_factor_health_schedule,
+    build_regime_conditioned_factor_weight_schedule,
     build_state_conditioned_factor_health_schedule_from_partitions,
     factor_combination_weights,
     load_candidate_factors,
@@ -150,11 +153,19 @@ def main() -> None:
                 "source": str(summary_path),
             }
         else:
+            factor_weight_schedules_by_method = _build_factor_weight_schedules(
+                args,
+                dataset_paths,
+                candidates,
+                weights_by_method,
+            )
+            _log("factor weight schedules ready")
             factor_health_schedule = _build_factor_health_schedule(
                 args,
                 dataset_paths,
                 candidates,
             )
+            _log("factor health schedule ready")
             factor_weight_scale_schedule = _factor_weight_scale_schedule(
                 args,
                 factor_health_schedule,
@@ -164,11 +175,13 @@ def main() -> None:
                 health_dir.mkdir(parents=True, exist_ok=True)
                 factor_health_path = health_dir / "factor_health_schedule.csv"
                 factor_weight_scale_schedule.to_csv(factor_health_path, index=False)
+            _log("writing score partitions")
             scores_summary = write_score_partitions(
                 dataset_paths,
                 output_dir=output_dir / "scores",
                 candidates=candidates,
                 weights_by_method=weights_by_method,
+                factor_weight_schedules_by_method=factor_weight_schedules_by_method,
                 max_factor_weight=args.factor_max_weight,
                 max_factor_contribution_share=args.factor_max_contribution_share,
                 factor_health_schedule=factor_weight_scale_schedule,
@@ -177,6 +190,7 @@ def main() -> None:
                 forecast_calibration_config=_forecast_calibration_config(args),
                 score_transform=args.score_transform,
             )
+            _log("score partitions ready")
         summary = {
             "params": _summary_params(args),
             "registry_filter": {
@@ -208,6 +222,10 @@ def main() -> None:
         encoding="utf-8",
     )
     print(json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True))
+
+
+def _log(message: str) -> None:
+    print(f"[run_candidate_factor_portfolios] {message}", file=sys.stderr, flush=True)
 
 
 def _dataset_paths(args: argparse.Namespace) -> list[Path]:
@@ -363,6 +381,7 @@ def _score_build_params(args: argparse.Namespace) -> dict[str, object]:
         "partition_start": args.partition_start,
         "partition_end": args.partition_end,
         "decorrelation_ridge": args.decorrelation_ridge,
+        **_factor_weight_regime_params(args),
         "factor_max_weight": args.factor_max_weight,
         "factor_max_contribution_share": args.factor_max_contribution_share,
         "weight_evidence_mode": args.weight_evidence_mode,
@@ -412,6 +431,43 @@ def _score_build_params(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _factor_weight_regime_params(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "factor_weight_regime_mode": args.factor_weight_regime_mode,
+        "factor_weight_regime_blend": args.factor_weight_regime_blend,
+        "factor_weight_regime_lookback_windows": (
+            args.factor_weight_regime_lookback_windows
+        ),
+        "factor_weight_regime_min_periods": args.factor_weight_regime_min_periods,
+        "factor_weight_regime_state_lookback_windows": (
+            args.factor_weight_regime_state_lookback_windows
+        ),
+        "factor_weight_regime_state_min_periods": (
+            args.factor_weight_regime_state_min_periods
+        ),
+        "factor_weight_regime_correlation_lag_windows": (
+            args.factor_weight_regime_correlation_lag_windows
+        ),
+        "factor_weight_regime_state_lag_windows": (
+            args.factor_weight_regime_state_lag_windows
+        ),
+        "factor_weight_regime_high_volatility_quantile": (
+            args.factor_weight_regime_high_volatility_quantile
+        ),
+        "factor_weight_regime_low_breadth_quantile": (
+            args.factor_weight_regime_low_breadth_quantile
+        ),
+        "factor_weight_regime_selector": args.factor_weight_regime_selector,
+        "factor_weight_regime_volatility_column": (
+            args.factor_weight_regime_volatility_column
+        ),
+        "factor_weight_regime_volatility_aggregation": (
+            args.factor_weight_regime_volatility_aggregation
+        ),
+        "factor_weight_regime_breadth_column": args.factor_weight_regime_breadth_column,
+    }
+
+
 def _optional_file_signature(path: str | None) -> dict[str, object] | None:
     if not path:
         return None
@@ -450,6 +506,7 @@ def _summary_params(args: argparse.Namespace) -> dict[str, object]:
         "partition_start": args.partition_start,
         "partition_end": args.partition_end,
         "run_backtests": args.run_backtests,
+        **_factor_weight_regime_params(args),
         "factor_max_weight": args.factor_max_weight,
         "factor_max_contribution_share": args.factor_max_contribution_share,
         "weight_evidence_mode": args.weight_evidence_mode,
@@ -841,6 +898,142 @@ def _combine_factor_weight_scale_schedules(
     ].map(lambda value: _append_reason(value, "external_weight_scale"))
     joined["factor_weight_scale_combine_mode"] = mode
     return joined.sort_values(["timestamp", "feature"]).reset_index(drop=True)
+
+
+def _build_factor_weight_schedules(
+    args: argparse.Namespace,
+    dataset_paths: list[Path],
+    candidates: tuple[CandidateFactor, ...],
+    weights_by_method: Mapping[str, Mapping[str, float]],
+) -> dict[str, pd.DataFrame] | None:
+    if args.factor_weight_regime_mode == "off":
+        return None
+    if "decorrelated" not in args.methods:
+        return None
+    weights_dir = Path(args.output_dir) / "factor_weights"
+    weights_dir.mkdir(parents=True, exist_ok=True)
+    schedule_path = weights_dir / "decorrelated_factor_weight_schedule.csv"
+    summary_path = weights_dir / "summary.json"
+    if args.resume_existing and schedule_path.exists():
+        reusable_schedule = _load_reusable_factor_weight_schedule(
+            schedule_path,
+            summary_path,
+            expected_blend=args.factor_weight_regime_blend,
+        )
+        if reusable_schedule is not None:
+            _log(f"reusing factor weight schedule: {schedule_path}")
+            return {"decorrelated": reusable_schedule}
+    config = RegimeConditionedFactorWeightConfig(
+        lookback_windows=args.factor_weight_regime_lookback_windows,
+        min_periods=args.factor_weight_regime_min_periods,
+        state_lookback_windows=args.factor_weight_regime_state_lookback_windows,
+        state_min_periods=args.factor_weight_regime_state_min_periods,
+        correlation_lag_windows=args.factor_weight_regime_correlation_lag_windows,
+        state_lag_windows=args.factor_weight_regime_state_lag_windows,
+        high_volatility_quantile=args.factor_weight_regime_high_volatility_quantile,
+        low_breadth_quantile=args.factor_weight_regime_low_breadth_quantile,
+        regime_selector=args.factor_weight_regime_selector,
+        volatility_column=args.factor_weight_regime_volatility_column,
+        volatility_aggregation=args.factor_weight_regime_volatility_aggregation,
+        breadth_column=args.factor_weight_regime_breadth_column,
+        ridge=args.decorrelation_ridge,
+        base_weight_mode=(
+            "ic_magnitude"
+            if args.weight_evidence_mode == "admission_ic"
+            else "equal"
+        ),
+        score_transform=args.score_transform,
+        condition_on_regime=(
+            args.factor_weight_regime_mode == "state_conditioned_decorrelated"
+        ),
+    )
+    schedule = build_regime_conditioned_factor_weight_schedule(
+        dataset_paths,
+        candidates=candidates,
+        config=config,
+    )
+    schedule = _blend_factor_weight_schedule(
+        schedule,
+        weights_by_method["decorrelated"],
+        blend=args.factor_weight_regime_blend,
+    )
+    schedule.to_csv(schedule_path, index=False)
+    summary = {
+        "mode": args.factor_weight_regime_mode,
+        "method": "decorrelated",
+        "blend": args.factor_weight_regime_blend,
+        "path": str(schedule_path),
+        "row_count": int(len(schedule)),
+        "timestamp_count": int(schedule["timestamp"].nunique())
+        if not schedule.empty
+        else 0,
+        "regime_state_counts": (
+            schedule.drop_duplicates("timestamp")["regime_state"]
+            .value_counts()
+            .to_dict()
+            if not schedule.empty
+            else {}
+        ),
+        "average_weights": (
+            schedule.groupby("feature")["weight"]
+            .agg(["mean", "min", "max"])
+            .reset_index()
+            .to_dict("records")
+            if not schedule.empty
+            else []
+        ),
+    }
+    summary_path.write_text(
+        json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {"decorrelated": schedule}
+
+
+def _load_reusable_factor_weight_schedule(
+    schedule_path: Path,
+    summary_path: Path,
+    *,
+    expected_blend: float,
+) -> pd.DataFrame | None:
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+        stored_blend = float(summary.get("blend", 1.0))
+        if abs(stored_blend - expected_blend) > 1e-12:
+            return None
+    elif abs(expected_blend - 1.0) > 1e-12:
+        return None
+    return pd.read_csv(schedule_path)
+
+
+def _blend_factor_weight_schedule(
+    schedule: pd.DataFrame,
+    static_weights: Mapping[str, float],
+    *,
+    blend: float,
+) -> pd.DataFrame:
+    if not 0 <= blend <= 1:
+        raise ValueError("factor weight regime blend must be in [0, 1]")
+    output = schedule.copy()
+    if output.empty:
+        return output
+    output["dynamic_weight"] = pd.to_numeric(output["weight"], errors="coerce")
+    if output["dynamic_weight"].isna().any():
+        raise ValueError("factor weight schedule contains non-numeric weight")
+    output["static_weight"] = output["feature"].map(static_weights).fillna(0.0)
+    output["weight"] = (
+        (1.0 - blend) * output["static_weight"]
+        + blend * output["dynamic_weight"]
+    )
+    group_weight = output.groupby("timestamp", sort=False)["weight"].transform("sum")
+    if (group_weight <= 0).any():
+        raise ValueError("factor weight schedule has non-positive timestamp weight sum")
+    output["weight"] = output["weight"] / group_weight
+    output["factor_weight_regime_blend"] = blend
+    return output
 
 
 def _append_reason(value: object, reason: str) -> str:
@@ -1541,6 +1734,77 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--decorrelation-ridge", type=float, default=0.05)
     parser.add_argument(
+        "--factor-weight-regime-mode",
+        choices=("off", "rolling_decorrelated", "state_conditioned_decorrelated"),
+        default="off",
+        help=(
+            "optional dynamic factor weights; rolling_decorrelated recomputes "
+            "decorrelation weights from lagged rolling correlations, while "
+            "state_conditioned_decorrelated filters the correlation memory to "
+            "the current lagged market regime when enough history exists"
+        ),
+    )
+    parser.add_argument(
+        "--factor-weight-regime-blend",
+        type=float,
+        default=1.0,
+        help=(
+            "blend between static decorrelated weights and dynamic regime weights; "
+            "0 uses static weights, 1 uses the dynamic schedule"
+        ),
+    )
+    parser.add_argument("--factor-weight-regime-lookback-windows", type=int, default=48)
+    parser.add_argument("--factor-weight-regime-min-periods", type=int, default=24)
+    parser.add_argument(
+        "--factor-weight-regime-state-lookback-windows",
+        type=int,
+        default=240,
+    )
+    parser.add_argument(
+        "--factor-weight-regime-state-min-periods",
+        type=int,
+        default=48,
+    )
+    parser.add_argument(
+        "--factor-weight-regime-correlation-lag-windows",
+        type=int,
+        default=1,
+    )
+    parser.add_argument("--factor-weight-regime-state-lag-windows", type=int, default=1)
+    parser.add_argument(
+        "--factor-weight-regime-high-volatility-quantile",
+        type=float,
+        default=0.75,
+    )
+    parser.add_argument(
+        "--factor-weight-regime-low-breadth-quantile",
+        type=float,
+        default=0.25,
+    )
+    parser.add_argument(
+        "--factor-weight-regime-selector",
+        choices=(
+            "volatility",
+            "breadth",
+            "volatility_or_weak_breadth",
+            "volatility_and_weak_breadth",
+        ),
+        default="volatility_or_weak_breadth",
+    )
+    parser.add_argument(
+        "--factor-weight-regime-volatility-column",
+        default="intraday_bar_return_5m",
+    )
+    parser.add_argument(
+        "--factor-weight-regime-volatility-aggregation",
+        choices=("std", "mean"),
+        default="std",
+    )
+    parser.add_argument(
+        "--factor-weight-regime-breadth-column",
+        default="market_state_breadth_5m",
+    )
+    parser.add_argument(
         "--factor-max-weight",
         type=float,
         help="cap each normalized factor weight before composite score construction",
@@ -1792,6 +2056,45 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("--partition-start must not be after --partition-end")
     if args.decorrelation_ridge < 0:
         raise ValueError("--decorrelation-ridge must be non-negative")
+    if not 0 <= args.factor_weight_regime_blend <= 1:
+        raise ValueError("--factor-weight-regime-blend must be in [0, 1]")
+    if args.factor_weight_regime_lookback_windows <= 0:
+        raise ValueError("--factor-weight-regime-lookback-windows must be positive")
+    if args.factor_weight_regime_min_periods <= 0:
+        raise ValueError("--factor-weight-regime-min-periods must be positive")
+    if args.factor_weight_regime_min_periods > args.factor_weight_regime_lookback_windows:
+        raise ValueError(
+            "--factor-weight-regime-min-periods must be <= "
+            "--factor-weight-regime-lookback-windows"
+        )
+    if args.factor_weight_regime_state_lookback_windows <= 0:
+        raise ValueError("--factor-weight-regime-state-lookback-windows must be positive")
+    if args.factor_weight_regime_state_min_periods <= 0:
+        raise ValueError("--factor-weight-regime-state-min-periods must be positive")
+    if (
+        args.factor_weight_regime_state_min_periods
+        > args.factor_weight_regime_state_lookback_windows
+    ):
+        raise ValueError(
+            "--factor-weight-regime-state-min-periods must be <= "
+            "--factor-weight-regime-state-lookback-windows"
+        )
+    if args.factor_weight_regime_correlation_lag_windows < 0:
+        raise ValueError(
+            "--factor-weight-regime-correlation-lag-windows must be non-negative"
+        )
+    if args.factor_weight_regime_state_lag_windows < 0:
+        raise ValueError("--factor-weight-regime-state-lag-windows must be non-negative")
+    if not 0 <= args.factor_weight_regime_high_volatility_quantile <= 1:
+        raise ValueError(
+            "--factor-weight-regime-high-volatility-quantile must be in [0, 1]"
+        )
+    if not 0 <= args.factor_weight_regime_low_breadth_quantile <= 1:
+        raise ValueError("--factor-weight-regime-low-breadth-quantile must be in [0, 1]")
+    if not args.factor_weight_regime_volatility_column:
+        raise ValueError("--factor-weight-regime-volatility-column must be non-empty")
+    if not args.factor_weight_regime_breadth_column:
+        raise ValueError("--factor-weight-regime-breadth-column must be non-empty")
     if args.factor_max_weight is not None and not 0 < args.factor_max_weight <= 1:
         raise ValueError("--factor-max-weight must be in (0, 1]")
     if (
