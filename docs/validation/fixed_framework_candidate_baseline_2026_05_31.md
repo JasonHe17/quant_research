@@ -27,6 +27,8 @@ the fixed-framework priority revalidation.
   `docs/validation/fixed_framework_alpha_rank_state_overlay_robustness_2026_06_01.md`
 - State overlay schedule attribution:
   `docs/validation/fixed_framework_alpha_rank_state_overlay_schedule_attribution_2026_06_01.md`
+- Alpha-rank research benchmark replacement:
+  `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`
 
 All runs use:
 
@@ -132,7 +134,8 @@ handled through a separate default-change review.
 
 ## Next Steps
 
-1. Prepare a research-benchmark replacement note for `budget_min90_l120`, while
-   leaving the production/default benchmark unchanged.
-2. Use the repaired benchmark and `budget_min90_l120` state-aware overlay as
-   frontier comparisons for the next incremental alpha-rank factor tests.
+1. Use the repaired benchmark as the alpha-rank control and
+   `budget_min90_l120` as the state-aware frontier for the next incremental
+   alpha-rank factor tests.
+2. Keep production/default benchmark replacement behind a separate
+   default-change review.

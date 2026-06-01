@@ -131,8 +131,11 @@ one exists. `score_budget_gate_v1` remains the active/default baseline. The
 research frontier is family-specific: daily-MA-family candidates should compare
 against the fixed `high_dispersion_current` ribbon-dispersion gate, while
 optimizer-native portfolio candidates should compare against the 2026-05-25
-volume-concentration cost-pressure frontier `vc_opt_risk_cp0010_w50`. A
-research frontier is not an active/default change unless a separate
+volume-concentration cost-pressure frontier `vc_opt_risk_cp0010_w50`.
+Fixed-framework alpha-rank candidates should compare against the repaired
+no-overlay control and the `budget_min90_l120` state-aware frontier documented
+in `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`.
+A research frontier is not an active/default change unless a separate
 default-change review says so.
 
 ## Required Outputs

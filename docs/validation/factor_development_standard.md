@@ -34,10 +34,12 @@ Latest legacy-factor revalidation:
   fixes. Use it as the current source for the retested priority factors before
   using older legacy validation decisions.
 - `docs/validation/fixed_framework_candidate_baseline_2026_05_31.md`
-  records the rebuilt candidate portfolio baseline after registry v66. Use the
-  alpha-only v66 run as the current baseline for incremental factor tests; keep
-  EOD lb1 outside the default alpha pool pending a dedicated event-overlay
-  test.
+  records the rebuilt candidate portfolio baseline after registry v66.
+- `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`
+  records the current fixed-framework alpha-rank research benchmark stack. Use
+  the repaired no-overlay benchmark as the alpha-rank control and
+  `budget_min90_l120` as the state-aware frontier for incremental alpha-rank
+  factor tests.
 - `docs/validation/legacy_factor_revalidation_2026_05_20.md` records the first
   full revalidation run under factor-health monitor mode. Use it for legacy
   factors that have not yet been retested under the fixed framework.
@@ -88,9 +90,11 @@ the evidence paths for all material comparisons.
   optimizer-native portfolio work should compare against the latest
   volume-concentration cost-pressure frontier `vc_opt_risk_cp0010_w50` from
   `runs/candidate_factor_portfolios/time_series_decomposition_2026_05_25_volume_concentration_optimizer_risk_penalty_cost_pressure_cap0010_standard/`;
-  fixed-framework alpha-rank portfolio work should compare against the repaired
-  overnight-gap gate plus contribution-cap frontier from
-  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/`.
+  fixed-framework alpha-rank portfolio work should compare against both the
+  repaired no-overlay control from
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_v66_target_gate_deep25_overnight_only_contrib_cap25_2026_05_31_standard/`
+  and the state-aware frontier `budget_min90_l120` from
+  `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l120_2026_06_01_standard/`.
 
 New factor batches must report marginal contribution against the research
 frontier whenever the frontier is in the same strategy family or can be

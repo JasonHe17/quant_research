@@ -24,6 +24,8 @@ label horizon before rolling.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l96_2026_05_31_standard/monthly_comparison_to_repaired.csv`
 - Robustness follow-up:
   `docs/validation/fixed_framework_alpha_rank_state_overlay_robustness_2026_06_01.md`
+- Alpha-rank research benchmark replacement:
+  `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`
 
 ## Construction
 
@@ -126,9 +128,8 @@ selected on the fixed 2023-2025 validation window.
 
 ## Next Test
 
-1. Attribute the `budget_min90_l120` state overlay schedule by month to confirm
-   it is not simply
-   adding turnover or overfitting January and June 2024.
-2. Use `budget_min90_l120` as the frontier comparison for incremental
+1. Use `budget_min90_l120` as the frontier comparison for incremental
    alpha-rank factor tests, and keep the repaired no-overlay benchmark as the
    control.
+2. Leave production/default benchmark replacement behind a separate
+   default-change review.

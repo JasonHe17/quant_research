@@ -15,6 +15,9 @@ Current state:
 - Latest portfolio-native research frontier:
   `vc_opt_risk_cp0010_w50`, from the 2026-05-25
   time-series-decomposition / volume-concentration review.
+- Latest fixed-framework alpha-rank research frontier:
+  `budget_min90_l120`, from
+  `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`.
 - Active/default allocator: unchanged. The latest frontier is not yet a live
   allocator registry entry and must not be described as the active default.
 

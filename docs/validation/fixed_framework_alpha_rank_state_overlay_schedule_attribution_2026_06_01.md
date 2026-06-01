@@ -9,6 +9,8 @@ adding turnover or fitting one month.
 
 - Robustness decision:
   `docs/validation/fixed_framework_alpha_rank_state_overlay_robustness_2026_06_01.md`
+- Alpha-rank research benchmark replacement:
+  `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`
 - Promoted standard validation:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l120_2026_06_01_standard/validation_summary.json`
 - Schedule:
@@ -129,7 +131,7 @@ candidate. The schedule attribution supports the intended mechanism:
 3. floor-state timestamps reduce losses versus the repaired no-overlay path;
 4. opportunity cost exists but is concentrated in rebound months.
 
-Do not yet replace the production/default framework benchmark. The next step
-should be a research-benchmark replacement note that explicitly states the
-control benchmark, the promoted frontier benchmark, and the remaining
-out-of-window validation gap.
+Do not yet replace the production/default framework benchmark. The alpha-rank
+research benchmark replacement note promotes this overlay only as the
+state-aware frontier and explicitly leaves the production/default benchmark
+unchanged.

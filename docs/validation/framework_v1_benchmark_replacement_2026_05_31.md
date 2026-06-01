@@ -17,6 +17,11 @@ evaluation-framework fixes completed on 2026-05-31.
   `runs/framework_v1_acceptance/standard/candidate_policy_validation/validation_summary.json`
 - Pre-fix report backup:
   `runs/framework_v1_acceptance/standard/legacy_before_framework_fix_20260530`
+- Related alpha-rank research frontier:
+  `docs/validation/fixed_framework_alpha_rank_research_benchmark_replacement_2026_06_01.md`
+
+The related alpha-rank frontier is a research comparison target, not a
+replacement for the standard framework benchmark recorded here.
 
 ## Framework Changes
 
