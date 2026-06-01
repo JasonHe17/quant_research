@@ -19,6 +19,8 @@ budget-style exposure schedule.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l120_2026_06_01_standard/validation_summary.json`
 - Monthly comparison:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l120_2026_06_01_standard/monthly_comparison_to_repaired_and_l96.csv`
+- Schedule attribution:
+  `docs/validation/fixed_framework_alpha_rank_state_overlay_schedule_attribution_2026_06_01.md`
 
 ## Schedule Grid
 
@@ -122,11 +124,11 @@ the default.
 
 ## Next Tests
 
-1. Attribute the `budget_min90_l120` exposure schedule by month and state bucket
-   to confirm it is reducing exposure for the intended score-quality reason.
+1. Prepare a research-benchmark replacement note that keeps the repaired
+   no-overlay benchmark as the control and promotes `budget_min90_l120` as the
+   state-aware frontier benchmark.
 2. Use `budget_min90_l120` as the frontier comparison for the next incremental
    alpha-rank factor tests, with the repaired no-overlay benchmark as the
    control.
-3. If the attribution is clean, prepare the research-benchmark replacement
-   note and leave the production/default benchmark unchanged until a separate
+3. Leave the production/default benchmark unchanged until a separate
    default-change review.

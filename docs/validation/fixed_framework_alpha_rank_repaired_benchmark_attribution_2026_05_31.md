@@ -34,6 +34,8 @@ improved, and why the full-window max drawdown still worsened.
   `docs/validation/fixed_framework_alpha_rank_state_overlay_screen_2026_05_31.md`
 - State overlay robustness:
   `docs/validation/fixed_framework_alpha_rank_state_overlay_robustness_2026_06_01.md`
+- State overlay schedule attribution:
+  `docs/validation/fixed_framework_alpha_rank_state_overlay_schedule_attribution_2026_06_01.md`
 
 All comparisons use `decorrelated`, `partial_rebalance_daily`, the fixed
 standard dataset, and `factor_health_mode=off`. The promoted benchmark uses an
@@ -146,8 +148,8 @@ framework. The max drawdown tradeoff remains an explicit open item.
 
 ## Next Tests
 
-1. Attribute the state-aware `budget_min90_l120` overlay schedule by month and
-   state bucket before a benchmark-change note.
+1. Prepare the state-aware `budget_min90_l120` research-benchmark replacement
+   note, while keeping this repaired no-overlay benchmark as the control.
 2. Explore a weak-tape state rule only if it uses an observable state distinct
    from the overnight health gate and can beat the promoted benchmark after
    costs.
