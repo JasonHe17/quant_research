@@ -25,6 +25,8 @@ benchmark because the benchmark only used registry status `candidate`.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_single_state_l120_2026_06_01_standard/validation_summary.json`
 - Monthly comparison:
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_single_2026_06_01_attribution/monthly_comparison.csv`
+- 2025 generalization attribution:
+  `docs/validation/fixed_framework_alpha_rank_daily_ma_d10dev_2025_generalization_attribution_2026_06_01.md`
 
 ## Candidate Setup
 
@@ -139,6 +141,7 @@ Classify it as a high-potential interaction candidate:
 - but it materially damages the 2025 isolated yearly slice, especially under
   the state frontier.
 
-The next useful test is not a broader daily-MA grid. It should be a targeted
-2025 attribution for this one factor, comparing year-slice selection,
-contribution, and monthly path behavior against the full-window replay.
+The 2025 attribution shows that the useful next test is not a broader daily-MA
+grid. It should be a coarse state-conditioned sleeve test that asks when
+daily-MA deviation improves marginal selection quality, without fitting a
+calendar-year-specific switch.

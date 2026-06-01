@@ -24,6 +24,8 @@ production/default framework benchmark or the active/default allocator.
   `runs/candidate_factor_portfolios/fixed_framework_alpha_rank_repaired_state_overlay_budget_min90_l120_2026_06_01_standard/validation_summary.json`
 - First incremental alpha-rank factor screen:
   `docs/validation/fixed_framework_alpha_rank_incremental_daily_ma_d10dev_screen_2026_06_01.md`
+- d10 2025 generalization attribution:
+  `docs/validation/fixed_framework_alpha_rank_daily_ma_d10dev_2025_generalization_attribution_2026_06_01.md`
 
 ## Benchmark Stack
 
@@ -121,8 +123,8 @@ out-of-window evidence or a clearly accepted production validation protocol.
 
 ## Next Steps
 
-1. Attribute the 2025 degradation in the `intraday_daily_ma_deviation_5m_d10`
-   incremental screen before testing a broader daily-MA batch.
+1. Test a coarse state-conditioned daily-MA deviation sleeve before testing a
+   broader daily-MA batch.
 2. For any new factor that improves only one of the two benchmark layers,
    classify the result as interaction evidence rather than immediate promotion
    evidence.
